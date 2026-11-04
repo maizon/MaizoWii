@@ -126,3 +126,11 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
 - Commits: 571591f, 37b070b, 7be426d. **CI do HEAD novo ainda não confirmado**; não marcar R16/R22 concluídos.
 - Novos requisitos concluídos nesta execução: **0 de 6** da meta; total **5/22**, 17 pendentes. Nenhum ensaio no Wii físico.
 - Próximo: conferir CI do commit 7be426d, investigar WiiMC adaptado sem fallback, e validar HID Microntek/Twin no console.
+
+## Execução 2026-11-04 — correção de sintaxe no overlay HID
+- Início: 17 pendências de 22 (5 concluídas); meta ceil(17 × 0,30) = **6**.
+- Auditoria do código da branch identificou falha crítica introduzida na atualização anterior: sequências literais `\\n` no código Python deixavam `manifest["adapted_sha256"] = {}`, `status={}` e o laço `for` dentro de comentário, impedindo a execução do overlay.
+- Corrigida a separação das linhas em tools/overlay_adapted.py (commit 2d6711d). Criado teste de regressão tests/test_overlay_stale_manifest.py (commit e3fd996), que simula segunda execução com hash obsoleto e exige inventário somente fallback.
+- Teste sintático isolado do trecho corrigido com ast.parse: PASS. **A suíte integral, build devkitPPC e GitHub Actions do HEAD ainda não têm resultado confirmado nesta execução.** O teste novo não comprova comportamento no Wii.
+- Novos requisitos integralmente concluídos: **0**. Total conservador 5/22 (22,7%), 17 pendentes; meta 6 não atingida.
+- Próximo: verificar CI da PR #1, corrigir qualquer falha do overlay/testes, investigar compilação WiiMC adaptado e executar testes físicos USB HID, autoboot e vídeo.
