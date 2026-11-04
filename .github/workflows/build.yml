@@ -188,6 +188,21 @@ jobs:
               "No ALL-IN-ONE release can be published until this is fixed.")
           print("PASS: YAWM USB HID source binary included with SHA-256")
           PY
+      - name: Report actual adapted vs official binaries
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          m=json.loads(Path('dist/maizo/MODULE_MANIFEST.json').read_text())
+          adapted=m.get('adapted_modules',[])
+          fallback=m.get('fallback_modules',[])
+          report=['## Maizo Wii: build provenance',
+                  '**HARDWARE TESTS STILL PENDING.**',
+                  'HID adapted: '+(', '.join(adapted) or 'none'),
+                  'Official fallback: '+(', '.join(fallback) or 'none')]
+          Path(os.environ['GITHUB_STEP_SUMMARY']).write_text('\n\n'.join(report)+'\n')
+          print('FALLBACKS:',fallback)
+          PY
       - name: Verify every executable and zip the storage root
         run: |
           test -s dist/apps/maizo-installer/boot.dol

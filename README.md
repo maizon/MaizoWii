@@ -235,3 +235,12 @@ Actions não é armazenamento permanente e não garante reuso indefinido.
   de patches diferentes: isso nao comprova integracao HID. A recompilacao
   agora exige novo DOL, propagacao dos erros do MPlayer e mudanca de hash.
   Se falhar, o ALL-IN-ONE mantem o WiiMC oficial que ja reproduz videos.
+
+## Estabilidade: pacote de regressao e protecao
+- A leitura de jogos e argv rejeitam caminhos SD/USB com traversal e bytes de controle.
+- Configuracoes globais e favoritos passam a usar backup ao salvar em FAT32.
+- Um erro no forwarder pode deixar um log em `sd:/maizo/forwarder.log`
+  ou `usb:/maizo/forwarder.log` quando o dispositivo estiver montado.
+- Cada DOL adaptado e distinguido do fallback oficial no resumo do CI.
+- WiiMC, PS1, HID e WAD **exigem testes reais** antes de qualquer alegacao de
+  compatibilidade completa. Nao instalar WAD experimental sem backup da NAND.

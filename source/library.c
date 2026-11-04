@@ -32,7 +32,15 @@ static int allowed(System s,const char*n){
 }
 static void insert(Library*l,System sys,const char*path,const char*filename,const char*parent) {
  if(l->count>=MAIZO_MAX_GAMES)return;
- if(sys==SYSTEM_PS1&&ext(filename,".bin")){char p[MAIZO_PATH];snprintf(p,sizeof(p),"%s",path);char*d=strrchr(p,'.');if(d){strcpy(d,".cue");FILE*f=fopen(p,"rb");if(f){fclose(f);return;}}}
+ if(sys==SYSTEM_PS1&&ext(filename,".bin")){
+  char p[MAIZO_PATH];snprintf(p,sizeof(p),"%s",path);
+  char*d=strrchr(p,'.');
+  if(d){
+   strcpy(d,".cue");FILE*f=fopen(p,"rb");
+   if(!f){strcpy(d,".CUE");f=fopen(p,"rb");}
+   if(f){fclose(f);return;}
+  }
+ }
  for(int i=0;i<l->count;i++)if(!strcasecmp(path,l->games[i].path))return;
  Game*g=&l->games[l->count++];memset(g,0,sizeof(*g));g->system=sys;
  snprintf(g->path,sizeof(g->path),"%s",path);

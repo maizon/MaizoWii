@@ -65,6 +65,11 @@ def patch_wiimc(root: Path):
                          "u16 down = PAD_ButtonsDown(cur_chan) | maizo_hid_down(cur_chan);", "MPlayerInput")
         s = replace_once(s, "u16 held = PAD_ButtonsHeld(cur_chan);",
                          "u16 held = PAD_ButtonsHeld(cur_chan) | maizo_hid_held(cur_chan);", "MPlayerInput")
+        # Channel switching previously reverted to the native pad only.
+        if s.count("held = PAD_ButtonsDown(cur_chan);") != 2:
+            raise ValueError("Unexpected WiiMC channel switching layout")
+        s = s.replace("held = PAD_ButtonsDown(cur_chan);",
+                      "held = userInput[cur_chan].pad.btns_h;")
         return s
     patch_file(root, "source/input.cpp", input_patch)
     def wiimc_autoplay(s):
@@ -146,6 +151,12 @@ def patch_wiimc(root: Path):
             "#if HAVE_PAIRED\n    c->scale_block = scale_block_paired;\n#endif",
             "WiiMC Bink legacy accelerated function absent on modern GCC")
     patch_file(root, "source/mplayer/ffmpeg/libavcodec/binkdsp.c", patch_bink)
+    patch_file(root, "source/mplayer/ffmpeg/libavcodec/h264pred.c",
+               lambda s: replace_once(
+                   s, "if (HAVE_PAIRED) ff_h264_pred_init_ppc(h, codec_id, bit_depth, chroma_format_idc);",
+                   "#if HAVE_PAIRED\n    ff_h264_pred_init_ppc(h, codec_id, bit_depth, chroma_format_idc);\n#endif",
+                   "WiiMC old H264 paired disabled on modern devkitPPC"))
+
     # Generated config.h has HAVE_PAIRED=0; C runtime 'if(0)' still references
     # undeclared paired functions because C compilation type-checks dead code.
     for source, oldcall in (
