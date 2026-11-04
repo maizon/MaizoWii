@@ -35,12 +35,25 @@ def overlay(adapter_root: Path, dist: Path) -> dict[str,str]:
         status[module]="maizo HID source adapter (hardware tests still pending)"
         manifest.setdefault("adapted_sha256",{})[module]=hashlib.sha256(contents).hexdigest()
     status["Nintendont"]="official own HID driver / controller.ini"
-    # Record the final on-disk executable for every module, including fallbacks.\n    # This is intentionally calculated AFTER overlays so the manifest cannot\n    # describe a superseded upstream binary.\n    all_modules=("maizo", "usbloader_gx", "Nintendont", "WiiSXRX",\n                 "snes9xgx", "fceugx", "vbagx", "WiiMC")\n    manifest["final_dol_sha256"]={name: hashlib.sha256(\n        (dist/"apps"/name/"boot.dol").read_bytes()).hexdigest()\n        for name in all_modules}\n    manifest["module_input_provenance"]=status
-    manifest_path.write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+    # Record the final on-disk executable for every module, including fallbacks.
+    # This is intentionally calculated AFTER overlays so the manifest cannot
+    # describe a superseded upstream binary.
+    all_modules=("maizo", "usbloader_gx", "Nintendont", "WiiSXRX",
+                 "snes9xgx", "fceugx", "vbagx", "WiiMC")
+    manifest["final_dol_sha256"]={name: hashlib.sha256(
+        (dist/"apps"/name/"boot.dol").read_bytes()).hexdigest()
+        for name in all_modules}
+    manifest["module_input_provenance"]=status
+    manifest_path.write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+"
+",encoding="utf-8")
     (dist/"HID-COMPATIBILITY.txt").write_text(
-        "MAIZO: USB HID 0079:0006 and configurable profiles.\n"+
-        "\n".join(f"{k}: {v}" for k,v in status.items())+
-        "\nHID support with unsupported USB protocols (0810:0001, XInput) is NOT guaranteed.\n",
+        "MAIZO: USB HID 0079:0006 and configurable profiles.
+"+
+        "
+".join(f"{k}: {v}" for k,v in status.items())+
+        "
+HID support with unsupported USB protocols (0810:0001, XInput) is NOT guaranteed.
+",
         encoding="utf-8")
     return status
 
