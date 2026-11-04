@@ -77,6 +77,28 @@ class FinalDolIntegrityTests(unittest.TestCase):
         (self.dist / "maizo/YAWM-LICENSE").unlink()
         self.assertIn("installer GPL license missing", self.verify().stderr)
 
+    def test_fallback_inventory_cannot_claim_hid(self):
+        overlay(self.patched, self.dist)
+        path = self.dist / "maizo/MODULE_MANIFEST.json"
+        manifest = json.loads(path.read_text())
+        self.assertIn("WiiMC", manifest["fallback_modules"])
+        manifest["fallback_modules"].remove("WiiMC")
+        manifest["adapted_modules"].append("WiiMC")
+        path.write_text(json.dumps(manifest))
+        result = self.verify()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("adapted hash inventory mismatch", result.stderr)
+
+    def test_adapted_binary_has_matching_provenance(self):
+        overlay(self.patched, self.dist)
+        path = self.dist / "maizo/MODULE_MANIFEST.json"
+        manifest = json.loads(path.read_text())
+        manifest["module_input_provenance"]["WiiMC"] = "maizo HID source adapter (hardware tests still pending)"
+        path.write_text(json.dumps(manifest))
+        result = self.verify()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("adapter provenance mismatch", result.stderr)
+
     def test_corruption_is_rejected(self):
         overlay(self.patched, self.dist)
         dol = self.dist / "apps/WiiMC/boot.dol"
