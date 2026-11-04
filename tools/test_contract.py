@@ -48,12 +48,14 @@ for k in ("maizo_hid_tick", "maizo_hid_held", "maizo_hid_shutdown",
 for k in ("settings_count", "settings_value", "settings_change",
           "gc_video", "wii_ios", "media_volume"):
     assert k in settings + config, k
-for k in ("GX_Begin", "search_ui", "system_title", "cover_draw",
+for k in ("maizo_video_rect", "search_ui", "system_title", "cover_draw",
           "module_available", "GRADE"):
     assert k in (ui + settings), k
-assert "GX_InitTexObj" in read("source/covers.c")
+assert "maizo_video_cover" in read("source/covers.c")
 assert "MZG1" in read("tools/build_cover_cache.py")
 assert "VIDEO_WaitVSync" in read("source/main.c")
+assert "VIDEO_WaitVSync" in read("source/video_sw.c")
+assert "SYS_AllocateFramebuffer" in read("source/video_sw.c")
 assert "0x40" in read("profiles/0079_0006.ini")
 print("PASS: 8 systems, module registry, UI, profiles, launch and cover contracts")
 

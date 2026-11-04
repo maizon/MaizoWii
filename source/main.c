@@ -137,12 +137,12 @@ static void handle(const Input*i){
   }
  }
 }
-/* Start VI/GX first. On hardware, FAT or a USB HID receiver can block:
+/* Start the software VI framebuffer first. FAT/USB HID may block:
  * a visible boot-stage label gives us a precise failure boundary. */
 int main(int argc,char**argv){
  (void)argc;(void)argv;
  if(!ui_init())return 1;
- ui_boot_message("VIDEO GX OK");
+ ui_boot_message("VIDEO VI OK");
  VIDEO_WaitVSync();
  ui_boot_message("MONTANDO SD E USB");
  int storage_ready=fatInitDefault();

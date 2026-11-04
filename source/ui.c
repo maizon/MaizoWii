@@ -1,32 +1,22 @@
+/* Stable MaizoWii frontend: no GX commands are needed for the 2D UI.
+ * The VI reads RGB-converted YUYV pixels prepared directly by the CPU.
+ * This avoids the FIFO/EFB/XFB synchronization path that produced both
+ * a black regression and corrupted bars on hardware. */
 #include "app.h"
+#include "video_sw.h"
 #include "font8x8.h"
-#include <ogc/system.h>
-#include <ogc/video.h>
-#include <ogc/gx.h>
-#include <ogc/gu.h>
-#include <malloc.h>
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
-static GXRModeObj*vmode;
-static void*framebuffer[2],*fifo;
-static int which=0;
-static int screen_live=0;
-/* Keep the VI black until a complete GX frame has been copied to the XFB. */
-#define RGB(r,g,b) (0xff000000u|((unsigned)(r)<<16)|((unsigned)(g)<<8)|(b))
 static unsigned background=0xff11111du,panel=0xff1e2030u,bright=0xff6366f1u;
 static int graphite=0;
-static void vertex(float x,float y,unsigned col){
- GX_Position2f32(x,y);GX_Color4u8((col>>16)&255,(col>>8)&255,col&255,(col>>24)&255);
-}
 static void quad(float x,float y,float w,float h,unsigned a,unsigned b){
- if(w<=0||h<=0)return;
- GX_Begin(GX_QUADS,GX_VTXFMT0,4);
- vertex(x,y,a);vertex(x+w,y,a);vertex(x+w,y+h,b);vertex(x,y+h,b);
- GX_End();
+ maizo_video_rect(x,y,w,h,a,b);
 }
-static void roundrect(float x,float y,float w,float h,unsigned col){
- quad(x+6,y,w-12,h,col,col);quad(x,y+6,6,h-12,col,col);quad(x+w-6,y+6,6,h-12,col,col);
+static void roundrect(float x,float y,float w,float h,unsigned color){
+ quad(x+6,y,w-12,h,color,color);
+ quad(x,y+6,6,h-12,color,color);
+ quad(x+w-6,y+6,6,h-12,color,color);
 }
 /* Map common Portuguese UTF-8 accents to readable ASCII in the compact
  * built-in bitmap font. The original bytes remain intact in game metadata. */
@@ -48,22 +38,19 @@ static unsigned char glyph_ascii(unsigned char first,unsigned char second){
   default:return '?';
  }
 }
-static void text(float x,float y,const char*str,float z,unsigned color,int max){
- /* Whole-pixel origins avoid subpixel wobble on composite CRT outputs. */
- x=(float)(int)(x+0.5f);y=(float)(int)(y+0.5f);
+static void text(float x,float y,const char *s,float scale,
+                 unsigned color,int max){
  float start=x;
- for(int n=0;str&&*str&&n<max;str++,n++){
-  unsigned char c=(unsigned char)*str;
-  if(c==0xc3 && str[1]){c=glyph_ascii(c,(unsigned char)str[1]);str++;}
-  else if(c>127)c='?';
-  if(c=='\n'){y+=10*z;x=start;continue;}
-  unsigned bits=0;
-  for(int row=0;row<8;row++){unsigned char v=font8x8_basic[c][row];while(v){bits+=(v&1);v>>=1;}}
-  if(bits){GX_Begin(GX_QUADS,GX_VTXFMT0,4*bits);
-   for(int row=0;row<8;row++)for(int j=0;j<8;j++)if(font8x8_basic[c][row]&(1u<<j)){
-    float px=x+j*z,py=y+row*z;vertex(px,py,color);vertex(px+z,py,color);vertex(px+z,py+z,color);vertex(px,py+z,color);
-   }GX_End();
-  }x+=8.0f*z;
+ for(int n=0;s&&*s&&n<max;s++,n++){
+  unsigned char ch=(unsigned char)*s;
+  if(ch==0xc3&&s[1]){ch=glyph_ascii(ch,(unsigned char)s[1]);s++;}
+  else if(ch>127)ch='?';
+  if(ch=='\n'){x=start;y+=10*scale;continue;}
+  for(int row=0;row<8;row++)
+   for(int bit=0;bit<8;bit++)
+    if(font8x8_basic[ch][row]&(1u<<bit))
+     quad(x+bit*scale,y+row*scale,scale,scale,color,color);
+  x+=8.0f*scale;
  }
 }
 static void label(float x,float y,const char*s,float z,unsigned color){text(x,y,s,z,color,70);}
@@ -247,72 +234,10 @@ static void settings(const State*u,const Config*c){
   label(119,406,"AJUSTES AVANCADOS NO MOTOR ORIGINAL",0.93f,0xffb2b7d1u);
  hid_diagnostics_line();
 }
-/* The initial screen is rendered before FAT/USB/HID probing. On real Wii
- * an IOS USB call can stall; the last completed boot stage stays visible
- * instead of exposing undefined, magenta uninitialised XFB contents. */
-static void present(void){
- GX_DrawDone();
- GX_CopyDisp(framebuffer[which],GX_TRUE);
- GX_DrawDone(); /* ensure the new XFB is complete before VI scans it */
- VIDEO_SetNextFramebuffer(framebuffer[which]);
- VIDEO_Flush();
- if(!screen_live){
-  VIDEO_SetBlack(FALSE);
-  VIDEO_Flush();
-  screen_live=1;
- }
- VIDEO_WaitVSync();
- which^=1;
-}
-int ui_init(void){
- VIDEO_Init();
- VIDEO_SetBlack(TRUE);
- VIDEO_Flush();
- vmode=VIDEO_GetPreferredMode(NULL);
- if(!vmode||!vmode->fbWidth||!vmode->efbHeight||!vmode->xfbHeight)return 0;
- framebuffer[0]=MEM_K0_TO_K1(SYS_AllocateFramebuffer(vmode));
- framebuffer[1]=MEM_K0_TO_K1(SYS_AllocateFramebuffer(vmode));
- if(!framebuffer[0]||!framebuffer[1])return 0;
- VIDEO_Configure(vmode);
- fifo=memalign(32,256*1024);
- if(!fifo)return 0;
- GX_Init(fifo,256*1024);
- GX_SetCopyClear((GXColor){0,0,0,255},0x00ffffff);
- GX_SetViewport(0,0,vmode->fbWidth,vmode->efbHeight,0,1);
- GX_SetScissor(0,0,vmode->fbWidth,vmode->efbHeight);
- GX_SetDispCopySrc(0,0,vmode->fbWidth,vmode->efbHeight);
- GX_SetDispCopyYScale((f32)vmode->xfbHeight/(f32)vmode->efbHeight);
- GX_SetDispCopyDst(vmode->fbWidth,vmode->xfbHeight);
- GX_SetCopyFilter(vmode->aa,vmode->sample_pattern,GX_TRUE,vmode->vfilter);
- GX_SetFieldMode(vmode->field_rendering,
-                 (vmode->viHeight==2*vmode->xfbHeight)?GX_ENABLE:GX_DISABLE);
- GX_SetPixelFmt(GX_PF_RGB8_Z24,GX_ZC_LINEAR);
- GX_SetZMode(GX_FALSE,GX_ALWAYS,GX_FALSE);
- GX_SetNumChans(1);
- GX_SetChanCtrl(GX_COLOR0A0,GX_ENABLE,GX_SRC_REG,GX_SRC_VTX,
-                GX_LIGHTNULL,GX_DF_NONE,GX_AF_NONE);
- GX_SetNumTexGens(0);
- GX_SetNumTevStages(1);
- GX_SetTevOrder(GX_TEVSTAGE0,GX_TEXCOORDNULL,GX_TEXMAP_NULL,GX_COLOR0A0);
- GX_SetTevOp(GX_TEVSTAGE0,GX_PASSCLR);
- GX_SetBlendMode(GX_BM_BLEND,GX_BL_SRCALPHA,GX_BL_INVSRCALPHA,GX_LO_CLEAR);
- GX_SetCullMode(GX_CULL_NONE);
- GX_ClearVtxDesc();
- GX_SetVtxDesc(GX_VA_POS,GX_DIRECT);
- GX_SetVtxDesc(GX_VA_CLR0,GX_DIRECT);
- GX_SetVtxAttrFmt(GX_VTXFMT0,GX_VA_POS,GX_POS_XY,GX_F32,0);
- GX_SetVtxAttrFmt(GX_VTXFMT0,GX_VA_CLR0,GX_CLR_RGBA,GX_RGBA8,0);
- Mtx model;
- guMtxIdentity(model);
- GX_LoadPosMtxImm(model,GX_PNMTX0);
- GX_SetCurrentMtx(GX_PNMTX0);
- Mtx44 projection;
- guOrtho(projection,0,480,0,640,0,1);
- GX_LoadProjectionMtx(projection,GX_ORTHOGRAPHIC);
- GX_SetColorUpdate(GX_TRUE);
- GX_InvalidateTexAll();
- return 1;
-}
+/* With the CPU backend the boot message can be displayed before the
+ * filesystem, HID receiver, controller and cover scanner are initialized. */
+static void present(void){maizo_video_present();}
+int ui_init(void){return maizo_video_init();}
 void ui_boot_message(const char*stage){
  graphite=0;
  bright=0xff7777e0u;
@@ -340,4 +265,4 @@ void ui_draw(const State*u,const Library*l,const Config*c,int hid){
  footer(u,l);
  present();
 }
-void ui_shutdown(void){VIDEO_SetBlack(TRUE);VIDEO_Flush();VIDEO_WaitVSync();if(fifo){free(fifo);fifo=NULL;}}
+void ui_shutdown(void){maizo_video_shutdown();}

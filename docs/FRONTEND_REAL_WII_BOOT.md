@@ -1,44 +1,41 @@
-# MAIZO Wii — inicialização segura no console real (frontend)
+# MaizoWii — frontend sem dependência do GX para vídeo 2D
 
-Esta mudança afeta somente o frontend MAIZO: NÃO muda WiiMC,
-WiiSXRX, Nintendont, USB Loader GX, emuladores nem instalador.
+## Causa investigada
+Versão anterior: imagem rosa/preta no Wii físico, Dolphin renderizava.
+Após mudança na fila GX e no estado inicial da VI: tela preta em ambos.
+A compilação em CI passou, mas isso não substituiu teste visual.
 
-## Proteções implementadas no código
+## Alteração
+O frontend não utiliza mais GX_Init, GX_DrawDone nem GX_CopyDisp para
+desenhar sua interface. Passou a usar um framebuffer YUYV 4:2:2 da VI,
+gravado diretamente em memória não-cacheada pela CPU, com dupla memória
+de vídeo. A mesma UI de Home, Biblioteca, Busca, Ajustes, Perfis e HID
+continua ativa. As capas MZG1 (.gxt), armazenadas em blocos RGBA8 4x4,
+são decodificadas e apresentadas no framebuffer sem usar a GPU.
 
-- A VI permanece preta até existir um framebuffer efetivamente renderizado,
-  evitando expor memória de vídeo não inicializada (faixas rosa/preto).
-- O vídeo/GX inicia antes de FAT, biblioteca, WPAD e sondagem de HID.
-- Painel de etapas antes de operações que podem bloquear:
-  VIDEO GX OK; MONTANDO SD E USB; CARREGANDO CONFIGURACOES;
-  VERIFICANDO MODULOS; INDEXANDO BIBLIOTECA; INICIALIZANDO CONTROLES.
-- Estados GX definidos explicitamente: matriz, canal de cor, TEV e texturas.
-- Snapshot da presença dos módulos evita abrir dezenas de arquivos por segundo
-  no FAT durante a Home. Pressione Z na Home para atualizar e reindexar.
-- Evicção de capas aguarda a GPU antes de liberar buffers de textura.
-- Detecção USB HID adiada até depois dos primeiros quadros renderizados.
-- Rótulos maiores na Home; suporte básico a transliteração de acentos UTF-8.
+Emuladores externos continuam com seus próprios renderizadores e o
+carregamento DOL/IOS original foi mantido, sem alterar módulos.
 
-## Teste no Wii físico
+## Testar no Dolphin e no Wii real
+1. Faça backup do arquivo apps/maizo/boot.dol anterior.
+2. Baixe somente o artifact MAIZOWII-FRONTEND da nova execução do CI.
+3. Copie o boot.dol para apps/maizo/boot.dol no USB ou no SD.
+4. Inicie e confira as mensagens de inicialização e a Home.
+5. Navegue Home, Biblioteca, Busca e Ajustes, sem módulos instalados.
+6. Teste capas, temas, GameCube, Wii, PS1, SNES e mídias.
+7. No Wii real, teste em PAL-M com cabo composto ou componente.
+8. Se congelar depois de abrir a Home, teste com receptor USB
+   desconectado ou com um arquivo vazio em
+   sd:/maizo/disable-hid.flag ou usb:/maizo/disable-hid.flag.
 
-1. Faça backup do boot.dol atual.
-2. Substitua SOMENTE apps/maizo/boot.dol pelo novo executável.
-3. Inicie pelo Homebrew Channel e anote a última etapa de boot visível.
-4. Confirme Home, Jogos, Busca, Ajustes e diagnósticos HID.
-5. Teste no CRT PAL-M/4:3 e no Dolphin com o MESMO DOL.
-6. Teste com o receptor USB conectado e desconectado.
-7. Se travar após a Home e suspeitar de HID, crie um arquivo vazio em
-   sd:/maizo/disable-hid.flag ou usb:/maizo/disable-hid.flag e reinicie.
-   Neste modo USB HID fica desligado; Wii Remote e controle GC podem funcionar.
-8. Remova o arquivo disable-hid.flag para reativar a detecção USB HID.
+## Limitações
+A renderização por CPU pode ser mais lenta que a por GX, especialmente
+com várias capas grandes. A qualidade mantém cores e gradientes, mas
+utiliza amostragem simples (nearest neighbor) para as capas.
+O frontend não tem áudio de inicialização; silêncio não indica travamento.
+Nenhuma garantia de 99,99% é possível antes do teste no hardware real.
 
-## Leitura do diagnóstico
-
-Parou em MONTANDO SD E USB? Investigue armazenamento e IOS.
-Parou em INICIALIZANDO CONTROLES? Investigue WPAD.
-A Home aparece antes de travar? Investigue USB HID ou biblioteca.
-Faixas rosas antes da primeira mensagem? Investigue modo de vídeo,
-VI/GX, framebuffer e lançamento pelo Homebrew Channel.
-
-Testes estáticos e compilação em CI não substituem execução no Wii real.
-Este commit reduz causas possíveis e melhora o diagnóstico, mas não garante
-compatibilidade com todos os IOS, discos e controles.
+## Regressões testáveis
+Os testes do frontend verificam a presença da saída direta YUYV,
+ordem de inicialização, ausência de GX na Home, alcance dos offsets
+das capas, detecção HID tardia e código dos contratos de lançamentos.
