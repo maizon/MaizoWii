@@ -121,6 +121,28 @@ def patch_wiimc(root: Path):
             t = replace_once(t, old, new, "WiiMC swscale legacy source-const")
         return t
     patch_file(root, "source/mplayer/libmpcodecs/vf_scale.c", vf_scale_compat)
+    patch_file(root, "source/mplayer/sub/spudec.c",
+               lambda x: replace_once(
+                   replace_once(x, "sws_scale(ctx,&s1,",
+                                "sws_scale(ctx,(const uint8_t * const *)&s1,",
+                                "WiiMC subtitle swscale first call"),
+                   "sws_scale(ctx,&s2,",
+                   "sws_scale(ctx,(const uint8_t * const *)&s2,",
+                   "WiiMC subtitle swscale second call"))
+    def wiimc_callbacks(t):
+        t = replace_once(t,
+                         "static ssize_t __out_write(struct _reent *r, int fd,",
+                         "static ssize_t __out_write(struct _reent *r, void *fd,",
+                         "WiiMC newlib devoptab output callback")
+        t = replace_once(t, "static void ResetCB()",
+                         "static void ResetCB(u32 irq, void *userdata)",
+                         "WiiMC libogc reset callback signature")
+        # Original WiiMC treated the provided path as a format string.
+        t = replace_once(t, "sprintf(loadedFile, argv[1]);",
+                         'snprintf(loadedFile, MAXPATHLEN, "%s", argv[1]);',
+                         "WiiMC argv format string hardening")
+        return t
+    patch_file(root, "source/wiimc.cpp", wiimc_callbacks)
     patch_file(root, "source/musicplaylist.cpp",
                lambda x: replace_once(x, "#include <string.h>",
                                       "#include <string.h>\n#include <strings.h>\n"
