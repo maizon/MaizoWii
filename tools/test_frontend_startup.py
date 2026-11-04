@@ -47,7 +47,7 @@ class WiiFrontendBootSafety(unittest.TestCase):
         self.assertIn("GX_DrawDone();free(c->pixels)",covers)
         self.assertIn("GX_InvalidateTexAll()",covers)
         self.assertIn("GX_SetTevOrder",covers)
-        self.assertIn("c->system==(int)g->system",covers)
+        self.assertIn("cache[j].system==(int)g->system",covers)
 
 if __name__ == "__main__":
     unittest.main()
