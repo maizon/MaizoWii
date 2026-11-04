@@ -139,6 +139,25 @@ def patch_wiimc(root: Path):
                          "WiiMC libogc reset callback signature")
         return t
     patch_file(root, "source/wiimc.cpp", wiimc_callbacks)
+    def wii_subtitles_compat(t):
+        t = replace_once(t, 'c = utf8_get_char(&t);',
+                         '{ const char *cursor=(const char *)t; '
+                         'c = utf8_get_char(&cursor); '
+                         't = (unsigned char *)cursor; }',
+                         "WiiMC subtitle UTF8 input pointer")
+        return replace_once(t, '#include "sub.h"',
+                            '#include "sub.h"\n#ifdef GEKKO\n'
+                            'int mpctx_get_set_of_sub_size(void);\n#endif',
+                            "WiiMC subtitle settings prototype")
+    patch_file(root, "source/mplayer/sub/sub.c", wii_subtitles_compat)
+    def gui_image_compat(t):
+        t=replace_once(t, 'static u64 prev;',
+                       'static u64 rotate_prev;', "WiiMC GUI rotate state")
+        t=replace_once(t, 'diff_usec(prev, now)',
+                       'diff_usec(rotate_prev, now)', "WiiMC GUI rotate elapsed")
+        return replace_once(t, 'prev = now;',
+                            'rotate_prev = now;', "WiiMC GUI rotate update")
+    patch_file(root, "source/libwiigui/gui_image.cpp", gui_image_compat)
     patch_file(root, "source/musicplaylist.cpp",
                lambda x: replace_once(x, "#include <string.h>",
                                       "#include <string.h>\n#include <strings.h>\n"

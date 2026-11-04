@@ -99,3 +99,5 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
 - CI 41814935187: WiiSXRX adaptado passou na compilacao e obteve DOL; firmware HID ainda nao testado no console. WiiMC avanca mas falha em swscale de legendas, callbacks newlib/libogc e sprintf inseguro de argv; correcoes aplicadas ao upstream para tentativa seguinte.
 
 - CI 41815266286 falhou na etapa de patches WiiMC porque o mesmo sprintf inseguro havia sido corrigido duas vezes no script; removido patch duplicado, preservando correção original. Necessario reexecutar CI para verificar DOLs e ZIP final.
+
+- CI 41815423424: WiiSXRX gerou DOL adaptado. WiiMC continua fallback por tipagem UTF-8, declaracao de funcao e variavel GUI ambigua. Novos patches submetidos a validacao. Itens dependentes de Wii fisico continuam abertos.
