@@ -121,6 +121,20 @@ def patch_wiimc(root: Path):
             t = replace_once(t, old, new, "WiiMC swscale legacy source-const")
         return t
     patch_file(root, "source/mplayer/libmpcodecs/vf_scale.c", vf_scale_compat)
+    patch_file(root, "source/settings.h",
+               lambda x: replace_once(x, '#include "networkop.h"',
+                                      '#include "networkop.h"\n'
+                                      '#ifndef MAXPATHLEN\n#define MAXPATHLEN 1024\n#endif',
+                                      "WiiMC legacy MAXPATHLEN in settings"))
+    patch_file(root, "source/input.cpp",
+               lambda x: (x.replace("prev[", "rumblePrev[")
+                          if x.count("prev[") >= 4 else
+                          (_ for _ in ()).throw(ValueError("Unexpected rumble variable layout"))))
+    patch_file(root, "source/mplayer/libmpdemux/demux_film.c",
+               lambda x: replace_once(x,
+                                      "unsigned short* tmp = dp->buffer;",
+                                      "unsigned short* tmp = (unsigned short*)dp->buffer;",
+                                      "WiiMC 16-bit film audio buffer cast"))
     patch_file(root, "source/filebrowser.h",
                lambda x: replace_once(
                    x, "#include <gccore.h>",
@@ -196,11 +210,14 @@ def patch_wiisx(root: Path):
     # libogc provides static inline gettime/diff_usec in the watchdog header.
     # The old Peops FPS code only declared externs, causing linker failures.
     patch_file(root, "PeopsSoftGPU/fps.c",
-               lambda x: replace_once(x,
+               lambda x: replace_once(
+                   replace_once(x, '#include "stdafx.h"',
+                                '#include <ogc/lwp_watchdog.h>\n#include "stdafx.h"',
+                                "WiiSXRX load watchdog before legacy BOOL macro"),
                    " long long gettime(void);\n"
                    " unsigned int diff_usec(long long start,long long end);",
-                   " #include <ogc/lwp_watchdog.h>",
-                   "WiiSXRX Peops FPS libogc timebase"))
+                   " /* timers provided by libogc watchdog */",
+                   "WiiSXRX remove obsolete timer prototypes"))
     patch_file(root, "misc.h",
                lambda x: replace_once(x, "int CheckState();",
                                       "int CheckState(char *file);",
