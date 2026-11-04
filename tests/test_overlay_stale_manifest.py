@@ -37,5 +37,31 @@ class OverlayProvenanceTest(unittest.TestCase):
             self.assertEqual(set(result["fallback_modules"]), set(module.MODULES))
             self.assertIn("WiiMC", result["final_dol_sha256"])
 
+    def test_rerun_refuses_to_relabel_existing_adapted_binary(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            dist = root / "dist"
+            manifest = dist / "maizo" / "MODULE_MANIFEST.json"
+            manifest.parent.mkdir(parents=True)
+            for name in MODULES:
+                dest = dist / "apps" / name / "boot.dol"
+                dest.parent.mkdir(parents=True)
+                dest.write_bytes(b"official-" + name.encode())
+            adapted = dist / "apps" / "WiiMC" / "boot.dol"
+            adapted.write_bytes(b"previously-adapted")
+            manifest.write_text(json.dumps({"adapted_sha256": {
+                "WiiMC": hashlib.sha256(adapted.read_bytes()).hexdigest()
+            }}))
+            stub = types.ModuleType("package_all")
+            stub.valid_dol = lambda data: True
+            with patch.dict(sys.modules, {"package_all": stub}):
+                spec = importlib.util.spec_from_file_location("maizo_overlay_test", SCRIPT)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                with self.assertRaisesRegex(ValueError, "rebuild clean dist"):
+                    module.overlay(root / "no-adapters", dist)
+            self.assertEqual(adapted.read_bytes(), b"previously-adapted")
+
 if __name__ == "__main__":
     unittest.main()
