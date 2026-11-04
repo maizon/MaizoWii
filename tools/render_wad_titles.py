@@ -38,8 +38,10 @@ def render(path: Path):
         bg=Image.new("RGB",image.size,(18,26,46))
         bg.paste(image,mask=image.getchannel("A"))
         image=bg
-    elif original_mode=="RGBA":
-        pass
+    elif original_mode in ("RGBA","LA","L"):
+        # HBC uses an LA (luminance+alpha) title to keep GX IA8 compact.
+        # Keep that exact texture format, rather than replacing it with RGBA8.
+        image=image.convert(original_mode)
     else:
         raise ValueError(f"Unexpected title texture color mode {original_mode}")
     image.save(path,format="PNG")
