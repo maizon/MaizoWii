@@ -1,7 +1,16 @@
 name: MAIZO Wii - compile adapted modules
 on:
   workflow_call:
+    inputs:
+      full_rebuild:
+        type: boolean
+        default: false
   workflow_dispatch:
+    inputs:
+      full_rebuild:
+        description: Force adapter rebuilds (ignore existing caches)
+        type: boolean
+        default: false
 
 concurrency:
   group: maizo-adapted-${{ github.ref }}
@@ -45,12 +54,16 @@ jobs:
     container: ${{ matrix.container }}
     steps:
       - uses: actions/checkout@v4
-      - name: Restore compiled module
+      - name: Fingerprint ONLY this module's patch code and shared HID dependencies
+        id: signature
+        run: |
+          echo "digest=$(python3 tools/component_fingerprint.py ${{ matrix.module }})" >> "$GITHUB_OUTPUT"
+      - name: Restore module result (built DOL or recorded fallback)
         id: cached
         uses: actions/cache@v4
         with:
-          path: patched/apps/${{ matrix.module }}/boot.dol
-          key: maizo-module-v1-${{ matrix.module }}-${{ matrix.ref }}-${{ hashFiles('tools/patch_upstreams.py', 'integrations/**') }}-${{ matrix.container }}
+          path: patched/
+          key: maizo-module-v2-${{ matrix.module }}-${{ matrix.ref }}-${{ steps.signature.outputs.digest }}-${{ matrix.container }}-${{ inputs.full_rebuild && github.run_id || 'regular' }}
       - name: Fetch fixed upstream snapshot
         if: steps.cached.outputs.cache-hit != 'true'
         run: |
@@ -144,6 +157,8 @@ jobs:
           esac
       - name: Stage patched DOL
         if: steps.cached.outputs.cache-hit != 'true' && steps.compilation.outcome == 'success'
+        id: staging
+        continue-on-error: true
         run: |
           mkdir -p patched/apps/${{ matrix.module }}
           case "${{ matrix.module }}" in
@@ -161,15 +176,32 @@ jobs:
               ;;
           esac
           test -s patched/apps/${{ matrix.module }}/boot.dol
-      - name: Verify cached or freshly compiled DOL
-        if: steps.cached.outputs.cache-hit == 'true' || steps.compilation.outcome == 'success'
-        run: test -s patched/apps/${{ matrix.module }}/boot.dol
-      - name: Report fallback
-        if: steps.cached.outputs.cache-hit != 'true' && steps.compilation.outcome != 'success'
+      - name: Record adapter result (including known build failures)
+        if: steps.cached.outputs.cache-hit != 'true'
         run: |
-          echo "MODULE FALLBACK: ${{ matrix.module }} - original upstream binary will be packaged"
+          mkdir -p patched/.build-results
+          if [ "${{ steps.compilation.outcome }}" = "success" ] && [ "${{ steps.staging.outcome }}" = "success" ]; then
+            echo success > patched/.build-results/${{ matrix.module }}.txt
+          else
+            rm -f patched/apps/${{ matrix.module }}/boot.dol
+            echo fallback > patched/.build-results/${{ matrix.module }}.txt
+          fi
+      - name: Validate cached or freshly compiled result
+        id: result
+        run: |
+          STATUS=patched/.build-results/${{ matrix.module }}.txt
+          test -s "$STATUS"
+          if grep -qx success "$STATUS"; then
+            test -s patched/apps/${{ matrix.module }}/boot.dol
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "REUSED OR BUILT: ${{ matrix.module }}"
+          else
+            grep -qx fallback "$STATUS"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "CACHED FALLBACK: ${{ matrix.module }}; keep the official upstream DOL"
+          fi
       - uses: actions/upload-artifact@v4
-        if: steps.compilation.outcome == 'success'
+        if: steps.result.outputs.publish == 'true'
         with:
           name: MAIZO-ADAPTED-${{ matrix.module }}
           path: patched/

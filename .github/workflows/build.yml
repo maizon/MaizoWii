@@ -29,19 +29,26 @@ jobs:
           python3 -m unittest discover -s tools -p "test_*.py"
           python3 -m unittest discover -s tests -p "test_*.py"
           python3 -m py_compile tools/package_all.py
-      - name: Restore frontend binaries
-        id: cached
+      # Independent cache keys: changing the frontend does not compile the forwarder,
+      # and changing the forwarder does not compile the frontend.
+      - name: Restore frontend DOL (only frontend dependencies)
+        id: cached-frontend
         uses: actions/cache@v4
         with:
-          path: |
-            boot.dol
-            forwarder/boot.dol
-          key: maizo-frontend-v1-${{ hashFiles('source/**', 'include/**', 'Makefile', 'forwarder/**', 'integrations/**', 'assets/**', 'data/**') }}-devkitppc-20261102
-      - name: Compile the Wii frontend
-        if: steps.cached.outputs.cache-hit != 'true' || inputs.full_rebuild
-        run: |
-          make -j2
-          make -C forwarder -j2
+          path: boot.dol
+          key: maizo-frontend-v2-${{ hashFiles('source/**', 'include/**', 'Makefile', 'bootstub/**', 'tools/embed_bootstub.py', 'assets/**', 'data/**') }}-devkitppc-20261102-${{ inputs.full_rebuild && github.run_id || 'regular' }}
+      - name: Compile frontend on cache miss only
+        if: steps.cached-frontend.outputs.cache-hit != 'true'
+        run: make -j2
+      - name: Restore forwarder DOL (only forwarder dependencies)
+        id: cached-forwarder
+        uses: actions/cache@v4
+        with:
+          path: forwarder/boot.dol
+          key: maizo-forwarder-v2-${{ hashFiles('forwarder/main.c', 'forwarder/Makefile', 'include/**', 'bootstub/**', 'tools/embed_bootstub.py') }}-devkitppc-20261102-${{ inputs.full_rebuild && github.run_id || 'regular' }}
+      - name: Compile forwarder on cache miss only
+        if: steps.cached-forwarder.outputs.cache-hit != 'true'
+        run: make -C forwarder -j2
       - name: Stage frontend
         run: |
           test -s boot.dol
@@ -63,14 +70,16 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - name: Restore YAWM HID binary
+      - name: Restore YAWM result (success or known source-build failure)
         id: cached
         uses: actions/cache@v4
         with:
-          path: upstream-yawm/boot.dol
-          key: maizo-yawm-v1-62205f9ab507cdceae94c77197b1b459f0276d39-${{ hashFiles('tools/patch_yawm.py', 'integrations/**') }}-devkitppc-20261102
+          path: |
+            upstream-yawm/boot.dol
+            upstream-yawm/.maizo-build-result
+          key: maizo-yawm-v2-62205f9ab507cdceae94c77197b1b459f0276d39-${{ hashFiles('tools/patch_yawm.py', 'integrations/maizo_hid.inc', 'integrations/maizo_report.h', 'integrations/maizo_multi.h', 'integrations/yawm_*') }}-devkitppc-20261102-${{ inputs.full_rebuild && github.run_id || 'regular' }}
       - name: Fetch pinned YAWM ModMii Edition source
-        if: steps.cached.outputs.cache-hit != 'true' || inputs.full_rebuild
+        if: steps.cached.outputs.cache-hit != 'true'
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git clone --depth 1 https://github.com/modmii/YAWM-ModMii-Edition.git upstream-yawm
@@ -79,10 +88,10 @@ jobs:
           git checkout --detach 62205f9ab507cdceae94c77197b1b459f0276d39
           git config --global --add safe.directory "$PWD"
       - name: Apply shared HID to YAWM without bypassing NAND confirmation
-        if: steps.cached.outputs.cache-hit != 'true' || inputs.full_rebuild
+        if: steps.cached.outputs.cache-hit != 'true'
         run: python3 tools/patch_yawm.py upstream-yawm
       - name: Compile adapted YAWM DOL
-        if: steps.cached.outputs.cache-hit != 'true' || inputs.full_rebuild
+        if: steps.cached.outputs.cache-hit != 'true'
         id: compilation
         continue-on-error: true
         run: make -C upstream-yawm -j2
@@ -97,17 +106,34 @@ jobs:
           else
             echo "No linker map generated."
           fi
-      - name: Package HID-enabled YAWM only after compilation
-        if: steps.cached.outputs.cache-hit == 'true' || steps.compilation.outcome == 'success'
+      - name: Record YAWM result for unchanged source
+        if: steps.cached.outputs.cache-hit != 'true'
         run: |
-          test -s upstream-yawm/boot.dol
+          if [ "${{ steps.compilation.outcome }}" = "success" ] && test -s upstream-yawm/boot.dol; then
+            echo success > upstream-yawm/.maizo-build-result
+          else
+            rm -f upstream-yawm/boot.dol
+            echo fallback > upstream-yawm/.maizo-build-result
+          fi
+      - name: Validate cached or freshly built YAWM decision
+        id: result
+        run: |
+          test -s upstream-yawm/.maizo-build-result
+          if grep -qx success upstream-yawm/.maizo-build-result; then
+            test -s upstream-yawm/boot.dol
+            echo 'publish=true' >> "$GITHUB_OUTPUT"
+          else
+            grep -qx fallback upstream-yawm/.maizo-build-result
+            echo 'publish=false' >> "$GITHUB_OUTPUT"
+            echo 'YAWM HID was not compiled; official fallback will be used.'
+          fi
+      - name: Package HID-enabled YAWM only after compilation or verified cache hit
+        if: steps.result.outputs.publish == 'true'
+        run: |
           mkdir -p patched/apps/maizo-installer
           cp upstream-yawm/boot.dol patched/apps/maizo-installer/boot.dol
-      - name: Report safe fallback if adaptation fails
-        if: steps.compilation.outcome != 'success'
-        run: echo "YAWM HID build failed; package unmodified official YAWM without HID"
       - uses: actions/upload-artifact@v4
-        if: steps.compilation.outcome == 'success'
+        if: steps.result.outputs.publish == 'true'
         with:
           name: MAIZO-ADAPTED-installer
           path: patched/
@@ -122,6 +148,8 @@ jobs:
 
   adapted:
     uses: ./.github/workflows/build-adapted-modules.yml
+    with:
+      full_rebuild: ${{ inputs.full_rebuild || false }}
 
   all-in-one:
     runs-on: ubuntu-latest

@@ -186,3 +186,27 @@ real antes de ser anunciado como compatibilidade de hardware.
 **Diagnóstico pelo controle:** Configurações → Select abre uma tela de informações USB HID com VID/PID, origem do perfil, endpoint, quantidade de relatórios, falhas e botões/eixos de até quatro portas lógicas. Detalhes em `docs/HID_DIAGNOSTICS.md`. Suporte real aos dispositivos depende do IOS e do Wii físico.
 
 **Tema grafite (NeoStation/CRT):** o seletor global agora oferece quatro paletas, incluindo GRAFITE com cartões cinza e contraste moderado. É apenas opção visual; não altera modo de vídeo PAL-M/NTSC nem garante overscan corrigido em TV de tubo. Configurações individuais usam fallback `.bak` ao ler perfis se uma gravação FAT foi interrompida.
+
+## Compilação incremental por componente
+
+O GitHub Actions recompila **somente o componente cujo código ou dependência mudou**.
+O frontend e o forwarder usam caches DOL independentes: alterar apenas
+`source/**` não recompila o forwarder, e alterar apenas `forwarder/main.c`
+não recompila o frontend. Cada módulo adaptado possui uma assinatura própria,
+calculada de seu código de patch, dos três cabeçalhos HID compartilhados,
+da revisão fixa do upstream e da imagem da ferramenta. Assim, alterações no
+patch de WiiMC não recompilam WiiSXRX, SNES ou outros módulos.
+
+Nas execuções seguintes, **caches com build bem-sucedido publicam novamente
+os DOLs** no ZIP final (não são confundidos com versões oficiais). Falhas de
+compilação também são registradas no cache como *fallback*, impedindo que o
+mesmo módulo com código inalterado tente compilar de novo indefinidamente.
+Enquanto o patch permanecer falhando, o ZIP usa a versão oficial e deixa isso
+explícito no manifesto. O cache não substitui os arquivos do source.
+
+**Exceções importantes:** uma mudança em cabeçalhos HID comuns afeta vários
+módulos e os recompila; um cache ausente ou expirado exige nova compilação;
+`workflow_dispatch → full_rebuild: true` força a recompilação, incluindo
+adaptações com falha anteriormente armazenada. O empacotamento e testes podem
+rodar a cada commit sem recompilar módulos preservados. A cache de GitHub
+Actions não é armazenamento permanente e não garante reuso indefinido.
