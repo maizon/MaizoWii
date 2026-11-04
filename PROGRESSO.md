@@ -62,3 +62,11 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
 - Evidência de desenvolvimento local: **7 testes de unidade do construtor nativo PASS** com GCC; compilação devkitPPC, suíte ZIP completa e workflow GitHub Actions da alteração aguardam execução/resultado (não presumir verde).
 - Formalmente novos itens fechados antes do CI novo: **0**. R18 é candidato de conclusão após CI; R17 requer testar no Wii. Mantidos 4/20 concluídos e 16 pendentes até confirmação adicional.
 - Bloqueio incontornável nesta execução: não há Wii físico sob controle do agente, e os aceites R04–R13/R17/R20 exigem funcionamento real de DOL/IOS/USB, controles e vídeo. Progresso abaixo da meta de 30%; próximo passo é examinar CI deste commit e resolver eventual erro, depois coletar checklist de ensaio físico em docs/TESTES_WII.md.
+
+## Execução 2026-11-04 — integridade dos DOLs finais
+- Base da PR #1: a3e245e; R18 foi confirmado pelo job launch-contracts do workflow 41808890786, portanto 5/20 concluídos e **15 pendentes** (R04–R17 e R20).
+- Meta inicial: ceil(15 × 0,30) = **5**. Não houve conclusão de cinco itens; manter a meta aberta.
+- R16 parcial: overlay_adapted.py agora calcula SHA-256 de todos os oito DOLs **após** aplicar adaptações/fallbacks, e verify_bundle.py exige correspondência exata com manifest.
+- Três regressões sintéticas em test_final_integrity.py: fallback íntegro, corrupção de DOL e hash ausente. A CI da PR deve confirmar a execução; nenhum teste físico Wii executado.
+- Commits de implementação: 8277868, 539285f, 9c477e9, f87a6bf. R16 não é concluído: falta pacote integral reproduzível/licenciamento e teste dos módulos no console.
+- Próximo: verificar CI deste HEAD e corrigir qualquer falha; investigar os erros upstream WiiMC/WiiSXRX e testar hardware HID real.
