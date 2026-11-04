@@ -72,7 +72,7 @@ def safe_extract(source: Path, destination: Path):
                 p = PurePosixPath(member.filename.replace("\\", "/"))
                 parts = p.parts
                 if (not parts or p.is_absolute() or ".." in parts
-                        or "\\0" in member.filename
+                        or chr(0) in member.filename
                         or (len(parts[0]) >= 2 and parts[0][0].isalpha()
                             and parts[0][1] == ":")):
                     raise ValueError("unsafe ZIP member")
