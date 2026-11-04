@@ -121,12 +121,16 @@ def choose_dol(src: Path, name: str):
     candidates.sort(key=score, reverse=True)
     if not candidates:
         raise ValueError(name + ": archive has no DOL")
-    chosen = candidates[0]
-    if score(chosen)[0] < 0:
+    safe_candidates = [p for p in candidates if score(p)[0] == 0]
+    if not safe_candidates:
         raise ValueError(name + ": only forwarder/GameCube/WiiU DOL found")
-    if not valid_dol(chosen.read_bytes()):
-        raise ValueError(name + ": invalid Wii DOL " + str(chosen))
-    return chosen
+    # A release may contain an invalid preview/placeholder alongside a valid
+    # Wii executable. Validate all eligible candidates before failing.
+    for chosen in safe_candidates:
+        if valid_dol(chosen.read_bytes()):
+            return chosen
+    raise ValueError(name + ": no valid Wii DOL among " +
+                     str(len(safe_candidates)) + " candidates")
 
 def copy_module(src: Path, dst: Path, name: str):
     chosen = choose_dol(src, name)

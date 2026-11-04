@@ -29,6 +29,32 @@ class BundleTests(unittest.TestCase):
             (p / "channel-forwarder/boot.dol").write_bytes(fake_dol())
             self.assertEqual(choose_dol(p, "WiiMC").parent.name, "WiiMC")
 
+    def test_choose_skips_invalid_preferred_dol(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            (p / "apps/WiiMC").mkdir(parents=True)
+            (p / "apps/WiiMC/boot.dol").write_bytes(b"broken")
+            (p / "WiiMC").mkdir()
+            (p / "WiiMC/boot.dol").write_bytes(fake_dol())
+            self.assertEqual(choose_dol(p, "WiiMC"), p / "WiiMC/boot.dol")
+
+    def test_choose_rejects_forwarder_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            (p / "forwarder").mkdir()
+            (p / "forwarder/boot.dol").write_bytes(fake_dol())
+            with self.assertRaises(ValueError):
+                choose_dol(p, "WiiMC")
+
+    def test_zip_windows_drive_blocked(self):
+        import zipfile
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            with zipfile.ZipFile(p / "drive.zip", "w") as z:
+                z.writestr("C:/outside.dol", fake_dol())
+            with self.assertRaises(ValueError):
+                safe_extract(p / "drive.zip", p / "unpacked")
+
     def test_zip_traversal_blocked(self):
         import zipfile
         with tempfile.TemporaryDirectory() as tmp:
