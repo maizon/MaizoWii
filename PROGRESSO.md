@@ -13,3 +13,8 @@ Mudanças propostas:
 Verificações anteriores: workflows build e upstream HID na main estavam verdes (GitHub Actions runs 41757066210 e 41757066264). **Essas execuções não validam esta PR**.
 Pendências de maior risco: execução física do bootstub, compatibilidade HID em módulos e WiiMC/PS1.
 Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e testes de hardware.
+
+## Execução 2026-11-04
+- CI da PR #1 (run 41763267253) falhou: `test_zip_windows_drive_blocked` não levantou ValueError; compilação do frontend foi pulada.
+- Correção aplicada na validação de caminhos ZIP com drive Windows e regressão adicional para barras invertidas.
+- 17 pendências iniciais; meta 6. Nenhum item novo considerado concluído antes de CI verde e aceites respectivos.
