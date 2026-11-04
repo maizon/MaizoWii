@@ -44,16 +44,14 @@ def overlay(adapter_root: Path, dist: Path) -> dict[str,str]:
         (dist/"apps"/name/"boot.dol").read_bytes()).hexdigest()
         for name in all_modules}
     manifest["module_input_provenance"]=status
-    manifest_path.write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+"
-",encoding="utf-8")
-    (dist/"HID-COMPATIBILITY.txt").write_text(
-        "MAIZO: USB HID 0079:0006 and configurable profiles.
-"+
-        "
-".join(f"{k}: {v}" for k,v in status.items())+
-        "
-HID support with unsupported USB protocols (0810:0001, XInput) is NOT guaranteed.
-",
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8")
+    (dist / "HID-COMPATIBILITY.txt").write_text(
+        "MAIZO: USB HID 0079:0006 and configurable profiles.\n" +
+        "\n".join(f"{k}: {v}" for k, v in status.items()) +
+        "\nHID support with unsupported USB protocols "
+        "(0810:0001, XInput) is NOT guaranteed.\n",
         encoding="utf-8")
     return status
 
