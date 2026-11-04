@@ -1,0 +1,27 @@
+name: MAIZO Wii build
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitppc:20261102
+    steps:
+      - uses: actions/checkout@v4
+      - name: Contract tests
+        run: python3 tools/test_contract.py
+      - name: Compile Wii DOL
+        run: make -j2
+      - name: Package
+        run: |
+          test -s boot.dol
+          mkdir -p dist/apps/maizo
+          cp boot.dol apps/maizo/meta.xml dist/apps/maizo/
+          ls -lh boot.dol
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MAIZOWII-ALPHA-TEST
+          path: dist/
+          retention-days: 7

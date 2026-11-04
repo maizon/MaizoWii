@@ -1,0 +1,6 @@
+build/
+boot.dol
+boot.elf
+boot.map
+dist/
+__pycache__/
