@@ -134,3 +134,11 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
 - Teste sintático isolado do trecho corrigido com ast.parse: PASS. **A suíte integral, build devkitPPC e GitHub Actions do HEAD ainda não têm resultado confirmado nesta execução.** O teste novo não comprova comportamento no Wii.
 - Novos requisitos integralmente concluídos: **0**. Total conservador 5/22 (22,7%), 17 pendentes; meta 6 não atingida.
 - Próximo: verificar CI da PR #1, corrigir qualquer falha do overlay/testes, investigar compilação WiiMC adaptado e executar testes físicos USB HID, autoboot e vídeo.
+
+## Execução 2026-11-04 — rerun seguro do overlay
+- Estado inicial auditado na PR #1: 5/22 requisitos concluídos, 17 pendentes; meta ceil(17 × 0,30) = **6 requisitos**.
+- GitHub Actions run **41842575429 SUCCESS** para HEAD anterior 5f6a262: validou o conserto sintático do overlay e os testes existentes, mas não prova entrada HID no Wii.
+- Defeito adicional: executar overlay novamente em um dist que ainda contém um DOL adaptado, porém sem o adaptador de origem, podia rotular o binário remanescente como fallback oficial. Corrigido com falha explícita quando SHA-256 anterior coincide com o DOL existente; exige reconstruir o staging limpo.
+- Teste de regressão acrescentado para garantir rejeição sem modificar o DOL. Commits 34dac7b e 003dd6c.
+- O CI do novo HEAD precisa confirmar a regressão; nenhum teste físico realizado. **0/6 requisitos integralmente concluídos nesta execução**, total conservador 5/22 (17 pendentes).
+- Próximo: inspecionar CI, desbloquear WiiMC adaptado sem fallback, obter evidências HID no Wii para Microntek 0079:0006 e Twin 0810:0001 e validar retorno/autoboot dos módulos.
