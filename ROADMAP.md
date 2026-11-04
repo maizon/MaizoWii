@@ -29,3 +29,5 @@ Nota: R01–R03 e R19 são evidências de CI/código, não garantia de funcionam
 - [ ] R21 — Canal forwarder e instalador: fornecer WAD proprio verificavel,
       instalar via DOL com confirmacao e demonstrar funcionamento no Wii.
       O forwarder HBC e o YAWM interativo sao parciais e nao fecham R21.
+
+- [ ] R22 — Compatibilidade HID universal no instalador YAWM e nos módulos. Aceite: DOLs adaptados sem fallback, fixtures de parser e mapeamento, navegação, reconexão e testes físicos por módulo conforme docs/HID_UNIVERSAL_ACCEPTANCE.md. R11 permanece teste de um dispositivo, não objetivo principal.
