@@ -76,6 +76,11 @@ def patch_wiimc(root: Path):
           'extern int stream_error(stream_t *);', "WiiMC stream/MPlayer legacy compatibility")
         return t
     patch_file(root, "source/mplayer/mplayer.c", mplayer_patch)
+    patch_file(root, "source/filebrowser.h",
+               lambda x: replace_once(
+                   x, "#include <gccore.h>",
+                   "#include <gccore.h>\n#ifndef MAXPATHLEN\n#define MAXPATHLEN 1024\n#endif",
+                   "WiiMC legacy MAXPATHLEN definition"))
     patch_file(root, "source/mplayer/osdep/gx_supp.c",
                lambda x: replace_once(
                    replace_once(x, "extern timerFadeBlack;",
@@ -130,8 +135,12 @@ def patch_wiisx(root: Path):
     patch_file(root, "Gamecube/gc_input/controller-GC.c", change)
     # Preserve the exception-spec syntax used by this legacy WiiSXRX codebase.
     patch_file(root, "Gamecube/Makefile_Wii",
-               lambda x: replace_once(x, "CXXFLAGS\t=\t$(CFLAGS)",
-                                      "CXXFLAGS\t=\t$(CFLAGS) -std=gnu++14", "WiiSXRX C++ standard"))
+               lambda x: replace_once(
+                   replace_once(x, "CFLAGS\t= -g -flto",
+                                "CFLAGS\t= -fgnu89-inline -fcommon -g -flto",
+                                "WiiSXRX legacy GCC C inline and common symbol semantics"),
+                   "CXXFLAGS\t=\t$(CFLAGS)",
+                   "CXXFLAGS\t=\t$(CFLAGS) -std=gnu++14", "WiiSXRX C++ standard"))
 
     # Modern GCC no longer accepts implicit function prototypes and the
     # old BOOL typedef is not present in newer libogc headers.

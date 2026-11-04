@@ -83,3 +83,7 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
 - Gerenciador YAWM ModMii 1.1 incluido como instalador interativo no ZIP.
 - NAO foi criado nem validado WAD do canal. Sem acesso a Wii fisico,
   R21 permanece pendente. Nao declarar os cinco itens fechados.
+
+- Revisao CI: erro preexistente de sintaxe no tools/overlay_adapted.py corrigido em f2b845d; build do frontend, contrato argv e forwarder passaram no workflow 41813183252.
+- Logs de adapters mostraram WiiSXRX com incompatibilidade das regras de inline GCC e simbolos common; flags de compatibilidade incluidas. WiiMC tinha MAXPATHLEN ausente; header de compatibilidade corrigido.
+- Erros upstream adicionais so podem ser considerados solucionados apos novo CI; HID final e instalacao WAD requerem Wii fisico.
