@@ -38,5 +38,19 @@ class CoverTests(unittest.TestCase):
             (Path(tmp) / "bad.iso").write_bytes(b"??????")
             self.assertEqual(list(mod.images(Path(tmp), "gc")), [])
 
+    def test_libretro_game_title_and_gx_key(self):
+        self.assertEqual(mod.cover_key("Super Mario World (USA)"),
+                         "SUPER-MARIO-WORLD-USA")
+        self.assertEqual(mod.titles_for_lookup("Super_Mario_World (PT-BR)")[1],
+                         "Super Mario World")
+
+    def test_non_disc_catalog(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p=Path(tmp)/"snes9xgx/roms/Super Mario World (USA).sfc"
+            p.parent.mkdir(parents=True)
+            p.write_bytes(b"not a commercial game image")
+            games=list(mod.named_roms(Path(tmp),"snes"))
+            self.assertEqual(games,[("SUPER-MARIO-WORLD-USA","Super Mario World (USA)")])
+
 if __name__ == "__main__":
     unittest.main()

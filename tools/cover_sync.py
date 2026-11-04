@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download legally available Wii/GameCube box art using GameTDB disc IDs.
+"""Sync Wii/GameCube via GameTDB and retro-system cover art via Libretro.
 
 Run on a PC or rooted Android with an attached FAT32 storage volume:
 python3 tools/cover_sync.py /media/WII --region US
@@ -11,6 +11,7 @@ import pathlib
 import re
 import time
 import urllib.request
+import urllib.parse
 
 PNG = b"\x89PNG\r\n\x1a\n"
 ID = re.compile(rb"[A-Za-z0-9]{6}")
@@ -62,12 +63,83 @@ def download(url, dest):
     tmp.replace(dest)
     return True
 
+# Public Libretro thumbnail library repo names (verified, master / Named_Boxarts).
+LIBRETRO = {
+    "ps1": ("Sony_-_PlayStation", ("ps1", "wiisxrx/isos", "roms/ps1"),
+            (".cue", ".iso", ".img", ".bin", ".pbp")),
+    "snes": ("Nintendo_-_Super_Nintendo_Entertainment_System",
+             ("snes9xgx/roms", "roms/snes"), (".sfc", ".smc", ".fig", ".zip")),
+    "nes": ("Nintendo_-_Nintendo_Entertainment_System",
+            ("fceugx/roms", "roms/nes"), (".nes", ".fds", ".unf", ".zip")),
+    "gba": ("Nintendo_-_Game_Boy_Advance",
+            ("vbagx/roms", "roms/gba"), (".gba",)),
+    "gb": ("Nintendo_-_Game_Boy",
+           ("vbagx/roms", "roms/gb"), (".gb",)),
+    "gbc": ("Nintendo_-_Game_Boy_Color",
+            ("vbagx/roms", "roms/gb"), (".gbc",)),
+}
+
+def cover_key(name):
+    """Match the firmware's cover key canonicalizer for games without disc IDs."""
+    buf = []
+    for ch in name.upper().replace("_", " "):
+        if ("A" <= ch <= "Z") or ("0" <= ch <= "9"):
+            buf.append(ch)
+        elif ch == " " and buf and buf[-1] != "-":
+            buf.append("-")
+    return "".join(buf).rstrip("-")[:119]
+
+def titles_for_lookup(name):
+    """Try an exact Libretro title then normalized fallback variants."""
+    name = name.replace("_", " ").strip()
+    name = re.sub(r"\s+", " ", name)
+    versions = [name]
+    simplified = re.sub(r"\s*\[[^\]]*\]", "", name).strip()
+    simplified = re.sub(r"\s*\((?:PT-?BR|BR|DUB|LEG|HACK|BETA)\)", "", simplified,
+                        flags=re.I).strip()
+    versions.append(simplified)
+    plain = re.sub(r"\s*\((?:USA|U|EUR|EUROPE|E|JAPAN|J|WORLD)\)", "",
+                   simplified, flags=re.I).strip()
+    versions.extend([plain + " (USA)", plain + " (Europe)", plain])
+    return list(dict.fromkeys(t for t in versions if t))[:5]
+
+def named_roms(device, system):
+    """Yield (cover_key, source title) for supported formats, unique by key."""
+    _, paths, extensions = LIBRETRO[system]
+    seen = set()
+    for folder in paths:
+        root = device / folder
+        if not root.is_dir():
+            continue
+        for p in root.rglob("*"):
+            if not p.is_file() or p.suffix.lower() not in extensions:
+                continue
+            if system == "ps1" and p.suffix.lower() == ".bin" and p.with_suffix(".cue").is_file():
+                continue
+            title = p.stem
+            key = cover_key(title)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            yield key, title
+
+def fetch_libretro(repo, title, dest):
+    for candidate in titles_for_lookup(title):
+        encoded = urllib.parse.quote(candidate + ".png", safe="")
+        url = f"https://raw.githubusercontent.com/libretro-thumbnails/{repo}/master/Named_Boxarts/{encoded}"
+        try:
+            if download(url, dest):
+                return True
+        except (OSError, ValueError):
+            pass
+    return False
+
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("device", type=pathlib.Path, help="USB or SD root")
+    p.add_argument("device", type=pathlib.Path, help="USB or SD FAT32 root")
     p.add_argument("--region", default="US", choices=["US","EN","FR","DE","ES","IT","JP","BR"])
     p.add_argument("--limit", type=int, default=150)
-    p.add_argument("--systems", choices=["all", "gc", "wii"], default="all")
+    p.add_argument("--systems", choices=["all", "gc", "wii", *LIBRETRO], default="all")
     a = p.parse_args()
     out = a.device / "maizo" / "covers"
     out.mkdir(parents=True, exist_ok=True)
@@ -95,7 +167,21 @@ def main():
             stats["downloaded" if success else "missing"] += 1
             print(f"{kind.upper()} {key}: {'OK' if success else 'not found'}")
             time.sleep(0.15)
-    print(json.dumps(stats, indent=2))
+    for system, (repo, _, _) in LIBRETRO.items():
+        if a.systems not in ("all", system):
+            continue
+        for key, title in named_roms(a.device, system):
+            if sum(stats.values()) >= a.limit:
+                break
+            target = out / (key + ".png")
+            if target.exists():
+                stats["existing"] += 1
+                continue
+            success = fetch_libretro(repo, title, target)
+            stats["downloaded" if success else "missing"] += 1
+            print(f"{system.upper()} {title}: {'OK' if success else 'not found'}")
+            time.sleep(0.1)
+    print(json.dumps(stats,indent=2))
 
 if __name__ == "__main__":
     main()

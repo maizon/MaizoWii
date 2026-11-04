@@ -5,10 +5,10 @@
 | Wii | `wbfs`, `roms/wii` | `apps/usbloader_gx/boot.dol` | ID6 (se detectado), `-bootios`, `-usbport` no USB Loader GX Enhanced |
 | GameCube | `games`, `roms/gamecube` | `apps/Nintendont/boot.dol` | `nincfg.bin` e AUTO_BOOT, GC Video |
 | PS1 | `ps1`, `wiisxrx/isos` | `apps/WiiSXRX/boot.dol` | `argv[1]` diretório, `argv[2]` arquivo; Core, Audio, SkipFrames |
-| SNES | `snes9xgx/roms`, `roms/snes` | `apps/snes9xgx/boot.dol` | abre menu original; sem autoboot direto confirmado |
-| NES | `fceugx/roms`, `roms/nes` | `apps/fceugx/boot.dol` | abre menu original |
-| GBA | `vbagx/roms`, `roms/gba` | `apps/vbagx/boot.dol` | abre menu original |
-| GB/GBC | `vbagx/roms`, `roms/gb` | `apps/vbagx/boot.dol` | abre menu original |
+| SNES | `snes9xgx/roms`, `roms/snes` | `apps/snes9xgx/boot.dol` | autoboot por argv[1] (pasta), argv[2] (arquivo) |
+| NES | `fceugx/roms`, `roms/nes` | `apps/fceugx/boot.dol` | autoboot por argv[1] (pasta), argv[2] (arquivo) |
+| GBA | `vbagx/roms`, `roms/gba` | `apps/vbagx/boot.dol` | autoboot por argv[1] (pasta), argv[2] (arquivo) |
+| GB/GBC | `vbagx/roms`, `roms/gb` | `apps/vbagx/boot.dol` | autoboot por argv[1] (pasta), argv[2] (arquivo) |
 | Vídeos e músicas | `videos`, `movies`, `music` | `apps/WiiMC/boot.dol` | reprodução direta por `argv[1]` convertido em `usb1:/`/`sd1:/` (partição 1 presumida) |
 
 Todos os caminhos dos DOLs também podem ser `sd:/apps/...` e
@@ -26,7 +26,7 @@ As linhas Wii e GC dependem de dispositivos/IOS preparados corretamente.
 - Snes9x GX, FCE Ultra GX, VBA GX: menus originais; integração avançada
   ainda requer verificar e eventualmente modificar seus pontos de entrada.
 
-**HID**: o frontend não transfere seu driver a outro DOL. Nintendont tem
+**HID**: o frontend não transfere seu driver a outro DOL. O ZIP ALL-IN-ONE inclui binários oficiais, enquanto patches HID para cada código-fonte são entregues separadamente e não significam compatibilidade comprovada no Wii. Nintendont tem
 `controller.ini` específico; os outros motores não herdam esse suporte.
 O `maizo-launch.txt` é apenas registro para possíveis patches. Não
 afirmar suporte a HID 0810:0001 ou a XInput sem teste físico.

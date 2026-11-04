@@ -10,8 +10,16 @@ static int total(void){return library_total(&library_state,state.system,state.se
 static void clamp_selection(void){
  int count=total();if(state.selected>=count)state.selected=count?count-1:0;
  if(state.selected<0)state.selected=0;
- if(state.scroll>state.selected)state.scroll=state.selected;
- if(state.selected>=state.scroll+8)state.scroll=state.selected-7;
+ if(!config.layout){
+  if(state.selected<state.scroll)state.scroll=(state.selected/4)*4;
+  if(state.selected>=state.scroll+8){
+   int row=state.selected/4;
+   state.scroll=(row>0?row-1:0)*4;
+  }
+ }else{
+  if(state.scroll>state.selected)state.scroll=state.selected;
+  if(state.selected>=state.scroll+8)state.scroll=state.selected-7;
+ }
 }
 static void change_system(int diff){state.system=(System)((state.system+SYSTEM_COUNT+diff)%SYSTEM_COUNT);
  state.selected=0;state.scroll=0;state.favorites=0;state.search[0]=0;

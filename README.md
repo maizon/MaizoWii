@@ -25,7 +25,7 @@ pesquisa em títulos e capas GX (cache LRU).
 **Importante:** o MAIZO só executa diretamente **jogo** nas integrações
 que possuem contrato de autoboot conhecido: Wii (ID6 no USB Loader GX
 Enhanced), GameCube (config Nintendont) e PS1 (argv do WiiSXRX, formatos
-aceitos). SNES/NES/GB/GBA abrem seus emuladores com o menu original;
+aceitos). SNES/NES/GB/GBA usam autoboot já suportado nos emuladores GX via argv[1] (pasta) e argv[2] (arquivo);
 WiiMC-SSLC recebe caminho em argv[1] e tenta reproduzir diretamente; o arquivo `maizo-launch.txt` é uma proposta de
 contrato para versões adaptadas, **não é consumido** por binários originais. O WiiMC usa `usb1:/`/`sd1:/` e rejeitamos nomes com `%` por segurança na versão original.
 Não há compatibilidade HID universal entre os módulos.
@@ -72,21 +72,23 @@ Configuração em `maizo/settings.ini`, favoritos em
 `maizo/favorites.txt`, perfis em `maizo/controllers/VID_PID.ini`.
 A gravação da seleção de GC produz `nincfg.bin` na unidade do jogo.
 
-## Capas
+## Capas de todos os videogames
 
-`tools/cover_sync.py` baixa **somente arte** de jogos Wii e GameCube
-identificados por ID6 via GameTDB **em PC/Android com Internet**; não
-baixa ROMs. `tools/build_cover_cache.py` transforma PNG em texturas
-GX_RGBA8 `.gxt` no USB/SD. Para capas de outros sistemas, coloque
-`maizo/covers/NOME-NORMALIZADO.png` e rode o conversor.
+`tools/cover_sync.py` baixa imagens oficiais ou preservadas pela comunidade:
+GameCube e Wii por ID6/GameTDB; PS1, SNES, NES, GBA, Game Boy e
+Game Boy Color por nome/Libretro Thumbnails (quando houver correspondência).
+São baixadas **capas, não jogos**, em PC/Android com Internet.
+`tools/build_cover_cache.py` converte as imagens PNG para texturas GX_RGBA8.
 
 ```sh
-python3 tools/cover_sync.py /CAMINHO/USB --region US
-python3 tools/build_cover_cache.py /CAMINHO/USB/maizo/covers
+python3 tools/cover_sync.py /CAMINHO/DO/USB --systems all --limit 150
+python3 tools/build_cover_cache.py /CAMINHO/DO/USB/maizo/covers
 ```
 
-O Wii **ainda não baixa capas da Internet**; imagens podem ser carregadas
-de armazenamento. See: `docs/ARCHITECTURE.md`.
+`--systems` aceita all, wii, gc, ps1, snes, nes, gba, gb, gbc.
+Os scripts estarão disponíveis no ZIP em `maizo/tools/`.
+O Wii **ainda não baixa capas diretamente da Internet**; o cache
+é carregado localmente. Alguns jogos podem não ter arte correspondente.
 
 ## Compilar e validar
 
@@ -100,6 +102,32 @@ Pipeline CI: `.github/workflows/build.yml`. É indispensável testar
 DOL/IOS/USB em **hardware Wii real** antes de anunciar estabilidade.
 A troca de executáveis é **experimental** e não há retorno automático
 garantido ao MAIZO após sair dos módulos.
+
+## Pacote ALL-IN-ONE
+
+O workflow `.github/workflows/build.yml` monta um ZIP com os oito programas:
+frontend MAIZO, Nintendont, USB Loader GX Enhanced, WiiSXRX, Snes9x GX,
+FCE Ultra GX, VBA GX e WiiMC-SSLC. Para instalar basta extrair o artefato
+`MAIZOWII-ALL-IN-ONE-USB-SD` na raiz USB/SD FAT32 e adicionar seus próprios jogos.
+
+**Qual binário vai para o ZIP:** o pipeline compila o source dos seis
+módulos com a adaptação HID (`integrations/maizo_hid.inc` +
+`tools/patch_upstreams.py`). Se determinado módulo compilar e seu DOL passar
+pela validação, ele substitui a versão original **somente daquele módulo**.
+Se a compilação falhar, o empacotador conserva a versão oficial sem a adaptação
+HID. Consulte `maizo/MODULE_MANIFEST.json` e `HID-COMPATIBILITY.txt` dentro
+do ZIP para verificar o resultado módulo por módulo. Nintendont usa seu próprio
+driver HID e inclui a base de perfis `controllers/*.ini`.
+
+**Compatibilidade:** ter o mesmo controle HID no MAIZO, Nintendont e na
+interface do USB Loader GX **não garante controle no jogo Wii**: jogos Wii
+possuem seu próprio sistema de entradas, geralmente esperando Wii Remote/
+Classic. Para converter USB HID em controle de jogos Wii é necessário
+suporte persistente via IOS/cIOS ou adaptação dos jogos; este projeto não o
+implementa. Receptores 0810:0001 e XInput não devem ser declarados
+compatíveis até serem testados com o relatório de dispositivo real.
+Toda mudança de DOL e IOS necessita de testes físicos de estabilidade.
+O jogo só abre se o formato, o armazenamento e o módulo forem compatíveis.
 
 ## Direitos e referências
 

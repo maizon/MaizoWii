@@ -1,0 +1,146 @@
+name: MAIZO Wii - compile adapted modules
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-adapters:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - module: snes9xgx
+            repo: dborth/snes9xgx
+            ref: b90c17a7e791002d2a191a05f7b830476cbb8734
+            container: ghcr.io/extremscorner/libogc2:latest
+          - module: fceugx
+            repo: dborth/fceugx
+            ref: 6d8d49dacf5a64877ad61fb742dbb0cff8026fdf
+            container: ghcr.io/extremscorner/libogc2:latest
+          - module: vbagx
+            repo: dborth/vbagx
+            ref: d162dc62a53279776bda80c66bf18cb93f92b3b2
+            container: ghcr.io/extremscorner/libogc2:latest
+          - module: usbloader_gx
+            repo: wiidev/usbloadergx
+            ref: e25c4f3501ed957b7db73f79c51fdf00715ab2e2
+            container: devkitpro/devkitppc:20250527
+          - module: WiiSXRX
+            repo: niuus/WiiSXRX
+            ref: 2244789a65fec2d2bf3e75bd2526e50dc6ee9845
+            container: devkitpro/devkitppc:20261102
+          - module: WiiMC
+            repo: SuperrSonic/WiiMC-SSLC
+            ref: b1f212aeaa0638d654f949b9dc66d89df6d0be31
+            container: devkitpro/devkitppc:20261102
+    container: ${{ matrix.container }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch fixed upstream snapshot
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git clone --depth 1 https://github.com/${{ matrix.repo }}.git upstream
+          cd upstream
+          git fetch --depth 1 origin ${{ matrix.ref }}
+          git checkout --detach ${{ matrix.ref }}
+          git config --global --add safe.directory "$PWD"
+      - name: Apply HID source adapter
+        run: python3 tools/patch_upstreams.py ${{ matrix.module }} upstream
+      - name: Install matching upstream dependencies
+        if: contains(fromJSON('["snes9xgx","fceugx","vbagx"]'), matrix.module)
+        run: |
+          git clone --depth 1 https://github.com/dborth/libsmb2.git /tmp/libsmb2
+          cd /tmp/libsmb2
+          make -f Makefile.platform wii_install
+      - name: Install WiiSXRX legacy USB controller libraries
+        if: matrix.module == 'WiiSXRX'
+        continue-on-error: true
+        run: |
+          for module in libwupc libwiidrc; do
+            git clone --depth 1 "https://github.com/FIX94/$module.git" "/tmp/$module"
+            mkdir -p "/tmp/$module/lib"
+            if [ "$module" != "libwupc" ]; then make -C "/tmp/$module" -j2; fi
+            for root in /opt/devkitpro/portlibs/wii /opt/devkitpro/portlibs/ppc; do
+              mkdir -p "$root/include" "$root/lib"
+              cp -R "/tmp/$module/include/." "$root/include/"
+              cp "/tmp/$module/lib/"*.a "$root/lib/"
+            done
+          done
+      - name: Install FreeType Wii headers for legacy WiiMC
+        if: matrix.module == 'WiiMC'
+        continue-on-error: true
+        run: |
+          if command -v dkp-pacman >/dev/null 2>&1; then
+            dkp-pacman -Sy --noconfirm ppc-freetype || true
+          fi
+      - name: Diagnose WiiMC legacy dependencies
+        if: matrix.module == 'WiiMC'
+        run: |
+          python3 -c "import zipfile,io; p='upstream/other/WiiMC_portlibs_libogc.zip'; z=zipfile.ZipFile(p); print('WIIMC_ARCHIVE_HEAD',z.namelist()[:48]); [(lambda f: print('INNER_ZIP',f,zipfile.ZipFile(io.BytesIO(z.read(f))).namelist()[:24]))(f) for f in z.namelist() if f.endswith('.zip')];"
+          python3 - <<'PY'
+          import io,zipfile
+          from pathlib import Path
+          outer=zipfile.ZipFile('upstream/other/WiiMC_portlibs_libogc.zip')
+          for name in ('portlibs.zip',):
+              with zipfile.ZipFile(io.BytesIO(outer.read(name))) as nested:
+                  nested.extractall('/opt/devkitpro')
+          for path in (Path('upstream/source/mplayer/config.mak'),
+                       Path('upstream/source/mplayer/Makefile')):
+              if path.is_file():
+                  raw=path.read_bytes()
+                  path.write_bytes(raw.replace(b'-mpaired',b''))
+          PY
+          find upstream/source/mplayer -name '*.d' -delete
+      - name: Compile Wii DOL
+        id: compilation
+        continue-on-error: true
+        working-directory: upstream
+        run: |
+          case "${{ matrix.module }}" in
+            snes9xgx|fceugx|vbagx)
+              make -f Makefile.wii -j2
+              ;;
+            usbloader_gx)
+              make release -j2
+              ;;
+            WiiSXRX)
+              make -C Gamecube -f Makefile_Wii -j2
+              ;;
+            WiiMC)
+              make -j2
+              ;;
+          esac
+      - name: Stage patched DOL
+        if: steps.compilation.outcome == 'success'
+        run: |
+          mkdir -p patched/apps/${{ matrix.module }}
+          case "${{ matrix.module }}" in
+            snes9xgx|fceugx|vbagx)
+              cp upstream/executables/${{ matrix.module }}-wii.dol patched/apps/${{ matrix.module }}/boot.dol
+              ;;
+            usbloader_gx)
+              cp upstream/boot.dol patched/apps/${{ matrix.module }}/boot.dol
+              ;;
+            WiiSXRX)
+              cp upstream/Gamecube/WiiSXRX.dol patched/apps/${{ matrix.module }}/boot.dol
+              ;;
+            WiiMC)
+              cp upstream/wiimc.dol patched/apps/${{ matrix.module }}/boot.dol
+              ;;
+          esac
+          test -s patched/apps/${{ matrix.module }}/boot.dol
+      - name: Report fallback
+        if: steps.compilation.outcome != 'success'
+        run: |
+          echo "MODULE FALLBACK: ${{ matrix.module }} - original upstream binary will be packaged"
+      - uses: actions/upload-artifact@v4
+        if: steps.compilation.outcome == 'success'
+        with:
+          name: MAIZO-ADAPTED-${{ matrix.module }}
+          path: patched/
+          retention-days: 14

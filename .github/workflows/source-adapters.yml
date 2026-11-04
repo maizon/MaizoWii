@@ -1,0 +1,61 @@
+name: MAIZO Wii - upstream HID source patches
+on:
+  push:
+    paths:
+      - 'integrations/**'
+      - 'tools/patch_upstreams.py'
+      - '.github/workflows/source-adapters.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-patches:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - module: WiiMC
+            repo: SuperrSonic/WiiMC-SSLC
+            ref: b1f212aeaa0638d654f949b9dc66d89df6d0be31
+          - module: WiiSXRX
+            repo: niuus/WiiSXRX
+            ref: 2244789a65fec2d2bf3e75bd2526e50dc6ee9845
+          - module: usbloader_gx
+            repo: wiidev/usbloadergx
+            ref: e25c4f3501ed957b7db73f79c51fdf00715ab2e2
+          - module: snes9xgx
+            repo: dborth/snes9xgx
+            ref: b90c17a7e791002d2a191a05f7b830476cbb8734
+          - module: fceugx
+            repo: dborth/fceugx
+            ref: 6d8d49dacf5a64877ad61fb742dbb0cff8026fdf
+          - module: vbagx
+            repo: dborth/vbagx
+            ref: d162dc62a53279776bda80c66bf18cb93f92b3b2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned upstream source
+        run: |
+          git clone --depth 1 https://github.com/${{ matrix.repo }}.git upstream
+          cd upstream
+          git fetch --depth 1 origin ${{ matrix.ref }}
+          git checkout --detach ${{ matrix.ref }}
+      - name: Adapt upstream input for shared HID profiles
+        run: python3 tools/patch_upstreams.py ${{ matrix.module }} upstream
+      - name: Verify source diff and produce portable patch
+        run: |
+          git -C upstream add -N .
+          git -C upstream -c core.whitespace=cr-at-eol diff --check
+          git -C upstream diff --binary > MAIZO-${{ matrix.module }}.patch
+          test -s MAIZO-${{ matrix.module }}.patch
+          cp integrations/maizo_hid.inc MAIZO-hid-runtime.inc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MAIZO-PATCHED-SOURCE-${{ matrix.module }}
+          path: |
+            MAIZO-${{ matrix.module }}.patch
+            MAIZO-hid-runtime.inc
+          retention-days: 14

@@ -32,7 +32,12 @@ for k in ("nincfg.bin", "NIN_CFG_AUTO_BOOT", "NIN_CFG_MC_MULTI",
           "NIN_CFG_NATIVE_SI", "-bootios=%u", "-usbport=%u",
           "Core=%u", "Audio=%u", "SkipFrames=%u", "APPEND_TEXT(media_path)"):
     assert k in launch, k
-assert "SYS_ResetSystem(SYS_SHUTDOWN" not in launch
+assert "MAIZO_BOOT_ADDR" in launch and "maizo_bootstub" in launch
+assert "static u32 install_dol" not in launch
+assert "SYS_ResetSystem(SYS_SHUTDOWN" in launch
+assert "bootstub_bytes.o" in read("Makefile")
+assert "copy_bytes" in read("bootstub/stub.c")
+assert "0x93000000" in read("bootstub/link.ld")
 for k in ("USB_ReadIntrMsgAsync", "profile_read", "decode_profile",
           "USB_GetDeviceList", "PAD_StickX", "broken"):
     assert k in input_src, k

@@ -1,31 +1,72 @@
-name: MAIZO Wii build
+name: MAIZO Wii - build and bundle
 on:
   push:
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
-  build:
+  frontend:
     runs-on: ubuntu-latest
     container:
       image: devkitpro/devkitppc:20261102
     steps:
       - uses: actions/checkout@v4
-      - name: Contract tests
+      - name: Validate frontend contracts and packaging logic
         run: |
           python3 tools/test_contract.py
-          python3 -m unittest discover -s tools -p "test_cover_sync.py"
-      - name: Compile Wii DOL
+          python3 -m unittest discover -s tools -p "test_*.py"
+          python3 -m py_compile tools/package_all.py
+      - name: Compile the Wii frontend
         run: make -j2
-      - name: Package
+      - name: Stage frontend
         run: |
           test -s boot.dol
-          mkdir -p dist/apps/maizo
-          cp boot.dol apps/maizo/meta.xml dist/apps/maizo/
-          mkdir -p dist/maizo/controllers
-          cp profiles/0079_0006.ini dist/maizo/controllers/
-          ls -lh boot.dol
+          mkdir -p stage/apps/maizo
+          cp boot.dol apps/maizo/meta.xml stage/apps/maizo/
       - uses: actions/upload-artifact@v4
         with:
-          name: MAIZOWII-MULTISYSTEM-ALPHA
-          path: dist/
-          retention-days: 7
+          name: MAIZOWII-FRONTEND
+          path: stage/
+          retention-days: 14
+
+  adapted:
+    uses: ./.github/workflows/build-adapted-modules.yml
+
+  all-in-one:
+    runs-on: ubuntu-latest
+    needs: [frontend, adapted]
+    if: always() && needs.frontend.result == 'success'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: MAIZOWII-FRONTEND
+          path: stage/
+      - name: Download successfully compiled HID modules
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: MAIZO-ADAPTED-*
+          merge-multiple: true
+          path: patched
+      - name: Install archive extractor
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full
+      - name: Collect pinned official homebrew modules
+        run: python3 tools/package_all.py --frontend stage/apps/maizo/boot.dol --out dist
+      - name: Overlay HID builds with fail-safe official fallback
+        run: python3 tools/overlay_adapted.py patched dist
+      - name: Verify every executable and zip the storage root
+        run: |
+          python3 tools/verify_bundle.py dist
+          cd dist
+          zip -q -r ../MAIZOWII-ALL-IN-ONE.zip .
+          cd ..
+          unzip -l MAIZOWII-ALL-IN-ONE.zip | tail -12
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MAIZOWII-ALL-IN-ONE-USB-SD
+          path: MAIZOWII-ALL-IN-ONE.zip
+          retention-days: 14

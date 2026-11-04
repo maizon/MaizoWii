@@ -93,8 +93,18 @@ static void save_launch_record(const Game*g,const Config*c) {
  g->system,g->path,module_name(g->system),c->media_volume,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio);
  fclose(f);
 }
-/* Classical in-memory Wii DOL forwarder. DOL code and system cleanup are not
- * identical for all IOS setups. Requires validation on a physical console. */
+/* MEM2 bootstrap: do not copy target DOL sections over the running frontend.
+ * Physical Wii testing and correct IOS selection remain necessary. */
+extern const unsigned char maizo_bootstub[];
+extern const unsigned maizo_bootstub_len;
+#define MAIZO_DOL_IMAGE 0x92000000u
+#define MAIZO_BOOT_ADDR 0x93000000u
+#define MAIZO_ARG_ADDR 0x93200000u
+static int overlap(u32 a,u32 n,u32 b,u32 len){
+ if(!n||!len)return 0;
+ return (uint64_t)a<(uint64_t)b+len && (uint64_t)b<(uint64_t)a+n;
+}
+
 static int valid_dol(const unsigned char*image,size_t len){
  if(len<sizeof(DolHeader))return 0;const DolHeader*h=(const DolHeader*)image;
  if(h->entry_point<0x80004000u||h->entry_point>=0x94000000u)return 0;
@@ -104,20 +114,11 @@ static int valid_dol(const unsigned char*image,size_t len){
   u32 addr=i<7?h->text_start[i]:h->data_start[i-7];
   if(!sz)continue;
   if(off>=len||sz>len-off||addr<0x80004000u||addr>=0x94000000u||sz>0x94000000u-addr)return 0;
+  if(overlap(addr,sz,MAIZO_DOL_IMAGE,12*1024*1024u)||
+     overlap(addr,sz,MAIZO_BOOT_ADDR,0x20000u)||
+     overlap(addr,sz,MAIZO_ARG_ADDR,0x10000u))return 0;
  }
  return 1;
-}
-static u32 install_dol(const unsigned char*image){
- const DolHeader*h=(const DolHeader*)image;
- for(int i=0;i<7;i++)if(h->text_size[i]){
-  void*dest=(void*)(uintptr_t)h->text_start[i];
-  memmove(dest,image+h->text_pos[i],h->text_size[i]);DCFlushRange(dest,h->text_size[i]);ICInvalidateRange(dest,h->text_size[i]);
- }
- for(int i=0;i<11;i++)if(h->data_size[i]){
-  void*dest=(void*)(uintptr_t)h->data_start[i];
-  memmove(dest,image+h->data_pos[i],h->data_size[i]);DCFlushRange(dest,h->data_size[i]);
- }
- return h->entry_point;
 }
 int module_launch(const Game*g,const Config*c,char*error,size_t cap){
  const char*exe=resolve(g->system);if(!exe){snprintf(error,cap,"DOL do %s nao encontrado",module_name(g->system));return 0;}
@@ -148,6 +149,16 @@ int module_launch(const Game*g,const Config*c,char*error,size_t cap){
   char option[64];snprintf(option,sizeof(option),"Core=%u",c->ps1_interpreter);APPEND_TEXT(option);
   snprintf(option,sizeof(option),"Audio=%u",c->ps1_audio);APPEND_TEXT(option);
   snprintf(option,sizeof(option),"SkipFrames=%u",c->ps1_frameskip);APPEND_TEXT(option);
+ } else if(g->system==SYSTEM_SNES||g->system==SYSTEM_NES||
+           g->system==SYSTEM_GBA||g->system==SYSTEM_GB){
+  /* GX autoboot: these upstream mains already call AutoloadGame(argv[1],argv[2]).
+   * Passing only argv[0] would silently open their menus. */
+  char dir[MAIZO_PATH],name[MAIZO_PATH];
+  snprintf(dir,sizeof(dir),"%s",g->path);
+  char*slash=strrchr(dir,'/');
+  if(!slash||!slash[1]){snprintf(error,cap,"Caminho do jogo invalido");return 0;}
+  snprintf(name,sizeof(name),"%s",slash+1);slash[1]=0;
+  APPEND_TEXT(dir);APPEND_TEXT(name);
  } else if(g->system==SYSTEM_MEDIA) {
   /* Upstream WiiMC-SSLC uses argv[1] as an unsafe printf format string. */
   if(strchr(g->path,'%')){snprintf(error,cap,"Nome com %% inseguro no WiiMC original");return 0;}
@@ -169,23 +180,36 @@ int module_launch(const Game*g,const Config*c,char*error,size_t cap){
  unsigned char*image=(unsigned char*)0x92000000;
  if(fread(image,1,(size_t)size,f)!=(size_t)size){fclose(f);snprintf(error,cap,"Falha ao ler DOL");return 0;}fclose(f);
  if(!valid_dol(image,(size_t)size)){snprintf(error,cap,"DOL invalido: cabecalho/secoes");return 0;}
- /* Forward argv block after the DOL is loaded. */
- struct __argv *args=(struct __argv*)memalign(32,sizeof(struct __argv));
- char*line=(char*)memalign(32,used+32);
- if(!args||!line){free(args);free(line);snprintf(error,cap,"Sem RAM para parametros");return 0;}
- memset(args,0,sizeof(*args));memcpy(line,command,used);args->argvMagic=ARGV_MAGIC;
- args->commandLine=line;args->length=used;args->argc=g->system==SYSTEM_PS1?6:(g->system==SYSTEM_WII?(strlen(g->id)==6?4:3):(g->system==SYSTEM_MEDIA?2:1));
- args->argv=&args->commandLine;args->endARGV=args->argv+1;
- u32 entry=0;
- /* Close libfat/IOS peripherals before new executable takes over. */
- input_shutdown();fatUnmount("sd");fatUnmount("usb");
- entry=install_dol(image);
- if(entry){
-  void*dest=(void*)(uintptr_t)(entry+8);memcpy(dest,args,sizeof(*args));DCFlushRange(dest,sizeof(*args));
-  VIDEO_WaitVSync();/* Avoid SYS_SHUTDOWN (powers down services needed by the child). */
-  u32 level;_CPU_ISR_Disable(level);
-  ((void(*)(void))(uintptr_t)entry)();_CPU_ISR_Restore(level);
+ /* The stand-alone bootstub executes from MEM2 so its memory copy cannot
+  * overwrite the frontend while the child DOL is being installed. */
+ if(maizo_bootstub_len==0||maizo_bootstub_len>65536u){
+  snprintf(error,cap,"Bootstub ausente/invalido");return 0;
  }
- snprintf(error,cap,"Falha ao iniciar motor");
- return 0;
+ struct __argv *args=(struct __argv*)(uintptr_t)MAIZO_ARG_ADDR;
+ const u32 argv_base=(MAIZO_ARG_ADDR+sizeof(struct __argv)+31u)&~31u;
+ char*line=(char*)(uintptr_t)argv_base;
+ if(used>0x10000u-(argv_base-MAIZO_ARG_ADDR)){
+  snprintf(error,cap,"Argumentos excedem regiao reservada");return 0;
+ }
+ memset(args,0,sizeof(*args));memcpy(line,command,used);
+ args->argvMagic=ARGV_MAGIC;
+ args->commandLine=line;args->length=used;
+ args->argc=g->system==SYSTEM_PS1?6:(g->system==SYSTEM_WII?(strlen(g->id)==6?4:3):
+ (g->system==SYSTEM_MEDIA?2:(g->system==SYSTEM_GC?1:3)));
+ args->argv=&args->commandLine;args->endARGV=args->argv+1;
+ DCFlushRange(args,(u32)(argv_base-MAIZO_ARG_ADDR+used+31u)&~31u);
+ memcpy((void*)(uintptr_t)MAIZO_BOOT_ADDR,maizo_bootstub,maizo_bootstub_len);
+ DCFlushRange((void*)(uintptr_t)MAIZO_BOOT_ADDR,(maizo_bootstub_len+31u)&~31u);
+ ICInvalidateRange((void*)(uintptr_t)MAIZO_BOOT_ADDR,(maizo_bootstub_len+31u)&~31u);
+ DCFlushRange(image,(u32)((size+31L)&~31L));
+ /* Preserve the IOS/HBC privileges as far as the standard libogc handoff
+  * allows. USB and FAT must be shut down before the child reinitializes. */
+ VIDEO_WaitVSync();
+ input_shutdown();
+ fatUnmount("sd");fatUnmount("usb");
+ SYS_ResetSystem(SYS_SHUTDOWN,0,0);
+ u32 level;_CPU_ISR_Disable(level);
+ ((void(*)(void))(uintptr_t)MAIZO_BOOT_ADDR)();
+ _CPU_ISR_Restore(level);
+ snprintf(error,cap,"Bootstub retornou inesperadamente");return 0;
 }

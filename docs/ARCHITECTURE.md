@@ -53,7 +53,7 @@ parâmetros é diferente em cada um.
   de argumentos e retorno ao loader em Wii real.
 - Confirmar USB Loader GX Enhanced identificando jogos pelos argumentos
   de ID6, e Nintendont lendo nincfg.bin de USB e SD.
-- Implementar autoboot nos emuladores GX por patch de upstream;
+- Validar no Wii físico o autoboot GX já disponível via argv[1]/argv[2];
   não inventar suporte CLI.
 - Implementar suporte USB HID **em cada módulo**, compatível com
   0079:0006 e 0810:0001 após análise de descritores/relatórios no Wii.
@@ -63,3 +63,13 @@ parâmetros é diferente em cada um.
   fallback sem rede, respeitando limites de memória.
 - Corrigir normalização e detecção de disco múltiplo, ZIP e região
   conforme formato de cada sistema.
+
+## Pacote e builds dos módulos
+
+`.github/workflows/build.yml` compila o frontend e empacota os
+DOLs oficiais de sete módulos externos. `source-adapters.yml` gera
+patches HID C/C++ independentes para seis módulos; o Nintendont já tem
+um driver HID próprio e recebe perfis em `controllers/`.
+`build-adapted-modules.yml` tenta compilar os seis módulos modificados.
+A compilação por si só não garante compatibilidade real de gamepad;
+sem testes no Wii não é correto afirmar suporte universal.
