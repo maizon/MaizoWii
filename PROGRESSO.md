@@ -165,3 +165,41 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
   compatibilidade física universal e retorno após emulador continuam pendentes.
 - Meta declarada pelo usuário: 30 recursos em um commit. O critério de aceite
   físico não pode ser fechado por simulação; status só muda com evidência real.
+
+## Candidato de melhorias — prioridade YAWM HID / rotas MultiIn / perfis por jogo
+- O usuário revogou uso de automação: tarefa horária MaizoWii HID foi
+  explicitamente desativada. As mudanças seguintes são desta sessão.
+- PR #2, commit único de base `dd2179df`, acrescentou roteamento MultiIn
+  3 por stride (além dos modos 0/1/2/4), correção do DPAD padrão do
+  `controller.ini`, e validação do tamanho real do pacote.
+- Perfis individuais armazenados por hash FNV64 no dispositivo do jogo,
+  editados por START no detalhe. Não alteram configurações globais.
+- YAWM USB HID ainda requer DOL adaptado comprovado no ZIP; build antigo
+  falhou no linker PPC (SDA21) e GitHub Actions mais recente encerrou jobs
+  antes de executar passos. NÃO marcar R22/YAWM como concluído.
+- O WAD de canal e testes físicos não foram realizados.
+
+## Candidato: diagnósticos USB HID navegáveis sem Wii Remote
+- A tela PAGE_HID é aberta com SELECT em Configurações e fechada com B, A ou Start; mantém a navegação pelo controle.
+- Instrumentação exibe o último VID:PID, modo de roteamento MultiIn, perfil INI/descritor, endpoint, tamanho do relatório, contadores e botões/eixos para quatro portas.
+- A UI NÃO prova reconhecimento de controles XInput/proprietários nem funcionamento no Wii físico. CI do novo commit pendente por falha de jobs antes do setup.
+
+## Correção 04/11 — MultiIn e persistência individual (sem automação)
+- Precisão com FIX94/Nintendont: MultiIn=2 permite `MultiInValue=0` como limite mínimo, e MultiIn=3 divide relatório por stride de bytes (até quatro controles), ignorando bytes finais incompletos.
+- Tela HID já implementada, mas reconhecimento em Wii físico não demonstrado.
+- Salvamento individual de opções agora tem cópia de rollback ao substituir arquivos em FAT.
+- GitHub Actions dos commits recentes começou a encerrar jobs sem executar etapas; CI novo do HEAD precisa confirmação. Uma execução antiga com status SUCCESS não confirma YAWM HID adaptado porque aceitou fallback oficial.
+- Bloqueados por hardware ou material externo: prova de instalação do canal NAND, teste real de gamepads sem fio, retorno de DOL e WAD.
+
+## Correção de critério de aprovação — YAWM em primeiro lugar
+- O pipeline deixou de aprovar/publicar ZIP final caso o YAWM de origem não tenha sido recompilado com HID. O manifesto `installer.hid_adapted` deve ser `true` no estágio ALL-IN-ONE; fallback original significa compilação/release incompleta.
+- GitHub Actions de novas revisões permaneceu em fila ou falhou sem executar jobs; nenhum teste físico foi inventado. Próxima etapa: liberar runner para compilar linker PPC, corrigir falha real se ocorrer e só então executar verificação de binário, ROMs e NAND.
+
+## Ajuste adicional do decoder HID
+- Removido limite artificial de 15 em Report IDs; o decoder C agora suporta o campo HID de oito bits completo (1–255). Novo caso de teste com ID 0xFE e ID desconhecido.
+- Ainda sem teste de HID no Wii físico; CI e compilação devkitPPC do novo HEAD dependem de runners GitHub Actions que permanecem em fila.
+
+## Fallback USB vendor-class para perfis Nintendont
+- Fallback em segunda varredura usa classe USB genérica **somente** para VID/PID com perfil `controller.ini` conhecido. Endpoints de interrupção e comprimento são verificados; dispositivos vendor-class desconhecidos não são abertos.
+- Isso amplia possibilidades para receptores sem fio de protocolos semelhantes ao HID, mas não prova compatibilidade com XInput nem substitui driver específico.
+- Automação MaizoWii permanece desativada por solicitação expressa. O trabalho foi feito nesta execução interativa.

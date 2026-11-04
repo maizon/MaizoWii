@@ -59,6 +59,17 @@ jobs:
         id: compilation
         continue-on-error: true
         run: make -C upstream-yawm -j2
+      - name: Diagnose YAWM small-data link failure (no false success)
+        if: steps.compilation.outcome != 'success'
+        run: |
+          echo "YAWM source build failed; checking actual PPC linker map."
+          MAP=upstream-yawm/build/boot.elf.map
+          if [ -f "$MAP" ]; then
+            grep -n -E '^\\.(sdata|sbss)|_SDA_BASE_|__ppc_(excpt_sp|main_sp)|__system_argv|\\.sdata\\.hId' "$MAP" | head -65 || true
+            ls -lh "$MAP"
+          else
+            echo "No linker map generated."
+          fi
       - name: Package HID-enabled YAWM only after compilation
         if: steps.compilation.outcome == 'success'
         run: |
@@ -108,6 +119,19 @@ jobs:
         run: python3 tools/package_all.py --frontend stage/apps/maizo/boot.dol --forwarder stage/apps/maizo-forwarder/boot.dol --out dist
       - name: Overlay HID builds with fail-safe official fallback
         run: python3 tools/overlay_adapted.py patched dist
+      - name: Require HID YAWM for ALL-IN-ONE release
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("dist/maizo/MODULE_MANIFEST.json").read_text())
+          manager=m.get("installer",{})
+          assert manager.get("hid_adapted") is True, (
+              "YAWM official fallback is NOT a HID installer. "
+              "The required source-built HID manager failed to compile. "
+              "No ALL-IN-ONE release can be published until this is fixed.")
+          print("PASS: YAWM USB HID source binary included with SHA-256")
+          PY
       - name: Verify every executable and zip the storage root
         run: |
           test -s dist/apps/maizo-installer/boot.dol

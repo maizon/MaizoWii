@@ -172,3 +172,17 @@ validação DOL passarem. O campo `installer.hid_adapted` do manifesto confirma
 qual executável efetivamente foi distribuído. A instalação de WAD continua
 **interativa, nunca automática**. Sem WAD de canal próprio validado, não existe
 instalação do canal MaizoWii pronta. Teste real no console continua obrigatório.
+
+## Candidato: gamepads USB HID MultiIn e perfis por jogo
+Foi implementado roteamento de pacotes MultiIn 0–4 com convenções reais
+do Nintendont, inclusive modo 3 (múltiplos pads em um relatório) e
+modo 4 (relatório individual por pad), e testes C de limites dos pacotes.
+O frontend abre configurações individuais com START na tela do jogo e
+salva somente campos com contrato do módulo em
+`sd:/maizo/game-profiles/` ou `usb:/maizo/game-profiles/`.
+Veja `docs/GAME_PROFILES.md`. Tudo isso exige CI recompilado e teste Wii
+real antes de ser anunciado como compatibilidade de hardware.
+
+**Diagnóstico pelo controle:** Configurações → Select abre uma tela de informações USB HID com VID/PID, origem do perfil, endpoint, quantidade de relatórios, falhas e botões/eixos de até quatro portas lógicas. Detalhes em `docs/HID_DIAGNOSTICS.md`. Suporte real aos dispositivos depende do IOS e do Wii físico.
+
+**Tema grafite (NeoStation/CRT):** o seletor global agora oferece quatro paletas, incluindo GRAFITE com cartões cinza e contraste moderado. É apenas opção visual; não altera modo de vídeo PAL-M/NTSC nem garante overscan corrigido em TV de tubo. Configurações individuais usam fallback `.bak` ao ler perfis se uma gravação FAT foi interrompida.

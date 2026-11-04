@@ -12,7 +12,7 @@
 #include <string.h>
 
 #define MZR_FIELDS 64
-#define MZR_REPORTS 16
+#define MZR_REPORTS 256 /* report ID is an 8-bit USB HID field */
 typedef struct {
  uint16_t bit;
  int32_t minimum, maximum;
@@ -48,7 +48,7 @@ static unsigned mzr_shortval(const uint8_t *p,unsigned n) {
 }
 static int mzr_add(MzrMap*m,uint16_t bit,uint8_t size,uint8_t id,
                    uint16_t page,uint16_t usage,int32_t min,int32_t max){
- if(m->count>=MZR_FIELDS||size==0||size>16||id>=MZR_REPORTS)return 0;
+ if(m->count>=MZR_FIELDS||size==0||size>16)return 0;
  MzrField*f=&m->fields[m->count++];
  f->bit=bit;f->size=size;f->id=id;f->page=page;
  f->usage=usage;f->minimum=min;f->maximum=max;
@@ -102,8 +102,7 @@ static int mzr_parse(const uint8_t*descriptor,size_t length,MzrMap*out){
     if(depth==joydepth)joydepth=0;
     if(depth>0)depth--;
    }else if(tag==8){
-    if(!g.size||!g.count||g.count>128 || g.size>32 || g.count>512/g.size ||
-       g.id>=MZR_REPORTS)return 0;
+    if(!g.size||!g.count||g.count>128 || g.size>32 || g.count>512/g.size)return 0;
     uint32_t start=map.bits[g.id];
     uint32_t total=(uint32_t)g.size*g.count;
     if(total>512u-start)return 0;

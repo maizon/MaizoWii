@@ -21,3 +21,6 @@ o oficial permanece e o manifesto acusa `hid_adapted: false`.
 
 **Não existe** `MaizoWii-Forwarder.wad` validado neste pacote e não há
 instalação automática em NAND. Um forwarder `.dol` não substitui o canal WAD.
+
+## Critério rígido do ZIP final (YAWM HID)
+A partir deste ciclo, o workflow **não publica o ZIP ALL-IN-ONE como aprovado** quando `installer.hid_adapted` não é verdadeiro. O binário YAWM oficial permanece apenas como fallback de diagnóstico, sem promessa de navegação USB HID. Uma release exige DOL adaptado compilado, manifesto e SHA-256 verificados. Isso não substitui o teste do instalador em Wii real nem produz um canal `.wad` validado.

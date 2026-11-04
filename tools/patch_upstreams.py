@@ -32,7 +32,7 @@ def patch_file(root: Path, rel: str, fun):
 def install_inc(root: Path, folder: str):
     target = root / folder
     target.mkdir(parents=True, exist_ok=True)
-    for name in ("maizo_hid.inc", "maizo_report.h"):
+    for name in ("maizo_hid.inc", "maizo_report.h", "maizo_multi.h"):
         shutil.copyfile(SOURCE.parent / name, target / name)
 
 def fix_pad_update(text: str, key: str, is_wiimc: bool):

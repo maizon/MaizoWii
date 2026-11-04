@@ -13,6 +13,7 @@ static void*framebuffer[2],*fifo;
 static int which=0;
 #define RGB(r,g,b) (0xff000000u|((unsigned)(r)<<16)|((unsigned)(g)<<8)|(b))
 static unsigned background=0xff11111du,panel=0xff1e2030u,bright=0xff6366f1u;
+static int graphite=0;
 static void vertex(float x,float y,unsigned col){
  GX_Position2f32(x,y);GX_Color4u8((col>>16)&255,(col>>8)&255,col&255,(col>>24)&255);
 }
@@ -52,25 +53,33 @@ static void sidebar(const State*u){
  const char*items[]={"HOME","JOGOS","BUSCA","AJUSTES"};
  int active=u->page==PAGE_HOME?0:(u->page==PAGE_LIBRARY||u->page==PAGE_DETAIL)?1:u->page==PAGE_SEARCH?2:3;
  for(int i=0;i<4;i++){int y=112+i*70;
-  if(i==active)roundrect(17,y,70,56,0xff35335fu);
+  if(i==active)roundrect(17,y,70,56,graphite?0xff3c444au:0xff35335fu);
   label(27,y+20,items[i],i==3?0.96f:1.00f,i==active?0xffffffffu:0xffabb0c9u);}
  label(28,437,"v0.1",1.0f,0xff8589a5u);
 }
 static void footer(const State*u,const Library*l){
  roundrect(104,440,526,30,panel);
- label(118,451,"A ABRIR   B VOLTAR   L/R SISTEMA   X BUSCA   Y FAVORITO",0.78f,0xffb3b8d2u);
+ label(118,451,u->page==PAGE_HID?
+  "B/START VOLTAR":
+  u->page==PAGE_SETTINGS?
+  "SELECT: DIAGNOSTICOS HID  A ALTERAR  B SALVAR":
+  u->settings_for_game?
+  "ESQUERDA/DIREITA AJUSTAR  A SALVAR  B VOLTAR":
+  "A ABRIR   B VOLTAR   L/R SISTEMA   X BUSCA   Y FAVORITO",
+  0.78f,0xffb3b8d2u);
 }
 static void home(const State*u,const Library*l){
  label(116,78,"SUA CENTRAL DE JOGOS",1.52f,0xfff6f6ffu);
  label(116,103,"ESCOLHA UM SISTEMA - 100% NAVEGAVEL POR CONTROLE",0.89f,0xffb8b9d7u);
  const unsigned colors[]={0xff16a7b8u,0xff7864dcu,0xffdc6296u,0xff6e77ddu,0xffd5a14bu,0xff45aa84u,0xff60a1d6u,0xff22a6a6u};
+ const unsigned gray[]={0xff454e56u,0xff4d5359u,0xff51575du,0xff444d56u,0xff596066u,0xff404950u,0xff50575eu,0xff48515au};
  const char*symbols[]={"WII","GC","PS1","SNES","NES","GBA","GB","TV"};
  for(int i=0;i<SYSTEM_COUNT;i++){
   float x=112+(i%4)*129.0f,y=123+(i/4)*148.0f;
   int focus=(int)u->system==i;
   if(focus)roundrect(x-3,y-3,128,143,bright);
   roundrect(x,y,122,137,0xff24263du);
-  quad(x+6,y+5,110,69,colors[i],0xff1c243bu);
+  quad(x+6,y+5,110,69,graphite?gray[i]:colors[i],graphite?0xff30363bu:0xff1c243bu);
   int idx=library_visible(l,(System)i,"",0,0);
   if(idx<0||!cover_draw(&l->games[idx],x+36,y+6,49,64))
    clipped(x+27,y+26,symbols[i],1.62f,0xffffffffu,6);
@@ -114,15 +123,16 @@ static void library(const State*u,const Library*l,const Config*c){
 static void detail(const State*u,const Library*l,const Config*c){
  if(u->detail<0||u->detail>=l->count)return;const Game*g=&l->games[u->detail];
  label(119,89,"DETALHES DO ARQUIVO",1.4f,0xffb6b7cfu);
- roundrect(119,124,170,247,0xff393451u);roundrect(126,132,156,233,0xff6c5bd3u);
+ roundrect(119,124,170,247,0xff393451u);roundrect(126,132,156,233,graphite?0xff4b535au:0xff6c5bd3u);
  if(!cover_draw(g,126,132,156,233))label(176,235,g->system==SYSTEM_GC?"GC":g->system==SYSTEM_PS1?"PS1":"MEDIA",1.7f,0xffffffffu);
  clipped(310,135,g->name,1.52f,0xffffffffu,24);
  label(310,176,module_name(g->system),1.13f,0xffb9bcd9u);
  if(g->id[0]){char b[28];snprintf(b,sizeof(b),"ID: %.6s",g->id);label(310,199,b,1.1f,0xffb9bcd9u);}
  clipped(310,230,g->path,0.85f,0xffb1b2ccu,37);
- roundrect(313,291,269,48,module_available(g->system)?0xff4fbc91u:0xff73536bu);
+ roundrect(313,291,269,48,module_available(g->system)?(graphite?0xff455f55u:0xff4fbc91u):0xff73536bu);
  label(345,307,module_available(g->system)?"A  INICIAR":"MODULO AUSENTE",1.39f,0xffffffffu);
  label(313,358,"Y FAVORITO  B VOLTAR",1.1f,0xffb9bcd9u);
+ label(313,386,"START: AJUSTES DESTE JOGO",0.92f,0xffb9bcd9u);
 }
 static void search_ui(const State*u,const Library*l){
  const char*characters=" ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-";
@@ -148,9 +158,40 @@ static void hid_diagnostics_line(void){
   d.reports,d.read_errors);
  clipped(119,424,status,0.77f,0xffc2c7e5u,65);
 }
+static void hid_page(void){
+ HidDiagnostics d;input_hid_diagnostics(&d);
+ label(119,81,"DIAGNOSTICO USB HID",1.60f,0xffffffffu);
+ char line[128];
+ if(!d.vid){
+  label(119,121,"NENHUM GAMEPAD HID IDENTIFICADO",1.02f,0xffffb7b7u);
+  label(119,160,"RECEPTORES XINPUT/PROPRIETARIOS",0.94f,0xffc3c4d8u);
+  label(119,183,"PRECISAM DE DRIVER OU MODO HID.",0.94f,0xffc3c4d8u);
+ }else{
+  snprintf(line,sizeof(line),"ULTIMO USB: %04X:%04X",d.vid,d.pid);
+  label(119,122,line,1.24f,0xffffffffu);
+  const char*driver=d.profile_loaded==1?"CONTROLLER.INI":
+                     d.profile_loaded==2?"DESCRITOR PADRAO":"SEM PERFIL";
+  snprintf(line,sizeof(line),"PERFIL: %s",driver);
+  label(119,153,line,1.04f,0xffc1c4dfu);
+  snprintf(line,sizeof(line),"CONEXOES: %u  ENDPOINT: %02X  PACOTE: %u",
+           d.connected_ports,d.endpoint,d.packet_size);
+  label(119,183,line,0.98f,0xffc1c4dfu);
+  snprintf(line,sizeof(line),"RELATORIOS: %u  FALHAS: %u  ID: %u",
+           d.reports,d.read_errors,d.last_report_id);
+  label(119,211,line,0.98f,0xffc1c4dfu);
+  snprintf(line,sizeof(line),"ROTEAMENTO MULTIIN: %u",d.multiin);
+  label(119,238,line,0.98f,0xffc1c4dfu);
+  for(int i=0;i<4;i++){
+   snprintf(line,sizeof(line),"PORTA %d    BOT: %04X    X:%+4d    Y:%+4d",
+            i+1,d.held[i],d.stick_x[i],d.stick_y[i]);
+   label(119,273+i*29,line,0.92f,0xfff3f3ffu);
+  }
+ }
+ label(119,415,"B OU START: VOLTAR A CONFIGURACOES",0.90f,0xffb6b8d6u);
+}
 static void settings(const State*u,const Config*c){
- label(119,77,"CONFIGURACOES",1.53f,0xffffffffu);
- clipped(119,105,system_title(u->system),1.07f,0xffb4b8d6u,35);
+ label(119,77,u->settings_for_game?"OPCOES DESTE JOGO":"CONFIGURACOES",1.53f,0xffffffffu);
+ clipped(119,105,u->settings_for_game?"CONFIGURACAO INDIVIDUAL - TEMA/LAYOUT GLOBAIS":system_title(u->system),0.96f,0xffb4b8d6u,53);
  int n=settings_count(u->system);
  for(int i=0;i<n;i++){
   int y=137+i*25;
@@ -190,12 +231,14 @@ int ui_init(void){
  GX_SetColorUpdate(GX_TRUE);return 1;
 }
 void ui_draw(const State*u,const Library*l,const Config*c,int hid){
- bright=c->theme==1?0xff1cbea8u:c->theme==2?0xffdd6689u:0xff6661eau;
- panel=0xff202132u;background=0xff121420u;
+ graphite=c->theme==3;
+ bright=graphite?0xff8998a4u:c->theme==1?0xff1cbea8u:c->theme==2?0xffdd6689u:0xff6661eau;
+ panel=graphite?0xff24282du:0xff202132u;
+ background=graphite?0xff131619u:0xff121420u;
  quad(0,0,640,480,background,0xff171b2eu);
  quad(0,0,640,7,bright,bright);
  sidebar(u);titlebar(u,l,hid);
- switch(u->page){case PAGE_HOME:home(u,l);break;case PAGE_LIBRARY:library(u,l,c);break;case PAGE_DETAIL:detail(u,l,c);break;case PAGE_SEARCH:search_ui(u,l);break;case PAGE_SETTINGS:settings(u,c);break;case PAGE_INFO:
+ switch(u->page){case PAGE_HOME:home(u,l);break;case PAGE_LIBRARY:library(u,l,c);break;case PAGE_DETAIL:detail(u,l,c);break;case PAGE_SEARCH:search_ui(u,l);break;case PAGE_SETTINGS:settings(u,u->settings_for_game?&u->game_config:c);break;case PAGE_HID:hid_page();break;case PAGE_INFO:
  label(120,86,"AVISO MAIZO",1.8f,0xffffffffu);label(120,156,u->info,1.0f,0xffc9c9dfu);
  label(120,204,"APERTE B PARA VOLTAR",1.05f,0xffaeb1c8u);break;}
  footer(u,l);GX_DrawDone();GX_CopyDisp(framebuffer[which],GX_TRUE);

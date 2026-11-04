@@ -29,6 +29,9 @@ class InstallerHidPatchTest(unittest.TestCase):
             '    return 0;\n}\n'
         )
         self.menu.write_text(self.original)
+        (self.root / "Makefile").write_text(
+            "CFLAGS\t= -Os -Wall $(MACHDEP) $(INCLUDE)\n"
+            "LDFLAGS\t= $(MACHDEP) -Wl,-Map,$(notdir $@).map\n")
 
     def test_hid_input_and_confirmation_preserved(self):
         apply(self.root)
@@ -41,6 +44,15 @@ class InstallerHidPatchTest(unittest.TestCase):
         self.assertIn('if (buttons & WPAD_BUTTON_A) confirm_install();', patched)
         self.assertEqual((self.root/'source/maizo_report.h').is_file(), True)
         self.assertEqual((self.root/'source/maizo_hid.inc').is_file(), True)
+        self.assertTrue((self.root/'source/maizo_multi.h').is_file())
+        self.assertTrue((self.root/"source/yawm_cache_compat.c").is_file())
+        self.assertIn("void DCInvalidateRange(", (self.root/"source/yawm_cache_compat.c").read_text())
+        self.assertIn("-G0", (self.root/"Makefile").read_text())
+        self.assertIn("--defsym,_SDA_BASE_=maizo_sda_anchor+0x7e00",
+                      (self.root/"Makefile").read_text())
+        self.assertIn("--defsym,_SDA2_BASE_=maizo_sda2_anchor+0x7e00",
+                      (self.root/"Makefile").read_text())
+        self.assertIn("maizo_sda2_anchor", (self.root/"source/maizo_sda_anchors.c").read_text())
 
     def test_legacy_devkitpro_patches_keep_nand_flow(self):
         (self.root/"source/boot/source").mkdir(parents=True)

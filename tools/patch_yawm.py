@@ -23,9 +23,11 @@ def apply(source: Path) -> None:
     if not source.is_dir() or not (source / "source/menu.c").is_file():
         raise ValueError("YAWM source checkout is missing")
     dest = source / "source"
-    for name in ("maizo_hid.inc", "maizo_report.h"):
+    for name in ("maizo_hid.inc", "maizo_report.h", "maizo_multi.h", "yawm_cache_compat.c"):
         shutil.copyfile(ROOT / "integrations" / name, dest / name)
 
+    shutil.copyfile(ROOT / "integrations" / "yawm_sda_anchors.c",
+                    dest / "maizo_sda_anchors.c")
     menu = dest / "menu.c"
     text = menu.read_text()
     text = once(text, '#include "wpad.h"',
@@ -87,6 +89,23 @@ def apply(source: Path) -> None:
                          "free(p_tmd);\n\n\treturn 0;",
                          "YAWM title size incorrect free")
         title_file.write_text(title_src)
+    # Modern libogc/newlib expects r13 small-data references in a bounded
+    # +/-32KiB window. Avoid moving YAWM's own globals into the small-data
+    # section: otherwise the libogc CRT/keyboard references overflow SDA21
+    # relocations at link time. Keep linker flags untouched.
+    makefile = source / "Makefile"
+    if makefile.is_file():
+        make_src = makefile.read_text()
+        make_src = once(make_src, "CFLAGS\t= -Os -Wall $(MACHDEP) $(INCLUDE)",
+                        "CFLAGS\t= -Os -Wall -G0 $(MACHDEP) $(INCLUDE)",
+                        "YAWM libogc small-data relocation bounds")
+        make_src = once(
+            make_src, "-Wl,-Map,$(notdir $@).map",
+            "-Wl,-Map,$(notdir $@).map "
+            "-Wl,--defsym,_SDA_BASE_=maizo_sda_anchor+0x7e00 "
+            "-Wl,--defsym,_SDA2_BASE_=maizo_sda2_anchor+0x7e00",
+            "YAWM correct PPC SDA base for libogc")
+        makefile.write_text(make_src)
     menu.write_text(text)
     # The pre-devkitPro libogc bootstrap called a private exception cleanup
     # entrypoint removed from current public libogc. The loader already

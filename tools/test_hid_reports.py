@@ -53,6 +53,13 @@ int main(void){
  assert(mzr_decode(&m,id2,sizeof(id2),&s));
  assert(s.buttons==3 && s.right);
  id2[0]=3;assert(!mzr_decode(&m,id2,sizeof(id2),&s));
+ /* Report IDs above 15 are valid HID IDs, not proprietary packets. */
+ numbered[7]=0xfe;
+ assert(mzr_parse(numbered,sizeof(numbered),&m));
+ id2[0]=0xfe;
+ assert(mzr_decode(&m,id2,sizeof(id2),&s));
+ id2[0]=0xff;
+ assert(!mzr_decode(&m,id2,sizeof(id2),&s));
  /* Direct bit-extraction tests */
  uint32_t value=0;
  const uint8_t bits[]={0x80,0x01};

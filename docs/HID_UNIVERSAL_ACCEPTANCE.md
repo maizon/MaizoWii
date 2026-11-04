@@ -33,3 +33,19 @@ Workflow 41816282992: compilação de WiiSXRX e outros adapters com estágio DOL
 - Escopo NÃO fechado: periféricos de múltiplas interfaces, vários receptores
   físicos simultâneos, arrays complexos, layouts proprietários e retorno
   seguro após trocas de IOS exigem testes extras.
+
+## Roteamento MultiIn 0–4
+O roteador `integrations/maizo_multi.h` implementa exatamente os formatos
+documentados no Nintendont: modo 1 filtra relatório por primeiro byte; modo
+2 usa o primeiro byte como porta; modo 3 carrega N pads no mesmo relatório,
+onde `MultiInValue` é o tamanho de cada bloco em BYTES (não número de
+controles); modo 4 usa pacotes separados indexados de 1 até
+`MultiInValue`. São validados número de portas, tamanho do buffer e
+limites individuais. Isso não significa que receptores com protocolo
+proprietário ou XInput passem a ser reconhecidos sem driver.
+
+**Compatibilidade de splitters — correção posterior:** em MultiIn=2, valor mínimo 0 continua aceitando pacotes indexados de 1 a 4; em MultiIn=3, `MultiInValue` é o stride em bytes, blocos finais incompletos são ignorados e o recebimento nunca ultrapassa quatro portas. São limites de interpretação, não prova de compatibilidade com um receptor físico.
+
+**Report IDs USB HID:** o interpretador de descritores aceita IDs de 1 a 255, conforme o campo de 8 bits do padrão HID, em vez de bloquear incorretamente valores acima de 15. O teste C exercita ID 0xFE e rejeita ID 0xFF quando ele não está no descritor. Isso melhora cobertura de dispositivos genéricos, mas não emula XInput.
+
+**USB vendor-class fallback:** o driver consulta primeiro a interface USB HID e, em segunda tentativa, somente interfaces vendor-class de dispositivos com `controller.ini` coincidente. Isso pode ajudar adaptadores que expõem relatórios HID por endpoints de interrupt mesmo com classe de interface 0xFF, mas não emula comandos de inicialização XInput/proprietários. Largura wMaxPacketSize é validada antes da conversão para u8.

@@ -21,6 +21,15 @@ void input_hid_diagnostics(HidDiagnostics*out){
  out->read_errors=mh_read_errors;
  out->connected=mh_live[0]||mh_live[1]||mh_live[2]||mh_live[3];
  out->profile_loaded=mh_profile_source; /* 1=controller.ini; 2=HID descriptor */
+ out->last_report_id=mh_last_report_id;
+ out->endpoint=mh_ep;out->packet_size=mh_len;
+ out->multiin=mh_profile.multiin;
+ out->connected_ports=0;
+ for(int port=0;port<4;port++){
+  out->held[port]=(unsigned)maizo_hid_held(port);
+  out->stick_x[port]=mh_ax[port];out->stick_y[port]=mh_ay[port];
+  if(mh_live[port])out->connected_ports++;
+ }
 }
 void input_init(void){
  PAD_Init();WPAD_Init();
