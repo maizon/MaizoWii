@@ -65,7 +65,7 @@ def safe_extract(source: Path, destination: Path):
         with zipfile.ZipFile(source) as archive:
             members = archive.infolist()
             total = 0
-            seen = set()
+            seen = {}
             # Validate every member before writing anything. ZIP's extractall
             # normalizes names differently on different host platforms.
             for member in members:
@@ -77,9 +77,18 @@ def safe_extract(source: Path, destination: Path):
                             and parts[0][1] == ":")):
                     raise ValueError("unsafe ZIP member")
                 key = "/".join(parts).casefold()
+                # A file cannot also be a parent directory. Detect conflicts
+                # before extraction so order cannot affect the result.
+                kind = "dir" if member.is_dir() else "file"
                 if key in seen:
                     raise ValueError("duplicate ZIP member")
-                seen.add(key)
+                for index in range(1, len(parts)):
+                    parent = "/".join(parts[:index]).casefold()
+                    if seen.get(parent) == "file":
+                        raise ValueError("ZIP parent is a file")
+                if kind == "file" and any(existing.startswith(key + "/") for existing in seen):
+                    raise ValueError("ZIP file shadows directory")
+                seen[key] = kind
                 mode = (member.external_attr >> 16) & 0o170000
                 if member.create_system == 3 and mode not in (0, 0o100000, 0o040000):
                     raise ValueError("unsupported ZIP file type")

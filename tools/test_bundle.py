@@ -117,6 +117,29 @@ class BundleTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 safe_extract(p / "special.zip", p / "out")
 
+    def test_zip_rejects_file_as_parent_in_both_orders(self):
+        import zipfile
+        for entries in (("apps", "apps/maizo/boot.dol"),
+                        ("apps/maizo/boot.dol", "apps")):
+            with self.subTest(entries=entries), tempfile.TemporaryDirectory() as tmp:
+                p = Path(tmp)
+                with zipfile.ZipFile(p / "conflict.zip", "w") as z:
+                    for entry in entries:
+                        z.writestr(entry, "payload")
+                with self.assertRaises(ValueError):
+                    safe_extract(p / "conflict.zip", p / "out")
+                self.assertFalse((p / "out").exists())
+
+    def test_zip_rejects_casefold_parent_collision(self):
+        import zipfile
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            with zipfile.ZipFile(p / "conflict.zip", "w") as z:
+                z.writestr("APPS", "file")
+                z.writestr("apps/maizo/boot.dol", fake_dol())
+            with self.assertRaises(ValueError):
+                safe_extract(p / "conflict.zip", p / "out")
+
     def test_zip_traversal_blocked(self):
         import zipfile
         with tempfile.TemporaryDirectory() as tmp:

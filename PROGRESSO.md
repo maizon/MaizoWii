@@ -32,3 +32,10 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
 - Correção proposta: normalização explícita de barras invertidas na extração ZIP, rejeição de caminhos duplicados sem distinção de caixa e tipos especiais Unix; testes sintéticos novos.
 - A validação CI deste commit e testes no Wii ainda precisam ser observados. Nenhum item novo marcado concluído nesta execução; R19 permanece concluído com CI anterior.
 - R18 permanece pendente: ainda faltam fixtures dos contratos reais de autoboot. Meta de 30% não atingida.
+
+## Execução 2026-11-04 — colisões de diretórios ZIP
+- Início: 16 pendências (R04–R18, R20); meta ceil(16 × 0,30) = 5 itens.
+- CI do commit anterior 2c01de8: run 41782080860 concluído com success.
+- Corrigida validação pré-extração de ZIP para rejeitar arquivo que se apresenta como diretório pai de outro membro, em qualquer ordem, inclusive com diferença de caixa.
+- Adicionados testes sintéticos de regressão; aprovação de CI do novo commit ainda pendente. Nenhum novo item do roadmap marcado concluído: 4/20 no total, 16 pendentes.
+- Próximo: R18 fixtures de autoboot; R04–R17/R20 exigem implementação e/ou testes físicos adicionais.
