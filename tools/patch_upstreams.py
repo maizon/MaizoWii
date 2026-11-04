@@ -137,10 +137,6 @@ def patch_wiimc(root: Path):
         t = replace_once(t, "static void ResetCB()",
                          "static void ResetCB(u32 irq, void *userdata)",
                          "WiiMC libogc reset callback signature")
-        # Original WiiMC treated the provided path as a format string.
-        t = replace_once(t, "sprintf(loadedFile, argv[1]);",
-                         'snprintf(loadedFile, MAXPATHLEN, "%s", argv[1]);',
-                         "WiiMC argv format string hardening")
         return t
     patch_file(root, "source/wiimc.cpp", wiimc_callbacks)
     patch_file(root, "source/musicplaylist.cpp",

@@ -97,3 +97,5 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
 - Run 41814572079: WiiSXRX chegou a ELF linkado e so falhou no conversor elf2dol legado (agora usa elf2dol no PATH). WiiMC falhou em cast de debug QuickTime e stricmp de musicplaylist; compatibilizados no patch upstream. A saida final depende de proxima CI, sem garantia de HID fisico.
 
 - CI 41814935187: WiiSXRX adaptado passou na compilacao e obteve DOL; firmware HID ainda nao testado no console. WiiMC avanca mas falha em swscale de legendas, callbacks newlib/libogc e sprintf inseguro de argv; correcoes aplicadas ao upstream para tentativa seguinte.
+
+- CI 41815266286 falhou na etapa de patches WiiMC porque o mesmo sprintf inseguro havia sido corrigido duas vezes no script; removido patch duplicado, preservando correção original. Necessario reexecutar CI para verificar DOLs e ZIP final.
