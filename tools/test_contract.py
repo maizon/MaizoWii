@@ -42,9 +42,9 @@ assert "SYS_ResetSystem(SYS_SHUTDOWN" in launch
 assert "bootstub_bytes.o" in read("Makefile")
 assert "copy_bytes" in read("bootstub/stub.c")
 assert "0x93000000" in read("bootstub/link.ld")
-for k in ("USB_ReadIntrMsgAsync", "profile_read", "decode_profile",
-          "USB_GetDeviceList", "PAD_StickX", "broken"):
-    assert k in input_src, k
+for k in ("maizo_hid_tick", "maizo_hid_held", "maizo_hid_shutdown",
+          "PAD_StickX", "WPAD_ButtonsHeld", "HidDiagnostics"):
+    assert k in input_src + header, k
 for k in ("settings_count", "settings_value", "settings_change",
           "gc_video", "wii_ios", "media_volume"):
     assert k in settings + config, k
@@ -65,3 +65,13 @@ assert "maizo_hid_connected(int chan)" in hid
 forwarder = read("forwarder/main.c")
 assert "sd:/apps/maizo/boot.dol" in forwarder
 assert "usb:/apps/maizo/boot.dol" in forwarder
+
+# Shared HID driver really is linked into the frontend and every patchable
+# module rather than duplicating a VID/PID-only parser.
+assert '#include "../integrations/maizo_hid.inc"' in input_src
+for symbol in ("mzr_parse", "mzr_decode", "USB_GetGenericDescriptor",
+               "USB_ReadIntrMsgAsync", "mh_profile.multiin"):
+    assert symbol in hid, symbol
+assert "for name in (\"maizo_hid.inc\", \"maizo_report.h\")" in read("tools/patch_upstreams.py")
+assert "maizo_hid_down(port)" in read("tools/patch_yawm.py")
+assert "installer-hid:" in read(".github/workflows/build.yml")

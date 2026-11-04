@@ -47,6 +47,15 @@ if manager:
     assert (root / "maizo/YAWM-LICENSE").is_file(), "installer GPL license missing"
     assert (root / "wad/LEIA-ANTES-DE-INSTALAR.txt").is_file(), "installer warning missing"
     assert (root / "wad/wm_config.txt").is_file(), "manager configuration missing"
+    if "hid_adapted" in manager:
+        assert isinstance(manager["hid_adapted"], bool), "installer HID status must be boolean"
+        status = manifest.get("module_input_provenance", {}).get("maizo-installer", "")
+        assert status, "installer HID status missing"
+        if manager["hid_adapted"]:
+            assert "HID source adapted" in status, "installer provenance mismatch"
+        else:
+            assert "official YAWM" in status, "installer fallback provenance mismatch"
+
 files = list(root.rglob("*"))
 assert not any(f.is_symlink() for f in files)
 print("PASS: all eight application executables and controller profiles present")

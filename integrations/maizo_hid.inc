@@ -1,8 +1,9 @@
 /*
- * MAIZO Wii - per-DOL USB HID shim (GPL-3.0-or-later).
+ * MAIZO Wii - per-DOL USB HID shim (GPL-2.0-or-later).
  * Adapter for standalone libogc applications, NOT a persistent IOS service.
- * Only known Microntek 0079:0006 works without an on-disk descriptor profile.
- * Additional Nintendont controller.ini profiles are read from /controllers.
+ * Standard gamepads may use parsed HID report descriptors; Nintendont-style
+ * controller.ini maps provide fallback for unusual layouts. Not every USB
+ * receiver implements class HID or provides a conventional report descriptor.
  *
  * API is intentionally static: this file is included exactly once into the
  * module's input translation unit. No Makefile change or symbol collision.
@@ -13,6 +14,7 @@
 #include <string.h>
 #include <gccore.h>
 #include <ogc/usb.h>
+#include "maizo_report.h"
 #include <malloc.h>
 #ifndef USB_CLASS_HID
 #define USB_CLASS_HID 3
@@ -26,9 +28,14 @@ typedef struct {
 } MaizoProfile;
 
 static MaizoProfile mh_profile;
+static MzrMap mh_auto;
+static int mh_auto_active=0;
+static volatile unsigned mh_report_count=0,mh_read_errors=0;
+static volatile unsigned mh_last_report_id=0;
 static s32 mh_fd=-1;
 static u8 mh_ep=0x81, mh_len=8;
-static u16 mh_vid=0,mh_pid=0;
+static u16 mh_vid=0,mh_pid=0,mh_seen_vid=0,mh_seen_pid=0;
+static int mh_profile_source=0;
 static unsigned char mh_report[64] ATTRIBUTE_ALIGN(32);
 static volatile u32 mh_report_buttons[4]={0};
 static volatile s8 mh_ax[4]={0},mh_ay[4]={0},mh_rx[4]={0},mh_ry[4]={0};
@@ -139,6 +146,28 @@ static s8 mh_axis(const unsigned char*d,int i) {
  return v<-96?-96:v>96?96:(s8)v;
 }
 static void mh_decode(const unsigned char*d,int chan){
+ if(mh_auto_active){
+  MzrState st;
+  if(!mzr_decode(&mh_auto,d,mh_len,&st)){
+   mh_report_buttons[chan]=0;mh_ax[chan]=mh_ay[chan]=0;
+   mh_rx[chan]=mh_ry[chan]=0;mh_read_errors++;return;
+  }
+  const u16 buttons[]={PAD_BUTTON_A,PAD_BUTTON_B,PAD_BUTTON_X,
+   PAD_BUTTON_Y,PAD_TRIGGER_L,PAD_TRIGGER_R,PAD_TRIGGER_Z,
+   PAD_TRIGGER_Z,PAD_TRIGGER_Z,PAD_BUTTON_START};
+  u32 mask=0;
+  for(unsigned i=0;i<10;i++)
+   if(st.buttons&(1u<<i))mask|=buttons[i];
+  if(st.up||st.y < -60)mask|=PAD_BUTTON_UP;
+  if(st.down||st.y > 60)mask|=PAD_BUTTON_DOWN;
+  if(st.left||st.x < -60)mask|=PAD_BUTTON_LEFT;
+  if(st.right||st.x > 60)mask|=PAD_BUTTON_RIGHT;
+  mh_ax[chan]=st.x;mh_ay[chan]=-st.y;
+  mh_rx[chan]=st.rx;mh_ry[chan]=-st.ry;
+  mh_report_buttons[chan]=mask;
+  return;
+ }
+
  const u16 bits[]={PAD_BUTTON_A,PAD_BUTTON_B,PAD_BUTTON_X,PAD_BUTTON_Y,
                    PAD_TRIGGER_L,PAD_TRIGGER_R,PAD_BUTTON_START,PAD_TRIGGER_Z,PAD_TRIGGER_Z};
  u32 mask=0;
@@ -173,6 +202,8 @@ static s32 mh_report_cb(s32 result,void *unused){
  (void)unused;
  if(!mh_running||mh_fd<0)return 0;
  if(result>=0){
+  mh_report_count++;
+  if(mh_auto_active)mh_last_report_id=mh_auto.has_id?mh_report[0]:0;
   int chan=0,accept=1;
   switch(mh_profile.multiin){
    case 1: /* Single-controller filter on report[0], per Nintendont. */
@@ -194,11 +225,12 @@ static s32 mh_report_cb(s32 result,void *unused){
    mh_live[chan]=1;
    mh_decode(mh_report,chan);
   }
-  if(USB_ReadIntrMsgAsync(mh_fd,mh_ep,mh_len,mh_report,mh_report_cb,NULL)<0)
-   mh_dead=1;
+  if(USB_ReadIntrMsgAsync(mh_fd,mh_ep,mh_len,mh_report,mh_report_cb,NULL)<0){
+   mh_read_errors++;mh_dead=1;
+  }
  }else{
   for(int i=0;i<4;i++){mh_live[i]=0;mh_report_buttons[i]=0;}
-  mh_dead=1;
+  mh_dead=1;mh_read_errors++;
  }
  return 0;
 }
@@ -206,7 +238,10 @@ static void mh_attach(void){
  usb_device_entry list[32] ATTRIBUTE_ALIGN(32);u8 count=0;
  if(USB_GetDeviceList(list,32,USB_CLASS_HID,&count)<0)return;
  for(int i=0;i<count;i++){
-  if(!mh_load_profile(list[i].vid,list[i].pid))continue;
+  mh_seen_vid=list[i].vid;mh_seen_pid=list[i].pid;
+  int known=mh_load_profile(list[i].vid,list[i].pid);
+  mh_auto_active=0;
+  memset(&mh_auto,0,sizeof(mh_auto));
   s32 fd=-1;
   if(USB_OpenDevice(list[i].device_id,list[i].vid,list[i].pid,&fd)<0||fd<0)continue;
   usb_devdesc desc;int ok=0;memset(&desc,0,sizeof(desc));
@@ -216,11 +251,30 @@ static void mh_attach(void){
     for(int j=0;j<cfg->bNumInterfaces&&!ok;j++){
      usb_interfacedesc*it=&cfg->interfaces[j];
      if(it->bInterfaceClass!=USB_CLASS_HID)continue;
+     /* Do not mistake a keyboard/mouse for a controller. For devices
+      * without a controller.ini, require an actual gamepad HID descriptor. */
+     if(!known){
+      u8 descriptor[512] ATTRIBUTE_ALIGN(32);
+      usb_hiddesc hid;
+      memset(&hid,0,sizeof(hid));
+      if(USB_GetHIDDescriptor(fd,it->bInterfaceNumber,&hid,sizeof(hid))<0)
+       continue;
+      int size=hid.descr[0].wDescriptorLength;
+      if(hid.descr[0].bDescriptorType!=USB_DT_REPORT ||
+         size<=0||size>(int)sizeof(descriptor))continue;
+      /* Both current libogc and libogc2 expose the generic descriptor
+       * accessor; the newer report-specific helpers are not in libogc2. */
+      if(USB_GetGenericDescriptor(fd,USB_DT_REPORT,0,it->bInterfaceNumber,
+                                  descriptor,(u32)size)<0)continue;
+      if(!mzr_parse(descriptor,(size_t)size,&mh_auto))continue;
+      mh_auto_active=1;
+     }
      for(int k=0;k<it->bNumEndpoints;k++){
       usb_endpointdesc*e=&it->endpoints[k];
       if((e->bEndpointAddress&0x80)&&(e->bmAttributes&3)==3){
        mh_ep=e->bEndpointAddress;mh_len=e->wMaxPacketSize;
-       if(mh_len>64)mh_len=64;if(mh_len<7)mh_len=8;
+       if(mh_len>sizeof(mh_report)||mh_len==0)continue;
+       if(known&&mh_len<7)continue;
        ok=1;break;
       }
      }
@@ -230,14 +284,17 @@ static void mh_attach(void){
   }
   /* Nintendont MultiIn=4 needs <=32 byte reports; no guessing on
    * larger packets which would overlap its 32-byte logical pad slots. */
-  if(mh_profile.multiin==4 &&
+  if(!known && !mh_auto_active)ok=0;
+  if(known&&mh_profile.multiin==4 &&
      (mh_len>32 || mh_profile.multivalue<1))ok=0;
-  if(!ok){USB_CloseDevice(&fd);continue;}
+  if(!ok){mh_auto_active=0;USB_CloseDevice(&fd);continue;}
   mh_fd=fd;mh_vid=list[i].vid;mh_pid=list[i].pid;mh_dead=0;
+  mh_profile_source=known?1:(mh_auto_active?2:0);
   for(int j=0;j<4;j++){mh_live[j]=0;mh_report_buttons[j]=0;
    mh_buttons[j]=0;mh_previous[j]=0;}
   if(USB_ReadIntrMsgAsync(fd,mh_ep,mh_len,mh_report,mh_report_cb,NULL)<0){
-   mh_fd=-1;USB_CloseDevice(&fd);
+   mh_read_errors++;mh_fd=-1;mh_auto_active=0;USB_CloseDevice(&fd);
+   continue;
   }
   break;
  }
@@ -249,6 +306,7 @@ static void maizo_hid_tick(void){
   s32 fd=mh_fd;mh_fd=-1;mh_dead=0;
   for(int i=0;i<4;i++){mh_live[i]=0;mh_report_buttons[i]=0;}
   USB_CloseDevice(&fd);
+  mh_auto_active=0;
  }
  for(int i=0;i<4;i++){
   mh_previous[i]=mh_buttons[i];
@@ -264,3 +322,25 @@ static s8 maizo_hid_stickX(int chan,s8 native){return maizo_hid_connected(chan)?
 static s8 maizo_hid_stickY(int chan,s8 native){return maizo_hid_connected(chan)?mh_ay[chan]:native;}
 static s8 maizo_hid_substickX(int chan,s8 native){return maizo_hid_connected(chan)?mh_rx[chan]:native;}
 static s8 maizo_hid_substickY(int chan,s8 native){return maizo_hid_connected(chan)?mh_ry[chan]:native;}
+
+/* Every DOL owns its own USB stack; avoid leaving async HID reads alive when
+ * an application shuts down or replaces its IOS. */
+static void maizo_hid_shutdown(void){
+ mh_running=0;mh_dead=0;
+ s32 fd=mh_fd;mh_fd=-1;
+ for(int i=0;i<4;i++){
+  mh_live[i]=0;mh_report_buttons[i]=0;
+  mh_buttons[i]=mh_previous[i]=0;
+ }
+ if(fd>=0)USB_CloseDevice(&fd);
+ mh_auto_active=0;
+ USB_Deinitialize();
+}
+
+/* Explicit reinitialization after a deliberate IOS reload by an installer.
+ * This is not an IOS-resident HID service; USB is opened afresh under the
+ * newly selected IOS, with its own compatibility limitations. */
+static void maizo_hid_resume(void){
+ USB_Initialize();
+ mh_fd=-1;mh_dead=0;mh_auto_active=0;mh_running=1;mh_frame=0;
+}

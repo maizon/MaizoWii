@@ -19,3 +19,17 @@ Para cada módulo: registrar build SHA, IOS ativo, porta USB, controle, VID/PID,
 ## Estado observado em 04/11/2026
 
 Workflow 41816282992: compilação de WiiSXRX e outros adapters com estágio DOL; WiiMC executou etapa de fallback (Stage patched DOL: skipped; Report fallback: success). Portanto o sucesso do workflow não prova WiiMC adaptado, compatibilidade HID física nem aceite universal. Nenhum item de compatibilidade física deve ser encerrado com base apenas nessa execução.
+
+
+## Nova implementação de base (candidato de integração)
+- `integrations/maizo_report.h`: parser C portátil de descritor
+  gamepad/joystick padrão, com report ID, deslocamentos em bits, campos
+  de botões, eixos e hat; limites de leitura e rejeição de mouse.
+- `integrations/maizo_hid.inc`: prioriza perfis Nintendont/local quando
+  presentes; sem perfil, consulta descritor USB HID e só aceita Gamepad
+  convencional. O código passou a ser compartilhado pelo frontend e adapters.
+- O instalador YAWM possui patch de navegação HID mantendo confirmação de
+  WAD. A variante só poderá ser marcada adaptada após build sem fallback.
+- Escopo NÃO fechado: periféricos de múltiplas interfaces, vários receptores
+  físicos simultâneos, arrays complexos, layouts proprietários e retorno
+  seguro após trocas de IOS exigem testes extras.

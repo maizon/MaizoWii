@@ -77,6 +77,44 @@ class FinalDolIntegrityTests(unittest.TestCase):
         (self.dist / "maizo/YAWM-LICENSE").unlink()
         self.assertIn("installer GPL license missing", self.verify().stderr)
 
+    def test_hid_installer_overlay_hash_and_fallback(self):
+        import hashlib
+        installer = self.dist / "apps/maizo-installer"
+        installer.mkdir(parents=True)
+        (installer / "boot.dol").write_bytes(fake_dol())
+        (installer / "meta.xml").write_text("<app/>")
+        manifest_file = self.dist / "maizo/MODULE_MANIFEST.json"
+        manifest = json.loads(manifest_file.read_text())
+        manifest["installer"] = {
+            "source": "modmii/YAWM-ModMii-Edition",
+            "auto_installs": False, "channel_wad_included": False,
+            "dol_sha256": hashlib.sha256(fake_dol()).hexdigest()
+        }
+        manifest_file.write_text(json.dumps(manifest))
+        (self.dist / "maizo/YAWM-LICENSE").write_text("GPL test")
+        wad = self.dist / "wad"
+        wad.mkdir()
+        (wad / "LEIA-ANTES-DE-INSTALAR.txt").write_text("test")
+        (wad / "wm_config.txt").write_text("StartupPath=/wad\n")
+        # Uncompiled adapter must never be represented as HID-enabled.
+        overlay(self.patched, self.dist)
+        got = json.loads(manifest_file.read_text())
+        self.assertIs(got["installer"]["hid_adapted"], False)
+        self.assertEqual(self.verify().returncode, 0, self.verify().stderr)
+        candidate = self.patched / "apps/maizo-installer"
+        candidate.mkdir(parents=True)
+        dol = fake_dol()[:-16] + bytes([0x51])*16
+        (candidate / "boot.dol").write_bytes(dol)
+        overlay(self.patched, self.dist)
+        got = json.loads(manifest_file.read_text())
+        self.assertIs(got["installer"]["hid_adapted"], True)
+        self.assertEqual(got["installer"]["dol_sha256"],
+                         hashlib.sha256(dol).hexdigest())
+        self.assertEqual(self.verify().returncode, 0, self.verify().stderr)
+        # A tampered installer must fail validation rather than ship.
+        (installer / "boot.dol").write_bytes(fake_dol())
+        self.assertIn("installer hash mismatch", self.verify().stderr)
+
     def test_corruption_is_rejected(self):
         overlay(self.patched, self.dist)
         dol = self.dist / "apps/WiiMC/boot.dol"

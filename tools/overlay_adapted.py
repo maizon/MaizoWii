@@ -34,6 +34,27 @@ def overlay(adapter_root: Path, dist: Path) -> dict[str,str]:
         tmp.replace(destination)
         status[module]="maizo HID source adapter (hardware tests still pending)"
         manifest.setdefault("adapted_sha256",{})[module]=hashlib.sha256(contents).hexdigest()
+    # Installer is independent of the eight runtime modules, and MUST be
+    # identified accurately: official upstream YAWM has no MAIZO HID adapter.
+    installer=manifest.get("installer")
+    if installer:
+        adapted=adapter_root/"apps/maizo-installer/boot.dol"
+        destination=dist/"apps/maizo-installer/boot.dol"
+        if adapted.is_file():
+            if adapted.is_symlink():
+                raise ValueError("Symlink installer binary")
+            data=adapted.read_bytes()
+            if len(data)>12*1024*1024 or not valid_dol(data):
+                raise ValueError("Invalid adapted YAWM installer DOL")
+            tmp=destination.with_suffix(".patched")
+            tmp.write_bytes(data)
+            tmp.replace(destination)
+            installer["hid_adapted"]=True
+            installer["dol_sha256"]=hashlib.sha256(data).hexdigest()
+            status["maizo-installer"]="HID source adapted, NOT Wii hardware validated"
+        else:
+            installer["hid_adapted"]=False
+            status["maizo-installer"]="official YAWM, USB HID not adapted"
     status["Nintendont"]="official own HID driver / controller.ini"
     # Record the final on-disk executable for every module, including fallbacks.
     # This is intentionally calculated AFTER overlays so the manifest cannot
@@ -48,7 +69,8 @@ def overlay(adapter_root: Path, dist: Path) -> dict[str,str]:
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8")
     (dist / "HID-COMPATIBILITY.txt").write_text(
-        "MAIZO: USB HID 0079:0006 and configurable profiles.\n" +
+        "MAIZO: Nintendont-compatible profiles and standard HID report parser;\n"
+        "unsupported IOS/device protocols are not magically emulated.\n" +
         "\n".join(f"{k}: {v}" for k, v in status.items()) +
         "\nHID support with unsupported USB protocols "
         "(0810:0001, XInput) is NOT guaranteed.\n",

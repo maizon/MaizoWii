@@ -30,9 +30,10 @@ def patch_file(root: Path, rel: str, fun):
     print("PATCH", rel)
 
 def install_inc(root: Path, folder: str):
-    dest = root / folder / "maizo_hid.inc"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(SOURCE, dest)
+    target = root / folder
+    target.mkdir(parents=True, exist_ok=True)
+    for name in ("maizo_hid.inc", "maizo_report.h"):
+        shutil.copyfile(SOURCE.parent / name, target / name)
 
 def fix_pad_update(text: str, key: str, is_wiimc: bool):
     text = replace_once(text, key, key + '\n\tmaizo_hid_tick();', "UpdatePads")
@@ -206,6 +207,75 @@ def patch_wiimc(root: Path):
                    "void TakeScreenshot();\nextern void wiiPause(void);",
                    "WiiMC wiiPause declaration"))
 
+    patch_file(root, "source/mplayer/libmpcodecs/vf_screenshot.c",
+               lambda x: replace_once(
+                   replace_once(x,
+                      "sws_scale(priv->ctx, mpi->planes,",
+                      "sws_scale(priv->ctx, (const uint8_t * const *)mpi->planes,",
+                      "WiiMC screenshot plane const"),
+                   "sws_scale(vf->priv->ctx, src,",
+                   "sws_scale(vf->priv->ctx, (const uint8_t * const *)src,",
+                   "WiiMC screenshot slice const"))
+    def ftp_compat(t):
+        t = replace_once(t, "#include <stdlib.h>",
+                         "#include <stdlib.h>\n#include <stdint.h>",
+                         "WiiMC FTP pointer portability")
+        for name in ("st_spare1","st_spare2","st_spare3"):
+            t = replace_once(t, "st->"+name+" = 0;", "/* legacy field removed: "+name+" */",
+                             "WiiMC FTP struct stat compatibility")
+        t = replace_once(t, "if_config(myIP, NULL, NULL, true)",
+                         "if_config(myIP, NULL, NULL, true, 20)",
+                         "WiiMC FTP network retry parameter")
+        # newlib changed private devoptab callbacks from int fd to void*.
+        # Avoid C function pointer casts: adapt the boundary explicitly.
+        wrappers = '''
+static int maizo_ftp_close(struct _reent*r,void*fd){
+ return __ftp_close(r,(int)(uintptr_t)fd);
+}
+static ssize_t maizo_ftp_write(struct _reent*r,void*fd,const char*buf,size_t n){
+ return __ftp_write(r,(int)(uintptr_t)fd,buf,n);
+}
+static ssize_t maizo_ftp_read(struct _reent*r,void*fd,char*buf,size_t n){
+ return __ftp_read(r,(int)(uintptr_t)fd,buf,n);
+}
+static off_t maizo_ftp_seek(struct _reent*r,void*fd,off_t off,int whence){
+ return __ftp_seek(r,(int)(uintptr_t)fd,off,whence);
+}
+static int maizo_ftp_fstat(struct _reent*r,void*fd,struct stat*st){
+ return __ftp_fstat(r,(int)(uintptr_t)fd,st);
+}
+'''
+        t=replace_once(t,"static void MountDevice(", wrappers+"\nstatic void MountDevice(",
+                       "WiiMC newlib FTP adapter wrappers")
+        for func in ("close","write","read","seek","fstat"):
+            t=replace_once(t,"dotab_ftp->"+func+"_r=__ftp_"+func+";",
+                           "dotab_ftp->"+func+"_r=maizo_ftp_"+func+";",
+                           "WiiMC FTP "+func+" callback")
+        return t
+    patch_file(root,"source/utils/ftp_devoptab.c",ftp_compat)
+    def subtitles_font_compat(t):
+        t=replace_once(t,"extern const font_ttf[];",
+                       "extern const unsigned char font_ttf[];",
+                       "WiiMC FreeType embedded default font")
+        t=replace_once(t,"extern font_mem;",
+                       "extern unsigned char *font_mem;",
+                       "WiiMC FreeType font cache pointer")
+        return replace_once(t,"extern mono_mem;",
+                            "extern unsigned char *mono_mem;",
+                            "WiiMC FreeType mono font cache pointer")
+    patch_file(root,"source/mplayer/libass/ass_font.c",subtitles_font_compat)
+
+    # This 2010-era custom linker script omits exception symbols that
+    # current libogc's interrupt handler requires. Use the *documented
+    # standard address layout* from devkitPro/devkitppc-crtls:
+    # libogc_common.ld, not a guessed RAM buffer.
+    patch_file(root, "build/wiimc.ld",
+               lambda t: replace_once(
+                   t, "__isIPL = 0;",
+                   "PROVIDE_HIDDEN(__ppc_excpt_buf = 0x800000d0);\n"
+                   "PROVIDE_HIDDEN(__ppc_excpt_table = 0x80003000);\n"
+                   "__isIPL = 0;",
+                   "WiiMC modern libogc exception symbols"))
     patch_file(root, "source/mplayer/osdep/ave-rvl.c",
                lambda x: replace_once(x, "#include <gccore.h>",
                                       "#include <gccore.h>\n#include <string.h>\nextern void udelay(int us);",
