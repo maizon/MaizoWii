@@ -76,6 +76,18 @@ def safe_extract(source: Path, destination: Path):
                         or (len(parts[0]) >= 2 and parts[0][0].isalpha()
                             and parts[0][1] == ":")):
                     raise ValueError("unsafe ZIP member")
+                # FAT32 cannot safely represent trailing dots/spaces, DOS device
+                # names or characters forbidden by Windows-compatible tools.
+                # Reject them before writing any archive member.
+                for component in parts:
+                    base = component.split(".")[0].upper()
+                    if (component in (".", "") or component.rstrip(" .") != component
+                            or any(ch in component for ch in '<>:"|?*')
+                            or any(ord(ch) < 32 for ch in component)
+                            or base in {"CON", "PRN", "AUX", "NUL"}
+                            or (len(base) == 4 and base[:3] in ("COM", "LPT")
+                                and base[3] in "123456789")):
+                        raise ValueError("ZIP name incompatible with FAT32")
                 key = "/".join(parts).casefold()
                 # A file cannot also be a parent directory. Detect conflicts
                 # before extraction so order cannot affect the result.

@@ -39,3 +39,9 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
 - Corrigida validação pré-extração de ZIP para rejeitar arquivo que se apresenta como diretório pai de outro membro, em qualquer ordem, inclusive com diferença de caixa.
 - Adicionados testes sintéticos de regressão; aprovação de CI do novo commit ainda pendente. Nenhum novo item do roadmap marcado concluído: 4/20 no total, 16 pendentes.
 - Próximo: R18 fixtures de autoboot; R04–R17/R20 exigem implementação e/ou testes físicos adicionais.
+
+## Execução 2026-11-04 — nomes incompatíveis com FAT32
+- Início: 16 pendências; meta ceil(16 × 0,30) = 5 itens.
+- Detectado risco adicional: ZIPs com nomes reservados DOS, caracteres proibidos e espaços/pontos finais podem ser aceitos no host mas falhar ou colidir no FAT32 do Wii.
+- Adicionada validação pré-extração e regressões sintéticas para nomes inválidos e caminhos válidos.
+- Mudança proposta para CI; sem comprovação de execução no Wii. Nenhum novo item R04–R18/R20 marcado concluído. R18 continua pendente.

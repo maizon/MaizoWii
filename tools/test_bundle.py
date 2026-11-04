@@ -140,6 +140,29 @@ class BundleTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 safe_extract(p / "conflict.zip", p / "out")
 
+    def test_zip_rejects_fat32_unsafe_names(self):
+        import zipfile
+        for name in ("apps/CON.txt", "apps/COM1.ini", "apps/LPT9",
+                     "apps/name?.dol", "apps/trailing. ", "apps/aux",
+                     "apps/bad:part", "apps/space "):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                p = Path(tmp)
+                with zipfile.ZipFile(p / "bad.zip", "w") as z:
+                    z.writestr(name, fake_dol())
+                with self.assertRaises(ValueError):
+                    safe_extract(p / "bad.zip", p / "out")
+                self.assertFalse((p / "out").exists())
+
+    def test_zip_accepts_fat32_safe_names(self):
+        import zipfile
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            with zipfile.ZipFile(p / "good.zip", "w") as z:
+                z.writestr("apps/Maizo/boot.dol", fake_dol())
+                z.writestr("apps/Maizo/meta.xml", "metadata")
+            safe_extract(p / "good.zip", p / "out")
+            self.assertEqual((p / "out/apps/Maizo/boot.dol").read_bytes(), fake_dol())
+
     def test_zip_traversal_blocked(self):
         import zipfile
         with tempfile.TemporaryDirectory() as tmp:
