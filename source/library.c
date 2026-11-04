@@ -9,13 +9,23 @@
 typedef struct { DIR *fd;char path[MAIZO_PATH]; } Dir;
 typedef struct { Dir dirs[MAIZO_DEPTH]; } Work;
 static const struct { System system;const char *path; } roots[]={
+ {SYSTEM_WII,"usb:/wbfs"},{SYSTEM_WII,"sd:/wbfs"},{SYSTEM_WII,"usb:/roms/wii"},{SYSTEM_WII,"sd:/roms/wii"},
  {SYSTEM_GC,"usb:/games"},{SYSTEM_GC,"sd:/games"},{SYSTEM_GC,"usb:/roms/gamecube"},{SYSTEM_GC,"sd:/roms/gamecube"},
+ {SYSTEM_SNES,"usb:/snes9xgx/roms"},{SYSTEM_SNES,"sd:/snes9xgx/roms"},{SYSTEM_SNES,"usb:/roms/snes"},{SYSTEM_SNES,"sd:/roms/snes"},
+ {SYSTEM_NES,"usb:/fceugx/roms"},{SYSTEM_NES,"sd:/fceugx/roms"},{SYSTEM_NES,"usb:/roms/nes"},{SYSTEM_NES,"sd:/roms/nes"},
+ {SYSTEM_GBA,"usb:/vbagx/roms"},{SYSTEM_GBA,"sd:/vbagx/roms"},{SYSTEM_GBA,"usb:/roms/gba"},{SYSTEM_GBA,"sd:/roms/gba"},
+ {SYSTEM_GB,"usb:/vbagx/roms"},{SYSTEM_GB,"sd:/vbagx/roms"},{SYSTEM_GB,"usb:/roms/gb"},{SYSTEM_GB,"sd:/roms/gb"},
  {SYSTEM_PS1,"usb:/ps1"},{SYSTEM_PS1,"sd:/ps1"},{SYSTEM_PS1,"usb:/wiisxrx/isos"},{SYSTEM_PS1,"sd:/wiisxrx/isos"},
  {SYSTEM_MEDIA,"usb:/videos"},{SYSTEM_MEDIA,"sd:/videos"},{SYSTEM_MEDIA,"usb:/movies"},{SYSTEM_MEDIA,"sd:/movies"},{SYSTEM_MEDIA,"usb:/music"},{SYSTEM_MEDIA,"sd:/music"}
 };
 static int ext(const char*s,const char*e){const char*d=strrchr(s,'.');return d&&!strcasecmp(d,e);}
 static int allowed(System s,const char*n){
+ if(s==SYSTEM_WII)return ext(n,".wbfs")||ext(n,".iso");
  if(s==SYSTEM_GC)return ext(n,".iso")||ext(n,".gcm")||ext(n,".ciso");
+ if(s==SYSTEM_SNES)return ext(n,".sfc")||ext(n,".smc")||ext(n,".fig")||ext(n,".zip");
+ if(s==SYSTEM_NES)return ext(n,".nes")||ext(n,".fds")||ext(n,".unf")||ext(n,".zip");
+ if(s==SYSTEM_GBA)return ext(n,".gba");
+ if(s==SYSTEM_GB)return ext(n,".gb")||ext(n,".gbc")||ext(n,".sgb");
  if(s==SYSTEM_PS1)return ext(n,".cue")||ext(n,".chd")||ext(n,".pbp")||ext(n,".iso")||ext(n,".img")||ext(n,".bin")||ext(n,".m3u");
  const char*e[]={".avi",".mp4",".mkv",".m4v",".mov",".flv",".mpg",".mpeg",".vob",".wmv",".mp3",".ogg",".flac",".wav",".aac",".m4a"};
  for(unsigned i=0;i<sizeof(e)/sizeof(e[0]);i++)if(ext(n,e[i]))return 1;return 0;
@@ -30,6 +40,15 @@ static void insert(Library*l,System sys,const char*path,const char*filename,cons
  snprintf(g->name,sizeof(g->name),"%s",n);
  char*d=strrchr(g->name,'.');if(d)*d=0;
  for(d=g->name;*d;d++)if(*d=='_')*d=' ';
+ if(sys==SYSTEM_WII){
+  const char*b=strrchr(parent,'[');const char*end=b?strchr(b,']'):NULL;
+  if(b&&end&&end-b==7){int valid=1;for(int j=1;j<=6;j++)if(!isalnum((unsigned char)b[j]))valid=0;
+   if(valid){memcpy(g->id,b+1,6);g->id[6]=0;}}
+  if(!g->id[0]&&strlen(filename)>=10&&filename[6]=='.'){int valid=1;for(int j=0;j<6;j++)if(!isalnum((unsigned char)filename[j]))valid=0;
+   if(valid){memcpy(g->id,filename,6);g->id[6]=0;}}
+  if(!g->id[0]&&ext(filename,".iso")){FILE*f=fopen(path,"rb");if(f){char id[6];if(fread(id,1,6,f)==6){int valid=1;for(int j=0;j<6;j++)if(!isalnum((unsigned char)id[j]))valid=0;
+   if(valid){memcpy(g->id,id,6);g->id[6]=0;}}fclose(f);}}
+ }
  if(sys==SYSTEM_GC){FILE*f=fopen(path,"rb");if(f){char id[6];if(fread(id,1,6,f)==6){int ok=1;for(int j=0;j<6;j++)if(!isalnum((unsigned char)id[j]))ok=0;if(ok){memcpy(g->id,id,6);g->id[6]=0;}}fclose(f);}}
 }
 static int sort_games(const void*a,const void*b){const Game*x=a,*y=b;return x->system!=y->system?(int)x->system-(int)y->system:strcasecmp(x->name,y->name);}

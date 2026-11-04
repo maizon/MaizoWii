@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <malloc.h>
 #include <stdint.h>
 /* Nintendont config layout/constants: fix94/nintendont common/include/CommonConfig.h,
@@ -19,6 +20,9 @@
 #define NIN_CFG_CHEATS (1u<<0)
 #define NIN_CFG_SKIP_IPL (1u<<18)
 #define NIN_CFG_USB (1u<<10)
+#define NIN_CFG_MC_MULTI (1u<<13)
+#define NIN_CFG_NATIVE_SI (1u<<14)
+#define NIN_CFG_REMLIMIT (1u<<8)
 typedef struct {
  u32 Magicbytes,Version,Config,VideoMode,Language;
  char GamePath[255],CheatPath[255];
@@ -31,19 +35,43 @@ typedef struct {
  u32 text_size[7],data_size[11],bss_start,bss_size,entry_point;
 } DolHeader;
 static int file_exists(const char*p){FILE*f=fopen(p,"rb");if(!f)return 0;fclose(f);return 1;}
-static const char*paths[3][4]={
+/* Every system has its own executable; emulators are not merged into the frontend. */
+static const char*paths[SYSTEM_COUNT][4]={
+ {"usb:/apps/usbloader_gx/boot.dol","sd:/apps/usbloader_gx/boot.dol","usb:/maizo/modules/usbloader_gx/boot.dol","sd:/maizo/modules/usbloader_gx/boot.dol"},
  {"usb:/apps/Nintendont/boot.dol","sd:/apps/Nintendont/boot.dol","usb:/maizo/modules/nintendont/boot.dol","sd:/maizo/modules/nintendont/boot.dol"},
  {"usb:/apps/WiiSXRX/boot.dol","sd:/apps/WiiSXRX/boot.dol","usb:/maizo/modules/wiisxrx/boot.dol","sd:/maizo/modules/wiisxrx/boot.dol"},
+ {"usb:/apps/snes9xgx/boot.dol","sd:/apps/snes9xgx/boot.dol","usb:/maizo/modules/snes9xgx/boot.dol","sd:/maizo/modules/snes9xgx/boot.dol"},
+ {"usb:/apps/fceugx/boot.dol","sd:/apps/fceugx/boot.dol","usb:/maizo/modules/fceugx/boot.dol","sd:/maizo/modules/fceugx/boot.dol"},
+ {"usb:/apps/vbagx/boot.dol","sd:/apps/vbagx/boot.dol","usb:/maizo/modules/vbagx/boot.dol","sd:/maizo/modules/vbagx/boot.dol"},
+ {"usb:/apps/vbagx/boot.dol","sd:/apps/vbagx/boot.dol","usb:/maizo/modules/vbagx/boot.dol","sd:/maizo/modules/vbagx/boot.dol"},
  {"usb:/apps/WiiMC/boot.dol","sd:/apps/WiiMC/boot.dol","usb:/maizo/modules/wiimc/boot.dol","sd:/maizo/modules/wiimc/boot.dol"}
 };
 static const char*resolve(System sys){if(sys<0||sys>=SYSTEM_COUNT)return NULL;
  for(int i=0;i<4;i++)if(file_exists(paths[sys][i]))return paths[sys][i];return NULL;}
 int module_available(System sys){return resolve(sys)!=NULL;}
-const char*module_name(System sys){return sys==SYSTEM_GC?"NINTENDONT":sys==SYSTEM_PS1?"WIISXRX":"WIIMC-SSLC";}
+const char*system_title(System sys){
+ switch(sys){
+ case SYSTEM_WII:return "NINTENDO WII";case SYSTEM_GC:return "GAMECUBE";
+ case SYSTEM_PS1:return "PLAYSTATION 1";case SYSTEM_SNES:return "SUPER NINTENDO";
+ case SYSTEM_NES:return "NINTENDO NES";case SYSTEM_GBA:return "GAME BOY ADVANCE";
+ case SYSTEM_GB:return "GAME BOY / COLOR";case SYSTEM_MEDIA:return "FILMES E MUSICAS";
+ default:return "DESCONHECIDO";
+ }
+}
+const char*module_name(System sys){
+ switch(sys){
+ case SYSTEM_WII:return "USB LOADER GX";case SYSTEM_GC:return "NINTENDONT";
+ case SYSTEM_PS1:return "WIISXRX";case SYSTEM_SNES:return "SNES9X GX";
+ case SYSTEM_NES:return "FCE ULTRA GX";case SYSTEM_GBA:case SYSTEM_GB:return "VBA GX";
+ case SYSTEM_MEDIA:return "WIIMC-SSLC";default:return "SEM MODULO";
+ }
+}
 static int save_nincfg(const Game*g,const Config*c) {
  NIN_CFG n;memset(&n,0,sizeof(n));n.Magicbytes=NIN_CFG_MAGIC;n.Version=NIN_CFG_VERSION;
  n.Config=NIN_CFG_AUTO_BOOT|(c->gc_memcard?NIN_CFG_MEMCARDEMU:0)|(c->gc_wide?NIN_CFG_FORCE_WIDE:0)|
- (c->gc_cheats?NIN_CFG_CHEATS:0)|(c->gc_skip_ipl?NIN_CFG_SKIP_IPL:0);
+ (c->gc_cheats?NIN_CFG_CHEATS:0)|(c->gc_skip_ipl?NIN_CFG_SKIP_IPL:0)|
+ (c->gc_mc_multi?NIN_CFG_MC_MULTI:0)|(c->gc_native_si?NIN_CFG_NATIVE_SI:0)|
+ (c->gc_rem_limit?NIN_CFG_REMLIMIT:0);
  if(!strncmp(g->path,"usb:",4))n.Config|=NIN_CFG_USB;
  if(c->gc_video==1)n.VideoMode=0x00010000u|8u; /* force MPAL */
  if(c->gc_video==2)n.VideoMode=0x00010000u|4u; /* force NTSC */
@@ -61,8 +89,8 @@ static void save_launch_record(const Game*g,const Config*c) {
  char dest[96];snprintf(dest,sizeof(dest),"%s/maizo",(g->path[0]=='s')?"sd:":"usb:");
  mkdir(dest,0777);strncat(dest,"/maizo-launch.txt",sizeof(dest)-strlen(dest)-1);
  FILE*f=fopen(dest,"wb");if(!f)return;
- fprintf(f,"MAIZO-LAUNCH/1\nsystem=%d\nfile=%s\nmedia_volume=%u\nps1_interpreter=%u\nps1_frameskip=%u\nps1_audio=%u\n",
- g->system,g->path,c->media_volume,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio);
+ fprintf(f,"MAIZO-LAUNCH/2\nsystem=%d\nfile=%s\nmodule=%s\nmedia_volume=%u\nps1_interpreter=%u\nps1_frameskip=%u\nps1_audio=%u\n",
+ g->system,g->path,module_name(g->system),c->media_volume,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio);
  fclose(f);
 }
 /* Classical in-memory Wii DOL forwarder. DOL code and system cleanup are not
@@ -93,13 +121,26 @@ static u32 install_dol(const unsigned char*image){
 }
 int module_launch(const Game*g,const Config*c,char*error,size_t cap){
  const char*exe=resolve(g->system);if(!exe){snprintf(error,cap,"DOL do %s nao encontrado",module_name(g->system));return 0;}
+ if(g->system==SYSTEM_PS1){
+  const char*e=strrchr(g->path,'.');
+  if(e&&(!strcasecmp(e,".chd")||!strcasecmp(e,".m3u"))){
+   snprintf(error,cap,"WiiSXRX original nao suporta este formato diretamente");return 0;
+  }
+ }
  if(g->system==SYSTEM_GC&&!save_nincfg(g,c)){snprintf(error,cap,"Falha ao gravar nincfg.bin");return 0;}
  save_launch_record(g,c);
- /* WiiSXRX accepts argv[1]=directory argv[2]=filename.
-  * WiiMC-SSLC accepts argv[1]=media path and sets AutobootExit. */
+ /* Original WiiSXRX and WiiMC-SSLC accept argv autoboot; no module source changes here. */
  char command[2048];size_t used=0;
  #define APPEND_TEXT(s) do{size_t n=strlen(s)+1;if(n>sizeof(command)-used){snprintf(error,cap,"Parametros excedem limite");return 0;}memcpy(command+used,s,n);used+=n;}while(0)
  APPEND_TEXT(exe);
+ if(g->system==SYSTEM_WII){
+  /* USB Loader GX Enhanced recognizes six-character game ID for quick boot.
+   * If the ID cannot be identified, open its menu instead. */
+  if(strlen(g->id)==6)APPEND_TEXT(g->id);
+  char option[64];
+  snprintf(option,sizeof(option),"-bootios=%u",c->wii_ios);APPEND_TEXT(option);
+  snprintf(option,sizeof(option),"-usbport=%u",c->wii_usb_port);APPEND_TEXT(option);
+ }
  if(g->system==SYSTEM_PS1){
   char dir[MAIZO_PATH],game[MAIZO_PATH];snprintf(dir,sizeof(dir),"%s",g->path);
   char*slash=strrchr(dir,'/');if(!slash){snprintf(error,cap,"Caminho invalido");return 0;}
@@ -108,17 +149,17 @@ int module_launch(const Game*g,const Config*c,char*error,size_t cap){
   snprintf(option,sizeof(option),"Audio=%u",c->ps1_audio);APPEND_TEXT(option);
   snprintf(option,sizeof(option),"SkipFrames=%u",c->ps1_frameskip);APPEND_TEXT(option);
  } else if(g->system==SYSTEM_MEDIA) {
-  /* Upstream WiiMC source/wiimc.cpp uses argv[1] as printf format. */
+  /* Upstream WiiMC-SSLC uses argv[1] as an unsafe printf format string. */
   if(strchr(g->path,'%')){snprintf(error,cap,"Nome com %% inseguro no WiiMC original");return 0;}
-  /* WiiMC enumerates FAT mounts as usb1:/ or sd1:/, never usb:/ sd:/.
-   * Preserve the media path and insert default partition index 1. */
+  /* WiiMC enumerates FAT partitions as usb1:/ or sd1:/.
+   * The default partition index (1) requires hardware confirmation. */
   char media_path[MAIZO_PATH+2];
   if(!strncmp(g->path,"usb:/",5))
     snprintf(media_path,sizeof(media_path),"usb1:/%s",g->path+5);
   else if(!strncmp(g->path,"sd:/",4))
     snprintf(media_path,sizeof(media_path),"sd1:/%s",g->path+4);
   else {snprintf(error,cap,"Particao de midia nao suportada");return 0;}
-  APPEND_TEXT(media_path); /* WiiMC argv[1] */
+  APPEND_TEXT(media_path);
  }
  #undef APPEND_TEXT
  FILE*f=fopen(exe,"rb");if(!f){snprintf(error,cap,"Nao abre o modulo");return 0;}
@@ -133,7 +174,7 @@ int module_launch(const Game*g,const Config*c,char*error,size_t cap){
  char*line=(char*)memalign(32,used+32);
  if(!args||!line){free(args);free(line);snprintf(error,cap,"Sem RAM para parametros");return 0;}
  memset(args,0,sizeof(*args));memcpy(line,command,used);args->argvMagic=ARGV_MAGIC;
- args->commandLine=line;args->length=used;args->argc=g->system==SYSTEM_PS1?6:(g->system==SYSTEM_MEDIA?2:1);
+ args->commandLine=line;args->length=used;args->argc=g->system==SYSTEM_PS1?6:(g->system==SYSTEM_WII?(strlen(g->id)==6?4:3):(g->system==SYSTEM_MEDIA?2:1));
  args->argv=&args->commandLine;args->endARGV=args->argv+1;
  u32 entry=0;
  /* Close libfat/IOS peripherals before new executable takes over. */
@@ -141,7 +182,7 @@ int module_launch(const Game*g,const Config*c,char*error,size_t cap){
  entry=install_dol(image);
  if(entry){
   void*dest=(void*)(uintptr_t)(entry+8);memcpy(dest,args,sizeof(*args));DCFlushRange(dest,sizeof(*args));
-  VIDEO_WaitVSync();SYS_ResetSystem(SYS_SHUTDOWN,0,0);
+  VIDEO_WaitVSync();/* Avoid SYS_SHUTDOWN (powers down services needed by the child). */
   u32 level;_CPU_ISR_Disable(level);
   ((void(*)(void))(uintptr_t)entry)();_CPU_ISR_Restore(level);
  }

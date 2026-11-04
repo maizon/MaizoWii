@@ -1,65 +1,109 @@
-# MAIZO Wii — frontend independente (alpha experimental)
+# MAIZO Wii — frontend multi-sistema (alpha de integração)
 
-Frontend modular para Nintendo Wii, inspirado na **linguagem visual** do [NeoStation](https://github.com/misobadev/neostation-frontend). O MAIZO roda em libogc/GX; não é um port do Flutter e não inclui ROMs, BIOS ou motores de terceiros.
+Interface **original em libogc/GX para Nintendo Wii**, inspirada na organização
+visual do [NeoStation](https://github.com/misobadev/neostation-frontend). Não
+é um port de Flutter. Projeto GPL-3.0-or-later; não inclui jogos, BIOS nem
+binários de emuladores.
 
-## Arquitetura
+## Sistemas e executáveis detectados
 
-- MAIZO: menus, indexação progressiva USB/SD, filtro por console, busca, favoritos, preferências e seletor de arquivos.
-- [Nintendont](https://github.com/fix94/nintendont): GameCube, execução em seu próprio DOL e suporte HID original do emulador.
-- [WiiSXRX](https://github.com/niuus/WiiSXRX): PlayStation 1, autoboot de mídia por argumentos já existente no código-fonte.
-- [WiiMC-SSLC](https://github.com/SuperrSonic/WiiMC-SSLC): vídeo/música, motor independente.
+| Aba | Conteúdo reconhecido | Módulo externo |
+|---|---|---|
+| Wii | `wbfs/*.wbfs`, `wbfs/*.iso` | USB Loader GX Enhanced |
+| GameCube | `games/*/game.iso`, ISO/GCM/CISO | Nintendont |
+| PlayStation 1 | ISO/BIN/CUE/IMG/PBP (+ CHD/M3U sinalizados) | WiiSXRX |
+| Super Nintendo | SFC/SMC/FIG/ZIP | Snes9x GX |
+| NES | NES/FDS/UNF/ZIP | FCE Ultra GX |
+| Game Boy Advance | GBA | VBA GX |
+| Game Boy / Color | GB/GBC/SGB | VBA GX |
+| Filmes e música | MP4/MKV/AVI/MP3/FLAC etc. | WiiMC-SSLC |
 
-**Estado real:** Este é um primeiro protótipo para compilar e testar. Não afirma 100% de compatibilidade. O WiiSXRX declara suporte CHD/ECM/PBP; o WiiMC original reconhece caminho de vídeo em argv[1]. A execução automática ainda depende de confirmar o booter MAIZO no Wii. Não existe download de capas diretamente no Wii nesta versão. Não há garantia de retorno automático do DOL original para o frontend. O loader DOL e os controles HID precisam de testes no hardware.
+Busca incremental em USB/SD, subpastas, filtros, favoritos persistentes,
+catálogo em grade/lista, detalhes, teclado virtual em grade 8 colunas,
+pesquisa em títulos e capas GX (cache LRU).
 
-## Instalação
+**Importante:** o MAIZO só executa diretamente **jogo** nas integrações
+que possuem contrato de autoboot conhecido: Wii (ID6 no USB Loader GX
+Enhanced), GameCube (config Nintendont) e PS1 (argv do WiiSXRX, formatos
+aceitos). SNES/NES/GB/GBA abrem seus emuladores com o menu original;
+WiiMC-SSLC recebe caminho em argv[1] e tenta reproduzir diretamente; o arquivo `maizo-launch.txt` é uma proposta de
+contrato para versões adaptadas, **não é consumido** por binários originais. O WiiMC usa `usb1:/`/`sd1:/` e rejeitamos nomes com `%` por segurança na versão original.
+Não há compatibilidade HID universal entre os módulos.
 
-1. Baixe o artefato **MAIZOWII-ALPHA-TEST** de GitHub Actions, após um build bem-sucedido.
-2. Extraia em um pendrive ou SD FAT32, mantendo `apps/maizo/boot.dol` e `apps/maizo/meta.xml`.
-3. Instale seus próprios executáveis em `apps/Nintendont/boot.dol`, `apps/WiiSXRX/boot.dol`, `apps/WiiMC/boot.dol` (também aceitos em `maizo/modules/{nintendont,wiisxrx,wiimc}/boot.dol`).
-4. Jogos GameCube em `games/Nome/game.iso` ou arquivos ISO/GCM/CISO; PS1 em `ps1` ou `wiisxrx/isos`; mídias em `videos`, `movies` ou `music`. Aceita SD e USB.
-5. Abra **MAIZO Wii** pelo Homebrew Channel.
+## Instalar
 
-## Controle
+1. Compile com devkitPro/devkitPPC e libogc ou baixe o artefato gerado pelo CI
+   se a compilação passar. Copie `apps/maizo/boot.dol`, `meta.xml` e os
+   perfis distribuídos no pacote para USB/SD FAT32.
+2. Em `apps/`, coloque os módulos que possuir: `usbloader_gx`,
+   `Nintendont`, `WiiSXRX`, `snes9xgx`, `fceugx`, `vbagx`, `WiiMC`,
+   cada qual com `boot.dol`. São reconhecidas instalações em SD e USB.
+3. ROMs em `wbfs`, `games`, `ps1`, `snes9xgx/roms`, `fceugx/roms`,
+   `vbagx/roms`, `videos`, `music` ou caminhos alternativos indicados
+   em `docs/MODULE_COMPATIBILITY.md`.
+4. Inicie `MAIZO Wii` no Homebrew Channel.
 
-- D-pad / analógico: navegar.
-- **A**: selecionar, abrir detalhes ou executar.
-- **B**: voltar.
-- **L/R**: alternar GameCube / PlayStation 1 / Mídia.
-- **X**: pesquisa (na biblioteca).
-- **Y**: favorito.
-- **Start/Home**: ajustes; na busca, mostra resultados.
-- **Z**: reindexar (na biblioteca).
+## Controles e navegação
 
-Entrada do frontend: GameCube, Wii Remote e um adaptador HID experimental com relatório do **Microntek 0079:0006**. O dispositivo 0810:0001 é detectado, mas ainda não há perfil específico de seu protocolo USB. Um gamepad funcionar no frontend não transfere controle ao WiiSXRX/WiiMC; cada motor mantém seus próprios drivers. O Nintendont preserva seu próprio suporte.
+D-pad ou analógico do GameCube, Wii Remote ou **HID reconhecido**;
+A confirma, B volta, L/R troca a aba, X busca, Y favorita, START/HOME abre
+configurações. Na Home, Y abre favoritos e Z reindexa; na biblioteca,
+Z alterna entre todos e favoritos. Na busca, setas selecionam a letra no
+teclado, A digita, B apaga e START mostra resultados.
 
-## Construção
+Existe decodificação para o controle **Microntek 0079:0006** e suporte
+de **perfis por VID/PID**. Para 0810:0001 é necessário medir o relatório
+real do Wii antes de criar o respectivo `.ini`. Consulte
+`docs/HID_PROFILES.md`. Ao iniciar outro DOL, o suporte HID passa a ser
+de responsabilidade do emulador. O controle USB usado no frontend
+**não é automaticamente convertido em Wiimote/GC pad nos jogos**.
 
-Requer devkitPro, devkitPPC e Wii libogc + libfat.
+## Configurações
 
-```bash
-make
-```
+- Gerais: tema violeta/turquesa/coral, lista/grade.
+- Wii: IOS inicial e porta USB (parâmetros do USB Loader GX Enhanced).
+- GameCube: Memory Card, widescreen, cheats, Skip IPL, vídeo Auto/PAL-M/
+  NTSC/PAL50, MC Multi, controle GC nativo, Remove Limit.
+- PS1: dynarec/interpretador, frameskip, áudio (argumentos WiiSXRX).
+- Vídeo: volume para **módulo adaptado**, não para WiiMC original.
+- SNES/NES/GBA/GB: configurações avançadas permanecem nos menus originais.
 
-GitHub Actions compila em `devkitpro/devkitppc:20261102` e disponibiliza o DOL de teste.
-
-## Interface
-
-A primeira interface tem tema escuro, destaque violeta, navegação por sistemas, catálogo em lista, detalhes, pesquisa por teclado virtual, favoritos e ajustes separados de GameCube/PS1/mídia. O catálogo usa varredura **incremental** durante a renderização, até 1500 arquivos. Os ícones SVG em `assets/icons/` são referências não rasterizadas; a interface usa formas GX e mostra capas com cache de texturas `.gxt` preparadas pelo utilitário incluído.
+Configuração em `maizo/settings.ini`, favoritos em
+`maizo/favorites.txt`, perfis em `maizo/controllers/VID_PID.ini`.
+A gravação da seleção de GC produz `nincfg.bin` na unidade do jogo.
 
 ## Capas
 
-O auxiliar `tools/cover_sync.py` baixa capas GameCube por Game ID para `maizo/covers` quando executado em um PC com acesso à internet. Execute depois `python tools/build_cover_cache.py /CAMINHO/DO/PENDRIVE/maizo/covers` (requer Pillow) para converter PNG em textura GX. O MAIZO exibe os arquivos .gxt na Home e em Detalhes. Não há download HTTP no Wii. O script não distribui jogos.
+`tools/cover_sync.py` baixa **somente arte** de jogos Wii e GameCube
+identificados por ID6 via GameTDB **em PC/Android com Internet**; não
+baixa ROMs. `tools/build_cover_cache.py` transforma PNG em texturas
+GX_RGBA8 `.gxt` no USB/SD. Para capas de outros sistemas, coloque
+`maizo/covers/NOME-NORMALIZADO.png` e rode o conversor.
 
-## Problemas conhecidos / validação
+```sh
+python3 tools/cover_sync.py /CAMINHO/USB --region US
+python3 tools/build_cover_cache.py /CAMINHO/USB/maizo/covers
+```
 
-1. **Primeiro teste:** navegação pelo Microntek, leitura USB e SD, biblioteca e estabilidade da UI.
-2. **Segundo:** iniciar um GameCube pelo Nintendont sem alterar seu HID.
-3. **Terceiro:** autoboot WiiSXRX com ISO/CUE/BIN, verificar quais formatos são suportados.
-4. **Quarto:** WiiMC recebe argv[1] com o caminho do vídeo; validar reprodução e saída no Wii físico.
-5. **Último:** retorno ao MAIZO e scanner de capas no Wii.
+O Wii **ainda não baixa capas da Internet**; imagens podem ser carregadas
+de armazenamento. See: `docs/ARCHITECTURE.md`.
 
-Veja `docs/ARCHITECTURE.md` e `docs/MODULE_COMPATIBILITY.md`.
+## Compilar e validar
 
-## Créditos e licenças
+```sh
+python3 tools/test_contract.py
+python3 -m unittest discover -s tools -p 'test_cover_sync.py'
+make -j2    # necessita DEVKITPPC/devkitPro
+```
 
-O frontend é código original sob GPL-3.0-or-later. Font8x8 de Daniel Hepper (domínio público). Ícones Tabler: MIT; flat-gamepad-icons: CC BY-SA 4.0 (ver `THIRD_PARTY.md`). NeoStation é referência visual e não foi copiado para o programa. Nintendont, WiiMC e WiiSXRX são aplicativos separados, cada um mantendo sua licença e código.
+Pipeline CI: `.github/workflows/build.yml`. É indispensável testar
+DOL/IOS/USB em **hardware Wii real** antes de anunciar estabilidade.
+A troca de executáveis é **experimental** e não há retorno automático
+garantido ao MAIZO após sair dos módulos.
+
+## Direitos e referências
+
+Nintendont (GPL-2.0), WiiMC-SSLC (GPL-3.0), WiiSXRX (licença de upstream),
+NeoStation (GPL-3.0, inspiração, não copiado), Flat Gamepad Icons
+(CC BY-SA 4.0), Tabler (MIT), Font8x8 (domínio público).
+Veja `THIRD_PARTY.md`.

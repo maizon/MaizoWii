@@ -11,7 +11,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Contract tests
-        run: python3 tools/test_contract.py
+        run: |
+          python3 tools/test_contract.py
+          python3 -m unittest discover -s tools -p "test_cover_sync.py"
       - name: Compile Wii DOL
         run: make -j2
       - name: Package
@@ -19,9 +21,11 @@ jobs:
           test -s boot.dol
           mkdir -p dist/apps/maizo
           cp boot.dol apps/maizo/meta.xml dist/apps/maizo/
+          mkdir -p dist/maizo/controllers
+          cp profiles/0079_0006.ini dist/maizo/controllers/
           ls -lh boot.dol
       - uses: actions/upload-artifact@v4
         with:
-          name: MAIZOWII-ALPHA-TEST
+          name: MAIZOWII-MULTISYSTEM-ALPHA
           path: dist/
           retention-days: 7

@@ -1,18 +1,37 @@
-# Compatibilidade dos módulos: fontes verificadas
+# Compatibilidade verificada no código de origem (não equivale a teste de hardware)
 
-| Sistema | Fonte | Entrada atual | Limites |
-|---|---|---|---|
-| GameCube | https://github.com/fix94/nintendont | `nincfg.bin` NIN_CFG v0x0B, AUTO_BOOT, USB, caminho relativo, vídeo e ajustes GC | Deve validar retorno, argv e formatos no Wii real |
-| PlayStation | https://github.com/niuus/WiiSXRX | pasta e arquivo em argv[1]/argv[2], `Core`, `Audio`, `SkipFrames` | README WiiSXRX declara CHD/ECM/PBP, mas controle USB genérico não presumido |
-| Mídia | https://github.com/SuperrSonic/WiiMC-SSLC | recebe caminho em `argv[1]` com `usb1:/` ou `sd1:/` e grava `maizo-launch.txt` | WiiMC original aceita argv de arquivo; transição DOL e partição precisam validação no Wii |
+| Plataforma | Pastas de biblioteca | DOL esperado | Integração ao iniciar |
+| --- | --- | --- | --- |
+| Wii | `wbfs`, `roms/wii` | `apps/usbloader_gx/boot.dol` | ID6 (se detectado), `-bootios`, `-usbport` no USB Loader GX Enhanced |
+| GameCube | `games`, `roms/gamecube` | `apps/Nintendont/boot.dol` | `nincfg.bin` e AUTO_BOOT, GC Video |
+| PS1 | `ps1`, `wiisxrx/isos` | `apps/WiiSXRX/boot.dol` | `argv[1]` diretório, `argv[2]` arquivo; Core, Audio, SkipFrames |
+| SNES | `snes9xgx/roms`, `roms/snes` | `apps/snes9xgx/boot.dol` | abre menu original; sem autoboot direto confirmado |
+| NES | `fceugx/roms`, `roms/nes` | `apps/fceugx/boot.dol` | abre menu original |
+| GBA | `vbagx/roms`, `roms/gba` | `apps/vbagx/boot.dol` | abre menu original |
+| GB/GBC | `vbagx/roms`, `roms/gb` | `apps/vbagx/boot.dol` | abre menu original |
+| Vídeos e músicas | `videos`, `movies`, `music` | `apps/WiiMC/boot.dol` | reprodução direta por `argv[1]` convertido em `usb1:/`/`sd1:/` (partição 1 presumida) |
 
-Nintendont reporta flags de vídeo `NIN_VID_FORCE_MPAL`, NTSC e PAL50; não presume que uma alteração de PAL-M produza imagem válida em toda TV.
+Todos os caminhos dos DOLs também podem ser `sd:/apps/...` e
+`sd:/maizo/modules/<id>/boot.dol` / `usb:/maizo/modules/<id>/boot.dol`.
+As linhas Wii e GC dependem de dispositivos/IOS preparados corretamente.
 
-Caminhos buscados em ordem: `usb:/apps/<nome>/boot.dol`, `sd:/apps/<nome>/boot.dol`, `usb:/maizo/modules/<nome>/boot.dol`, `sd:/maizo/modules/<nome>/boot.dol`.
+### Fontes dos contratos
 
-### Próximas adaptações isoladas
-- validar o argv[1] WiiMC no DOL original e eventual suporte ampliado a opções de reprodução;
-- estratégia de retorno sem congelar: sair do núcleo + recarregar DOL MAIZO;
-- diagnóstico após travamento de USB e registro de ABI;
-- melhorar texturas GX e cache de capas;
-- perfil USB HID fora de Nintendont, sem afirmar suporte universal.
+- USB Loader GX Enhanced: `source/StartUpProcess.cpp` reconhece game ID
+  de 6 caracteres e parâmetros `-bootios=` e `-usbport=`.
+- Nintendont: `common/include/CommonConfig.h`, `loader/source/main.c`,
+  lê estrutura `NIN_CFG` versão `0x0B`.
+- WiiSXRX: `Gamecube/GamecubeMain.cpp`, lê argumentos e pares de opções.
+- WiiMC-SSLC: `source/wiimc.cpp` aceita caminho `argv[1]` para autoboot; nomes com `%` são bloqueados por bug de `sprintf` original.
+- Snes9x GX, FCE Ultra GX, VBA GX: menus originais; integração avançada
+  ainda requer verificar e eventualmente modificar seus pontos de entrada.
+
+**HID**: o frontend não transfere seu driver a outro DOL. Nintendont tem
+`controller.ini` específico; os outros motores não herdam esse suporte.
+O `maizo-launch.txt` é apenas registro para possíveis patches. Não
+afirmar suporte a HID 0810:0001 ou a XInput sem teste físico.
+
+**Vídeo PAL-M**: forçar o modo não garante sinal na TV CRT, e o Wii pode
+ficar com tela preta. Sempre guardar saída AUTO como padrão. CHD/M3U são
+listados, mas são bloqueados no lançamento PS1 original por ausência de
+suporte comprovado.

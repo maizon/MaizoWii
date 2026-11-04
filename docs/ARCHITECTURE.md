@@ -1,35 +1,65 @@
-# Arquitetura e telas MAIZO Wii
+# Arquitetura do MAIZO Wii — integração modular
 
 ## Camadas
-UI GX / navegação -> biblioteca e configurações -> contrato de launch -> executáveis externos.
-O MAIZO não liga símbolos ou carregadores próprios dos emuladores ao frontend, e o carregamento DOL troca o processo ativo.
 
-## Telas de produto (conceito NeoStation adaptado a CRT)
-1. **Home:** três cards por sistema (GameCube, PlayStation 1, Filmes/Música), contagem de jogos e dicas de botões.
-2. **Biblioteca:** aba de plataforma, títulos, quantidade, favoritos, varredura incremental e busca.
-3. **Detalhes:** capa gráfica futura, nome, sistema, ID de disco, caminho, módulo e ação Iniciar.
-4. **Busca:** teclado virtual acessível por D-pad, filtro instantâneo por título.
-5. **Configurações:** tema, visualização, Nintendont [memory card, widescreen, cheats, skip IPL, vídeo auto/MPAL/NTSC/PAL50]; WiiSXRX [interpreter, frameskip, audio]; mídia [volume reservado no contrato].
-6. **Mensagens:** falhas de módulo, caminho inválido ou parâmetros não suportados (sem forçar execução).
-7. **Futuras:** favoritos dedicados, baixar/gerenciar capas, mapeador de controles, gerenciamento de caminhos, salvar perfis por jogo, diagnóstico de rede.
+```
+GameCube / WPAD / USB HID
+          |
+frontend em libogc (GX, teclado e páginas)
+          |
+índice incremental USB/SD + preferências/favoritos + capa GX
+          |
+adaptador por sistema: NIN_CFG / argv WiiSXRX / argv USBLoaderGX
+          |
+transferência de execução para o DOL externo (experimental)
+```
 
-## Perfis por sistema
-Nintendont: config binária `nincfg.bin` baseada no layout NIN_CFG v0x0B. Nintendont preserva o seu HID. Checar o comportamento de flags em console real, especialmente PAL-M.
-WiiSXRX: argumentos `argv[1]` pasta e `argv[2]` nome de arquivo, seguidos das opções `Core`, `Audio`, `SkipFrames`; confira GamecubeMain.cpp.
-WiiMC: source/wiimc.cpp aceita argv[1] com caminho iniciado por u/s/h, define loadedFile e AutobootExit. O MAIZO envia o caminho selecionado e registra maizo-launch.txt para diagnóstico.
+## Telas
 
-## Segurança/estabilidade
-- Limites fixos de caminhos e biblioteca.
-- Varredura incremental sem loop de leitura de múltiplos diretórios na thread de GX.
-- Leitura HID assíncrona; transferência de USB mediante mudança de DOL.
-- Validação do tamanho/cabeçalho das seções DOL; ainda requer testes físicos.
-- Preferências armazenadas em `maizo/settings.ini` e favoritos em `maizo/favorites.txt`.
-- Nenhuma ROM, BIOS ou executável proprietário é incluído.
-- Operações de rede para capas são externas ao Wii nesta alpha; o conversor gera cache nativo GX RGBA8, exibido em Detalhes e na Home.
+1. **Home:** grade 4x2 com oito abas, favoritos por aba e estado do módulo.
+2. **Biblioteca:** grade com capas ou lista (oito itens por página),
+   contagem filtrada por plataforma, indicadores de favorito e pesquisa.
+3. **Detalhes:** capa, caminho, Game ID, motor e botão iniciar.
+4. **Busca:** teclado 8 colunas, campo de texto e aplicação da pesquisa.
+5. **Configurações:** tema, layout e parâmetros específicos do módulo
+   selecionado. Somente ajustes aplicáveis pelo contrato são editáveis.
+6. **Avisos:** módulo ausente, arquivo não suportado, falha de leitura.
+7. **Evoluções:** downloads HTTP autenticados no console, gerenciador de
+   unidades/pastas, perfis por jogo, diagnóstico integrado de USB, menu
+   adaptado nos módulos, retorno da execução.
 
-## Responsabilidades não resolvidas
-- Garantir ABI de arguments e mapeamento USB 0810:0001 por captura de relatório.
-- Tratamento seguro de DOL que se sobrepõe ao booter na MEM1 (verificar por teste físico).
-- Restabelecer interface após saída dos apps sem acesso Homebrew Channel.
-- Padronizar ajustes em perfis por jogo e transições com capa.
-- Validar licença de cada artefato antes de distribuição de motores.
+O frontend **não executa a ROM internamente**. Ao trocar de DOL, o
+emulador assume a interface e os controladores. A ABI de passagem de
+parâmetros é diferente em cada um.
+
+## Organização
+
+- `source/main.c`: estado, transições e callbacks de navegação.
+- `source/ui.c`, `source/covers.c`: renderização GX/texturas.
+- `source/library.c`: DFS limitado por profundidade, filtros e IDs;
+  varredura incremental com orçamento por quadro.
+- `source/input.c`: Wii Remote, até quatro GameCube pads, joystick e
+  perfis HID com leitura USB assíncrona.
+- `source/settings.c`, `source/config.c`: tabela de opções por sistema,
+  gravação de preferências no FAT.
+- `source/launch.c`: resolução de módulos, ABI NIN_CFG, USB Loader GX
+  , WiiSXRX e WiiMC, carregador DOL ainda experimental.
+- `tools/cover_sync.py`: download externo de artes por ID6; conversor
+  `tools/build_cover_cache.py`: formato GX MZG1.
+
+## Requisitos antes de lançamento estável
+
+- Testar o carregador DOL contra sobreposição de MEM1/MEM2, IOS, memória
+  de argumentos e retorno ao loader em Wii real.
+- Confirmar USB Loader GX Enhanced identificando jogos pelos argumentos
+  de ID6, e Nintendont lendo nincfg.bin de USB e SD.
+- Implementar autoboot nos emuladores GX por patch de upstream;
+  não inventar suporte CLI.
+- Implementar suporte USB HID **em cada módulo**, compatível com
+  0079:0006 e 0810:0001 após análise de descritores/relatórios no Wii.
+- Inspecionar o suporte real de CHD/M3U no WiiSXRX antes de habilitar.
+- Melhorar reconexão e tratamento de USB host cIOS.
+- Implementar downloads de arte no Wii se houver TLS/HTTP confiável e
+  fallback sem rede, respeitando limites de memória.
+- Corrigir normalização e detecção de disco múltiplo, ZIP e região
+  conforme formato de cada sistema.

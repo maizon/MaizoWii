@@ -11,7 +11,7 @@
 #define COV_H 160
 #define COV_BYTES (COV_W*COV_H*4)
 typedef struct { char key[120]; void *pixels; int valid; unsigned last; GXTexObj tex; } Cache;
-static Cache cache[5];static unsigned clock_id=0;
+static Cache cache[12];static unsigned clock_id=0;
 static void key_for(const Game*g,char*key,size_t cap){
  if(g->id[0]){snprintf(key,cap,"%s",g->id);return;}
  size_t n=0;for(const char*p=g->name;*p&&n+1<cap;p++){
@@ -23,11 +23,11 @@ static void key_for(const Game*g,char*key,size_t cap){
 static Cache*lookup(const Game*g){
  char key[120];key_for(g,key,sizeof(key));if(!*key)return NULL;
  clock_id++;
- for(int j=0;j<5;j++)if(cache[j].key[0]&&!strcmp(cache[j].key,key)){
+ for(int j=0;j<12;j++)if(cache[j].key[0]&&!strcmp(cache[j].key,key)){
   cache[j].last=clock_id;return cache[j].valid?&cache[j]:NULL;
  }
- int slot=-1;for(int j=0;j<5;j++)if(!cache[j].key[0]){slot=j;break;}
- if(slot<0){slot=0;for(int j=1;j<5;j++)if(cache[j].last<cache[slot].last)slot=j;}
+ int slot=-1;for(int j=0;j<12;j++)if(!cache[j].key[0]){slot=j;break;}
+ if(slot<0){slot=0;for(int j=1;j<12;j++)if(cache[j].last<cache[slot].last)slot=j;}
  Cache*c=&cache[slot];free(c->pixels);memset(c,0,sizeof(*c));
  snprintf(c->key,sizeof(c->key),"%s",key);c->last=clock_id;
  char p[200];FILE*f=NULL;

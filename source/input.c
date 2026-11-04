@@ -3,6 +3,9 @@
 #include <ogc/usb.h>
 #include <string.h>
 #include <malloc.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <ctype.h>
 /* Scope: known 0079:0006 report layout. Other HID layouts require descriptors/profiles.
  * Poll asynchronously: never issue blocking interrupt reads on the GX/UI thread. */
 enum { B_UP=1,B_DOWN=2,B_LEFT=4,B_RIGHT=8,B_A=16,B_B=32,B_X=64,B_Y=128,B_L=256,B_R=512,B_START=1024,B_BACK=2048 };
@@ -10,8 +13,62 @@ static s32 hid_fd=-1;static u8 hid_ep=0x81;static u16 hid_len=8;
 static unsigned char hid_data[64] ATTRIBUTE_ALIGN(32);
 static volatile unsigned hid_mask=0;static volatile int running=0,connected=0;
 static u16 active_vid=0,active_pid=0;static unsigned tick=0;
+static volatile int broken=0;
+typedef struct {
+ int enabled,x,y,hat,hat_shift,hat_mask;
+ int off[8];unsigned mask[8];
+} HidProfile;
+static HidProfile profile;
+/* A profile is required for unknown layouts. No assumptions about 0810:0001.
+ * Byte offsets are validated against the descriptor-derived report length. */
+static int profile_read(u16 vid,u16 pid){
+ char p[120];FILE*f=NULL;
+ for(int r=0;r<2;r++){
+  snprintf(p,sizeof(p),"%s:/maizo/controllers/%04X_%04X.ini",r?"sd":"usb",vid,pid);
+  f=fopen(p,"rb");if(f)break;
+ }
+ memset(&profile,0,sizeof(profile));
+ if(!f)return 0;
+ profile.x=0;profile.y=1;profile.hat=-1;profile.hat_mask=15;
+ for(int i=0;i<8;i++)profile.off[i]=-1;
+ char line[100];
+ const char*names[]={"a","b","x_button","y_button","l","r","start","select"};
+ while(fgets(line,sizeof(line),f)){
+  char key[50],value[40];if(sscanf(line," %49[^=]=%39s",key,value)!=2)continue;
+  char*end=NULL;long v=strtol(value,&end,0);if(end==value||*end)continue;
+  if(!strcmp(key,"x_offset"))profile.x=(int)v;
+  else if(!strcmp(key,"y_offset"))profile.y=(int)v;
+  else if(!strcmp(key,"hat_offset"))profile.hat=(int)v;
+  else if(!strcmp(key,"hat_mask"))profile.hat_mask=(int)v;
+  else if(!strcmp(key,"hat_shift"))profile.hat_shift=(int)v;
+  for(int i=0;i<8;i++){
+   char k[60];snprintf(k,sizeof(k),"%s_offset",names[i]);
+   if(!strcmp(key,k))profile.off[i]=(int)v;
+   snprintf(k,sizeof(k),"%s_mask",names[i]);
+   if(!strcmp(key,k))profile.mask[i]=(unsigned)v;
+  }
+ }
+ fclose(f);profile.enabled=1;return 1;
+}
+static int byte_in(int i,int n){return i>=0&&i<n;}
+static unsigned decode_profile(const unsigned char*b,int n){
+ unsigned m=0;
+ if(byte_in(profile.x,n)){if(b[profile.x]<48)m|=B_LEFT;if(b[profile.x]>208)m|=B_RIGHT;}
+ if(byte_in(profile.y,n)){if(b[profile.y]<48)m|=B_UP;if(b[profile.y]>208)m|=B_DOWN;}
+ if(byte_in(profile.hat,n)){
+  int hat=(b[profile.hat] & profile.hat_mask)>>profile.hat_shift;
+  if(hat==0||hat==1||hat==7)m|=B_UP;
+  if(hat==1||hat==2||hat==3)m|=B_RIGHT;
+  if(hat==3||hat==4||hat==5)m|=B_DOWN;
+  if(hat==5||hat==6||hat==7)m|=B_LEFT;
+ }
+ const unsigned bits[]={B_A,B_B,B_X,B_Y,B_L,B_R,B_START,B_BACK};
+ for(int i=0;i<8;i++)if(byte_in(profile.off[i],n)&&(b[profile.off[i]]&profile.mask[i]))m|=bits[i];
+ return m;
+}
 static unsigned decode(const unsigned char*b,int n){
- if(n<7)return 0;
+ if(profile.enabled)return decode_profile(b,n);
+ if(active_vid!=0x0079||active_pid!=0x0006||n<7)return 0;
  unsigned m=0;int hat=b[5]&15;
  if(hat==0||hat==1||hat==7)m|=B_UP;
  if(hat==1||hat==2||hat==3)m|=B_RIGHT;
@@ -29,7 +86,7 @@ static s32 on_report(s32 result,void*unused){
  if(!running)return 0;
  if(result>=0){hid_mask=decode(hid_data,hid_len);connected=1;
   if(USB_ReadIntrMsgAsync(hid_fd,hid_ep,hid_len,hid_data,on_report,NULL)<0)connected=0;
- }else{connected=0;hid_mask=0;}
+ }else{connected=0;hid_mask=0;broken=1;}
  return 0;
 }
 static void search_hid(void){
@@ -39,6 +96,8 @@ static void search_hid(void){
  for(int i=0;i<count;i++){
   if(!((found[i].vid==0x0079&&found[i].pid==0x0006)||
        (found[i].vid==0x0810&&found[i].pid==0x0001)))continue;
+  if(found[i].vid!=0x0079 && !profile_read(found[i].vid,found[i].pid))continue;
+  if(found[i].vid==0x0079)profile_read(found[i].vid,found[i].pid);
   s32 fd=-1;if(USB_OpenDevice(found[i].device_id,found[i].vid,found[i].pid,&fd)<0||fd<0)continue;
   usb_devdesc desc;memset(&desc,0,sizeof(desc));int good=0;
   if(USB_GetDescriptors(fd,&desc)>=0){
@@ -60,17 +119,19 @@ static void search_hid(void){
    USB_FreeDescriptors(&desc);
   }
   if(!good){USB_CloseDevice(&fd);continue;}
-  hid_fd=fd;active_vid=found[i].vid;active_pid=found[i].pid;
+  hid_fd=fd;active_vid=found[i].vid;active_pid=found[i].pid;broken=0;
   if(USB_ReadIntrMsgAsync(fd,hid_ep,hid_len,hid_data,on_report,NULL)<0){connected=0;hid_fd=-1;USB_CloseDevice(&fd);}
   return;
  }
 }
-void input_init(void){PAD_Init();WPAD_Init();WPAD_SetDataFormat(WPAD_CHAN_0,WPAD_FMT_BTNS_ACC_IR);USB_Initialize();running=1;}
+void input_init(void){PAD_Init();WPAD_Init();for(int i=0;i<4;i++)WPAD_SetDataFormat(i,WPAD_FMT_BTNS_ACC_IR);USB_Initialize();running=1;}
 void input_shutdown(void){running=0;hid_mask=0;connected=0;if(hid_fd>=0){USB_CloseDevice(&hid_fd);hid_fd=-1;}USB_Deinitialize();WPAD_Shutdown();}
 void input_poll(Input*out){
  memset(out,0,sizeof(*out));PAD_ScanPads();WPAD_ScanPads();
- u32 gc=PAD_ButtonsHeld(0),wi=WPAD_ButtonsHeld(0);
  unsigned m=hid_mask;
+ if(broken&&hid_fd>=0){s32 fd=hid_fd;hid_fd=-1;USB_CloseDevice(&fd);broken=0;connected=0;hid_mask=0;}
+ for(int port=0;port<4;port++){
+ u32 gc=PAD_ButtonsHeld(port),wi=WPAD_ButtonsHeld(port);
  if(gc&PAD_BUTTON_UP||wi&WPAD_BUTTON_UP)m|=B_UP;
  if(gc&PAD_BUTTON_DOWN||wi&WPAD_BUTTON_DOWN)m|=B_DOWN;
  if(gc&PAD_BUTTON_LEFT||wi&WPAD_BUTTON_LEFT)m|=B_LEFT;
@@ -83,6 +144,11 @@ void input_poll(Input*out){
  if(gc&PAD_TRIGGER_R||wi&WPAD_BUTTON_PLUS)m|=B_R;
  if(gc&PAD_BUTTON_START||wi&WPAD_BUTTON_HOME)m|=B_START;
  if(gc&PAD_TRIGGER_Z)m|=B_BACK;
+ if(PAD_StickX(port)<-55)m|=B_LEFT;
+ if(PAD_StickX(port)>55)m|=B_RIGHT;
+ if(PAD_StickY(port)<-55)m|=B_DOWN;
+ if(PAD_StickY(port)>55)m|=B_UP;
+ }
  static unsigned previous=0;static unsigned repeat=0;
  unsigned pressed=m&~previous;
  if((m&(B_UP|B_DOWN|B_LEFT|B_RIGHT))&&(m&(B_UP|B_DOWN|B_LEFT|B_RIGHT))==(previous&(B_UP|B_DOWN|B_LEFT|B_RIGHT))){
