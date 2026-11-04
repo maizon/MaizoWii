@@ -1,0 +1,41 @@
+"""Regression: a second packaging pass must not advertise stale HID binaries."""
+import importlib.util
+import json
+from pathlib import Path
+import sys
+import tempfile
+import types
+import unittest
+from unittest.mock import patch
+
+SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "overlay_adapted.py"
+MODULES = ("maizo", "usbloader_gx", "Nintendont", "WiiSXRX",
+           "snes9xgx", "fceugx", "vbagx", "WiiMC")
+
+class OverlayProvenanceTest(unittest.TestCase):
+    def test_second_pass_clears_stale_adapter_hash(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            dist = root / "dist"
+            manifest = dist / "maizo" / "MODULE_MANIFEST.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(json.dumps({"adapted_sha256": {"WiiMC": "stale"}}))
+            for name in MODULES:
+                dest = dist / "apps" / name / "boot.dol"
+                dest.parent.mkdir(parents=True)
+                dest.write_bytes(b"official-" + name.encode())
+            stub = types.ModuleType("package_all")
+            stub.valid_dol = lambda data: True
+            with patch.dict(sys.modules, {"package_all": stub}):
+                spec = importlib.util.spec_from_file_location("maizo_overlay_test", SCRIPT)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                module.overlay(root / "no-adapters", dist)
+            result = json.loads(manifest.read_text())
+            self.assertEqual(result["adapted_sha256"], {})
+            self.assertEqual(result["adapted_modules"], [])
+            self.assertEqual(set(result["fallback_modules"]), set(module.MODULES))
+            self.assertIn("WiiMC", result["final_dol_sha256"])
+
+if __name__ == "__main__":
+    unittest.main()
