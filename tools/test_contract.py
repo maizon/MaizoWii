@@ -56,3 +56,12 @@ assert "MZG1" in read("tools/build_cover_cache.py")
 assert "VIDEO_WaitVSync" in read("source/main.c")
 assert "0x40" in read("profiles/0079_0006.ini")
 print("PASS: 8 systems, module registry, UI, profiles, launch and cover contracts")
+
+# Nintendont-style MultiIn parsing is shared by all compiled HID adapters.
+hid = read("integrations/maizo_hid.inc")
+assert "mh_profile.multiin==4" in hid
+assert "mh_report[0]" in hid and "mh_live[chan]" in hid
+assert "maizo_hid_connected(int chan)" in hid
+forwarder = read("forwarder/main.c")
+assert "sd:/apps/maizo/boot.dol" in forwarder
+assert "usb:/apps/maizo/boot.dol" in forwarder

@@ -20,12 +20,17 @@ jobs:
           python3 -m unittest discover -s tools -p "test_*.py"
           python3 -m py_compile tools/package_all.py
       - name: Compile the Wii frontend
-        run: make -j2
+        run: |
+          make -j2
+          make -C forwarder -j2
       - name: Stage frontend
         run: |
           test -s boot.dol
           mkdir -p stage/apps/maizo
           cp boot.dol apps/maizo/meta.xml stage/apps/maizo/
+          test -s forwarder/boot.dol
+          mkdir -p stage/apps/maizo-forwarder
+          cp forwarder/boot.dol forwarder/meta.xml stage/apps/maizo-forwarder/
       - uses: actions/upload-artifact@v4
         with:
           name: MAIZOWII-FRONTEND
@@ -62,11 +67,13 @@ jobs:
       - name: Install archive extractor
         run: sudo apt-get update && sudo apt-get install -y p7zip-full
       - name: Collect pinned official homebrew modules
-        run: python3 tools/package_all.py --frontend stage/apps/maizo/boot.dol --out dist
+        run: python3 tools/package_all.py --frontend stage/apps/maizo/boot.dol --forwarder stage/apps/maizo-forwarder/boot.dol --out dist
       - name: Overlay HID builds with fail-safe official fallback
         run: python3 tools/overlay_adapted.py patched dist
       - name: Verify every executable and zip the storage root
         run: |
+          test -s dist/apps/maizo-installer/boot.dol
+          test -s dist/apps/maizo-forwarder/boot.dol
           python3 tools/verify_bundle.py dist
           cd dist
           zip -q -r ../MAIZOWII-ALL-IN-ONE.zip .

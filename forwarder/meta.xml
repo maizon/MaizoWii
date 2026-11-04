@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<app version="1">
+  <name>MaizoWii Forwarder (Teste)</name>
+  <coder>MaizoWii</coder>
+  <version>0.1-alpha</version>
+  <short_description>Inicia MaizoWii por SD/USB</short_description>
+  <long_description>Carrega apps/maizo/boot.dol por SD ou USB; nao instala canais na NAND.</long_description>
+</app>

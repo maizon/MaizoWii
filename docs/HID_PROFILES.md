@@ -55,3 +55,11 @@ contador de relatórios e erros de leitura. Dispositivos sem perfil **não**
 são abertos para tentativa de leitura, evitando inventar offsets do Twin.
 O status não substitui dump de descritores e teste com dois gamepads no Wii;
 a implementação atual atende somente uma conexão USB HID ativa por vez.
+
+
+## MultiIn (experimental)
+Os modulos adaptados suportam leitura de MultiIn=1 (filtro primeiro byte),
+MultiIn=2 (porta em primeiro byte) e MultiIn=4 (relatorios separados,
+ate quatro portas logicas, no maximo 32 bytes cada), conforme convencao
+Nintendont. MultiIn=3 e outros formatos continuam limitados. Isto nao
+comprova compatibilidade USB HID 0810:0001 no Wii.

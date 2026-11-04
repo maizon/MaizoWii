@@ -76,6 +76,15 @@ def patch_wiimc(root: Path):
           'extern int stream_error(stream_t *);', "WiiMC stream/MPlayer legacy compatibility")
         return t
     patch_file(root, "source/mplayer/mplayer.c", mplayer_patch)
+    patch_file(root, "source/mplayer/osdep/gx_supp.c",
+               lambda x: replace_once(
+                   replace_once(x, "extern timerFadeBlack;",
+                                "extern int timerFadeBlack;",
+                                "WiiMC timerFadeBlack declaration"),
+                   "void TakeScreenshot();",
+                   "void TakeScreenshot();\nextern void wiiPause(void);",
+                   "WiiMC wiiPause declaration"))
+
     patch_file(root, "source/mplayer/osdep/ave-rvl.c",
                lambda x: replace_once(x, "#include <gccore.h>",
                                       "#include <gccore.h>\n#include <string.h>\nextern void udelay(int us);",
@@ -128,6 +137,13 @@ def patch_wiisx(root: Path):
     # old BOOL typedef is not present in newer libogc headers.
     patch_file(root, "Gamecube/gc_input/controller.h",
                lambda x: replace_once(x, "BOOL          inUse;", "bool          inUse;", "WiiSXRX BOOL"))
+    # The modern compiler does not treat an empty-parameter declaration as
+    # a prototype, and CheckState(char *) clashes with legacy CheckState().
+    patch_file(root, "misc.h",
+               lambda x: replace_once(x, "int CheckState();",
+                                      "int CheckState(char *file);",
+                                      "WiiSXRX CheckState prototype"))
+
     patch_file(root, "Gamecube/PlugCD.h",
                lambda x: replace_once(x, "unsigned char* getSector();",
                                       "unsigned char* getSector(int subchannel);", "WiiSXRX getSector"))

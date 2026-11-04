@@ -47,6 +47,36 @@ class FinalDolIntegrityTests(unittest.TestCase):
         manifest = json.loads((self.dist / "maizo/MODULE_MANIFEST.json").read_text())
         self.assertEqual(set(manifest["final_dol_sha256"]), set(self.modules))
 
+    def test_additional_forwarder_and_installer_are_hashed(self):
+        import hashlib
+        for name in ("maizo-forwarder", "maizo-installer"):
+            folder = self.dist / "apps" / name
+            folder.mkdir(parents=True)
+            (folder / "boot.dol").write_bytes(fake_dol())
+            (folder / "meta.xml").write_text("<app/>")
+        (self.dist / "maizo/YAWM-LICENSE").write_text("GPL-2.0 test fixture")
+        (self.dist / "wad").mkdir()
+        (self.dist / "wad/wm_config.txt").write_text("StartupPath=/wad\n")
+        (self.dist / "wad/LEIA-ANTES-DE-INSTALAR.txt").write_text("test")
+        overlay(self.patched, self.dist)
+        path = self.dist / "maizo/MODULE_MANIFEST.json"
+        manifest = json.loads(path.read_text())
+        digest = hashlib.sha256(fake_dol()).hexdigest()
+        manifest["forwarder"] = {"path": "apps/maizo-forwarder/boot.dol",
+                                 "sha256": digest}
+        manifest["installer"] = {
+            "source": "modmii/YAWM-ModMii-Edition",
+            "auto_installs": False, "channel_wad_included": False,
+            "dol_sha256": digest,
+        }
+        path.write_text(json.dumps(manifest))
+        self.assertEqual(self.verify().returncode, 0, self.verify().stderr)
+        (self.dist / "apps/maizo-installer/boot.dol").write_bytes(fake_dol() + b"bad")
+        self.assertIn("installer hash mismatch", self.verify().stderr)
+        (self.dist / "apps/maizo-installer/boot.dol").write_bytes(fake_dol())
+        (self.dist / "maizo/YAWM-LICENSE").unlink()
+        self.assertIn("installer GPL license missing", self.verify().stderr)
+
     def test_corruption_is_rejected(self):
         overlay(self.patched, self.dist)
         dol = self.dist / "apps/WiiMC/boot.dol"

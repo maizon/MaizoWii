@@ -24,3 +24,8 @@ Base: main d4f14cb (03/11/2026). Cada item é uma capacidade independente com cr
 - [ ] R20 — Release validado no console. Aceite: smoke test completo e ZIP final documentado.
 
 Nota: R01–R03 e R19 são evidências de CI/código, não garantia de funcionamento no Wii. R18 validado pelo job launch-contracts do workflow 41808890786; os demais requisitos de hardware continuam pendentes. Não marcar R04–R17/R20 por implementação parcial ou simulação host.
+
+
+- [ ] R21 — Canal forwarder e instalador: fornecer WAD proprio verificavel,
+      instalar via DOL com confirmacao e demonstrar funcionamento no Wii.
+      O forwarder HBC e o YAWM interativo sao parciais e nao fecham R21.

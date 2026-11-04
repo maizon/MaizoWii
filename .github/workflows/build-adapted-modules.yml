@@ -95,6 +95,15 @@ jobs:
                   raw=path.read_bytes()
                   path.write_bytes(raw.replace(b'-mpaired',b''))
           PY
+          # Old upstream ft2build.h searches <freetype/config/ftheader.h>
+          # while modern portlibs commonly installs it under freetype2/.
+          for prefix in /opt/devkitpro/portlibs/ppc /opt/devkitpro/portlibs/wii; do
+            if [ -f "$prefix/include/freetype2/freetype/config/ftheader.h" ] &&
+               [ ! -e "$prefix/include/freetype" ]; then
+              ln -s freetype2/freetype "$prefix/include/freetype"
+            fi
+          done
+          find /opt/devkitpro/portlibs -name ftheader.h -print
           find upstream/source/mplayer -name '*.d' -delete
       - name: Compile Wii DOL
         id: compilation

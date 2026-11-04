@@ -20,7 +20,7 @@
 
 typedef struct { int offset; unsigned mask; } MaizoBit;
 typedef struct {
- int valid, nin, dpad_mode, stickx, sticky, cstickx, csticky;
+ int valid, nin, dpad_mode, multiin, multivalue, stickx, sticky, cstickx, csticky;
  MaizoBit buttons[9]; /* A B X Y L R Start Select Z */
  MaizoBit dirs[8];    /* U R D L UR DR DL UL */
 } MaizoProfile;
@@ -30,10 +30,11 @@ static s32 mh_fd=-1;
 static u8 mh_ep=0x81, mh_len=8;
 static u16 mh_vid=0,mh_pid=0;
 static unsigned char mh_report[64] ATTRIBUTE_ALIGN(32);
-static volatile u32 mh_report_buttons=0;
-static volatile s8 mh_ax=0,mh_ay=0,mh_rx=0,mh_ry=0;
-static volatile int mh_live=0,mh_dead=0,mh_running=0;
-static u32 mh_buttons=0,mh_previous=0,mh_frame=0;
+static volatile u32 mh_report_buttons[4]={0};
+static volatile s8 mh_ax[4]={0},mh_ay[4]={0},mh_rx[4]={0},mh_ry[4]={0};
+static volatile int mh_live[4]={0};
+static volatile int mh_dead=0,mh_running=0;
+static u32 mh_buttons[4]={0},mh_previous[4]={0},mh_frame=0;
 
 static int mh_load_profile(u16 vid,u16 pid) {
  char path[132]; FILE *f=NULL; int nin=0;
@@ -72,6 +73,16 @@ static int mh_load_profile(u16 vid,u16 pid) {
   p[strcspn(p," \r\n\t")]=0;eq[strcspn(eq," \r\n\t")]=0;
   if(!strcmp(p,"VID")){gotvid=1;badid|=(strtoul(eq,NULL,16)!=vid);continue;}
   if(!strcmp(p,"PID")){gotpid=1;badid|=(strtoul(eq,NULL,16)!=pid);continue;}
+  if(!strcmp(p,"MultiIn")){
+   int mode=(int)strtoul(eq,NULL,nin?16:0);
+   if(mode>=0&&mode<=4)mh_profile.multiin=mode;
+   continue;
+  }
+  if(!strcmp(p,"MultiInValue")){
+   int value=(int)strtoul(eq,NULL,nin?16:0);
+   if(value>=0&&value<=4)mh_profile.multivalue=value;
+   continue;
+  }
   if(!strcmp(p,"DPAD")){mh_profile.dpad_mode=atoi(eq);continue;}
   if(!nin){
    /* MAIZO profile syntax: a_offset=5, a_mask=0x40, ... */
@@ -127,7 +138,7 @@ static s8 mh_axis(const unsigned char*d,int i) {
  int v=((int)d[i]-128)*96/127;
  return v<-96?-96:v>96?96:(s8)v;
 }
-static void mh_decode(const unsigned char*d){
+static void mh_decode(const unsigned char*d,int chan){
  const u16 bits[]={PAD_BUTTON_A,PAD_BUTTON_B,PAD_BUTTON_X,PAD_BUTTON_Y,
                    PAD_TRIGGER_L,PAD_TRIGGER_R,PAD_BUTTON_START,PAD_TRIGGER_Z,PAD_TRIGGER_Z};
  u32 mask=0;
@@ -148,22 +159,47 @@ static void mh_decode(const unsigned char*d){
   const u16 dir[]={PAD_BUTTON_UP,PAD_BUTTON_RIGHT,PAD_BUTTON_DOWN,PAD_BUTTON_LEFT};
   for(int i=0;i<4;i++)if(mh_active(mh_profile.dirs[i],d))mask|=dir[i];
  }
- mh_ax=mh_axis(d,mh_profile.stickx);mh_ay=-mh_axis(d,mh_profile.sticky);
- mh_rx=mh_axis(d,mh_profile.cstickx);mh_ry=-mh_axis(d,mh_profile.csticky);
- if(mh_ax>60)mask|=PAD_BUTTON_RIGHT;
- if(mh_ax< -60)mask|=PAD_BUTTON_LEFT;
- if(mh_ay>60)mask|=PAD_BUTTON_UP;
- if(mh_ay< -60)mask|=PAD_BUTTON_DOWN;
- mh_report_buttons=mask;
+ mh_ax[chan]=mh_axis(d,mh_profile.stickx);
+ mh_ay[chan]=-mh_axis(d,mh_profile.sticky);
+ mh_rx[chan]=mh_axis(d,mh_profile.cstickx);
+ mh_ry[chan]=-mh_axis(d,mh_profile.csticky);
+ if(mh_ax[chan]>60)mask|=PAD_BUTTON_RIGHT;
+ if(mh_ax[chan]< -60)mask|=PAD_BUTTON_LEFT;
+ if(mh_ay[chan]>60)mask|=PAD_BUTTON_UP;
+ if(mh_ay[chan]< -60)mask|=PAD_BUTTON_DOWN;
+ mh_report_buttons[chan]=mask;
 }
 static s32 mh_report_cb(s32 result,void *unused){
  (void)unused;
  if(!mh_running||mh_fd<0)return 0;
  if(result>=0){
-  mh_live=1;mh_decode(mh_report);
+  int chan=0,accept=1;
+  switch(mh_profile.multiin){
+   case 1: /* Single-controller filter on report[0], per Nintendont. */
+    accept=(mh_report[0]==(u8)mh_profile.multivalue);
+    break;
+   case 2: /* Report[0] contains controller number. */
+   case 4: /* Independent reports per controller; Nintendont MultiIn=4. */
+    if(mh_report[0]<1 || mh_report[0]>4 ||
+       (mh_profile.multiin==4 && mh_report[0]>mh_profile.multivalue) ||
+       (mh_profile.multiin==2 && mh_report[0]<mh_profile.multivalue))
+     accept=0;
+    else chan=mh_report[0]-1;
+    break;
+   case 0:
+   case 3:
+   default: break;
+  }
+  if(accept){
+   mh_live[chan]=1;
+   mh_decode(mh_report,chan);
+  }
   if(USB_ReadIntrMsgAsync(mh_fd,mh_ep,mh_len,mh_report,mh_report_cb,NULL)<0)
    mh_dead=1;
- }else{mh_live=0;mh_report_buttons=0;mh_dead=1;}
+ }else{
+  for(int i=0;i<4;i++){mh_live[i]=0;mh_report_buttons[i]=0;}
+  mh_dead=1;
+ }
  return 0;
 }
 static void mh_attach(void){
@@ -192,8 +228,14 @@ static void mh_attach(void){
    }
    USB_FreeDescriptors(&desc);
   }
+  /* Nintendont MultiIn=4 needs <=32 byte reports; no guessing on
+   * larger packets which would overlap its 32-byte logical pad slots. */
+  if(mh_profile.multiin==4 &&
+     (mh_len>32 || mh_profile.multivalue<1))ok=0;
   if(!ok){USB_CloseDevice(&fd);continue;}
-  mh_fd=fd;mh_vid=list[i].vid;mh_pid=list[i].pid;mh_dead=0;mh_live=0;
+  mh_fd=fd;mh_vid=list[i].vid;mh_pid=list[i].pid;mh_dead=0;
+  for(int j=0;j<4;j++){mh_live[j]=0;mh_report_buttons[j]=0;
+   mh_buttons[j]=0;mh_previous[j]=0;}
   if(USB_ReadIntrMsgAsync(fd,mh_ep,mh_len,mh_report,mh_report_cb,NULL)<0){
    mh_fd=-1;USB_CloseDevice(&fd);
   }
@@ -204,18 +246,21 @@ static void maizo_hid_tick(void){
  static int initialized=0;mh_frame++;
  if(!initialized){USB_Initialize();initialized=1;mh_running=1;}
  if(mh_dead&&mh_fd>=0){
-  s32 fd=mh_fd;mh_fd=-1;mh_live=0;mh_dead=0;
-  mh_report_buttons=0;USB_CloseDevice(&fd);
+  s32 fd=mh_fd;mh_fd=-1;mh_dead=0;
+  for(int i=0;i<4;i++){mh_live[i]=0;mh_report_buttons[i]=0;}
+  USB_CloseDevice(&fd);
  }
- mh_previous=mh_buttons;
- mh_buttons=mh_live?mh_report_buttons:0;
+ for(int i=0;i<4;i++){
+  mh_previous[i]=mh_buttons[i];
+  mh_buttons[i]=mh_live[i]?mh_report_buttons[i]:0;
+ }
  if(mh_fd<0&&(mh_frame%120==1))mh_attach();
 }
-static int maizo_hid_connected(int chan){return chan==0&&mh_live;}
-static u16 maizo_hid_held(int chan){return maizo_hid_connected(chan)?(u16)mh_buttons:0;}
-static u16 maizo_hid_down(int chan){return maizo_hid_connected(chan)?(u16)(mh_buttons&~mh_previous):0;}
-static u16 maizo_hid_up(int chan){return chan==0?(u16)(mh_previous&~mh_buttons):0;}
-static s8 maizo_hid_stickX(int chan,s8 native){return maizo_hid_connected(chan)?mh_ax:native;}
-static s8 maizo_hid_stickY(int chan,s8 native){return maizo_hid_connected(chan)?mh_ay:native;}
-static s8 maizo_hid_substickX(int chan,s8 native){return maizo_hid_connected(chan)?mh_rx:native;}
-static s8 maizo_hid_substickY(int chan,s8 native){return maizo_hid_connected(chan)?mh_ry:native;}
+static int maizo_hid_connected(int chan){return chan>=0&&chan<4&&mh_live[chan];}
+static u16 maizo_hid_held(int chan){return maizo_hid_connected(chan)?(u16)mh_buttons[chan]:0;}
+static u16 maizo_hid_down(int chan){return maizo_hid_connected(chan)?(u16)(mh_buttons[chan]&~mh_previous[chan]):0;}
+static u16 maizo_hid_up(int chan){return chan>=0&&chan<4?(u16)(mh_previous[chan]&~mh_buttons[chan]):0;}
+static s8 maizo_hid_stickX(int chan,s8 native){return maizo_hid_connected(chan)?mh_ax[chan]:native;}
+static s8 maizo_hid_stickY(int chan,s8 native){return maizo_hid_connected(chan)?mh_ay[chan]:native;}
+static s8 maizo_hid_substickX(int chan,s8 native){return maizo_hid_connected(chan)?mh_rx[chan]:native;}
+static s8 maizo_hid_substickY(int chan,s8 native){return maizo_hid_connected(chan)?mh_ry[chan]:native;}

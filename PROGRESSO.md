@@ -70,3 +70,16 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
 - Três regressões sintéticas em test_final_integrity.py: fallback íntegro, corrupção de DOL e hash ausente. A CI da PR deve confirmar a execução; nenhum teste físico Wii executado.
 - Commits de implementação: 8277868, 539285f, 9c477e9, f87a6bf. R16 não é concluído: falta pacote integral reproduzível/licenciamento e teste dos módulos no console.
 - Próximo: verificar CI deste HEAD e corrigir qualquer falha; investigar os erros upstream WiiMC/WiiSXRX e testar hardware HID real.
+
+
+## Execucao 2026-11-04 — forwarder e HID (solicitacao adicional)
+- Base inicial 5/20 concluidos, 15 pendentes. R21 adicionada pelo pedido
+  de canal forwarder: 16 pendentes, meta ceil(16 x 0,30) = 5 itens.
+- Patch WiiSXRX: corrigir prototipo CheckState para compilacao moderna.
+- Patch WiiMC: corrigir declaracoes C de timerFadeBlack e wiiPause;
+  caminho FreeType legado ajustado no workflow.
+- Shim HID: MultiIn 1/2/4 e portas logicas por relatorio; sem teste fisico.
+- DOL forwarder original em forwarder/, build separado do frontend.
+- Gerenciador YAWM ModMii 1.1 incluido como instalador interativo no ZIP.
+- NAO foi criado nem validado WAD do canal. Sem acesso a Wii fisico,
+  R21 permanece pendente. Nao declarar os cinco itens fechados.

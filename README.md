@@ -144,3 +144,12 @@ Nintendont (GPL-2.0), WiiMC-SSLC (GPL-3.0), WiiSXRX (licença de upstream),
 NeoStation (GPL-3.0, inspiração, não copiado), Flat Gamepad Icons
 (CC BY-SA 4.0), Tabler (MIT), Font8x8 (domínio público).
 Veja `THIRD_PARTY.md`.
+
+
+## Forwarder e instalador
+O ZIP inclui um DOL de forwarder para HBC em apps/maizo-forwarder/boot.dol,
+que tenta iniciar sd:/apps/maizo/boot.dol ou usb:/apps/maizo/boot.dol.
+Nao e canal WAD. Inclui YAWM ModMii Edition em apps/maizo-installer/boot.dol,
+instalador **interativo**, que solicita a escolha/confirmacao do WAD.
+O WAD MaizoWii ainda NAO foi produzido nem validado para instalacao na NAND.
+Consulte docs/FORWARDER_INSTALADOR.md.

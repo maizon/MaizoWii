@@ -26,6 +26,27 @@ assert isinstance(hashes, dict) and set(hashes) == set(EXPECTED), "missing/extra
 for name in EXPECTED:
     actual = hashlib.sha256((root / "apps" / name / "boot.dol").read_bytes()).hexdigest()
     assert hashes[name] == actual, "DOL SHA-256 mismatch: " + name
+# Additional HBC DOL and GPL-licensed manager are independent of the
+# eight core modules. Verify their provenance whenever the final manifest
+# declares them; do not treat a naked DOL as an installable channel WAD.
+fw = manifest.get("forwarder")
+if fw:
+    assert fw["path"] == "apps/maizo-forwarder/boot.dol", "forwarder path mismatch"
+    fwd = root / fw["path"]
+    assert valid_dol(fwd.read_bytes()), "INVALID forwarder DOL"
+    assert hashlib.sha256(fwd.read_bytes()).hexdigest() == fw["sha256"], "forwarder hash mismatch"
+    assert (root / "apps/maizo-forwarder/meta.xml").is_file(), "forwarder meta missing"
+manager = manifest.get("installer")
+if manager:
+    assert manager["source"] == "modmii/YAWM-ModMii-Edition", "unapproved installer"
+    assert manager["auto_installs"] is False, "unsafe automatic NAND install"
+    assert manager["channel_wad_included"] is False, "unexpected WAD claim"
+    exe = root / "apps/maizo-installer/boot.dol"
+    assert valid_dol(exe.read_bytes()), "INVALID installer manager DOL"
+    assert hashlib.sha256(exe.read_bytes()).hexdigest() == manager["dol_sha256"], "installer hash mismatch"
+    assert (root / "maizo/YAWM-LICENSE").is_file(), "installer GPL license missing"
+    assert (root / "wad/LEIA-ANTES-DE-INSTALAR.txt").is_file(), "installer warning missing"
+    assert (root / "wad/wm_config.txt").is_file(), "manager configuration missing"
 files = list(root.rglob("*"))
 assert not any(f.is_symlink() for f in files)
 print("PASS: all eight application executables and controller profiles present")

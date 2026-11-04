@@ -9,3 +9,8 @@
 - font8x8 by Daniel Hepper (https://github.com/dhepper/font8x8), Public Domain: source/font8x8.h.
 
 No external emulator binaries or game content are bundled in this repository.
+
+
+- Instalador de WAD YAWM ModMii Edition 1.1 (GPL-2.0),
+  https://github.com/modmii/YAWM-ModMii-Edition. O pacote inclui o binario
+  oficial, texto da licenca e procedencia registrada no manifest.
