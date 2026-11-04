@@ -76,6 +76,28 @@ def patch_wiimc(root: Path):
           'extern int stream_error(stream_t *);', "WiiMC stream/MPlayer legacy compatibility")
         return t
     patch_file(root, "source/mplayer/mplayer.c", mplayer_patch)
+    # Modern iconv expects mutable char** and the old MPlayer code passes
+    # const char**. Keep input bytes unmodified but give iconv its own pointer.
+    patch_file(root, "source/mplayer/mp_msg.c",
+               lambda x: replace_once(
+                   replace_once(x,
+                     "    precoded = recoded_filename;",
+                     "    precoded = recoded_filename;\n"
+                     "    char *mutable_filename = (char *)filename;",
+                     "WiiMC iconv input pointer"),
+                   "iconv(inv_msgiconv, &filename, &filename_len,",
+                   "iconv(inv_msgiconv, &mutable_filename, &filename_len,",
+                   "WiiMC iconv mutable pointer"))
+    # Original WiiMC defaults to NTFS and EXT2, whose obsolete portlibs are
+    # absent from the pinned toolchain. FAT32/ISO/SMB remain enabled.
+    patch_file(root, "Makefile",
+               lambda x: replace_once(
+                   replace_once(x, "ENABLE_NTFS                   = 1",
+                                "ENABLE_NTFS                   = 0",
+                                "WiiMC disable unavailable NTFS dependency"),
+                   "ENABLE_EXT2                   = 1",
+                   "ENABLE_EXT2                   = 0",
+                   "WiiMC disable unavailable EXT2 dependency"))
     patch_file(root, "source/filebrowser.h",
                lambda x: replace_once(
                    x, "#include <gccore.h>",
@@ -148,6 +170,14 @@ def patch_wiisx(root: Path):
                lambda x: replace_once(x, "BOOL          inUse;", "bool          inUse;", "WiiSXRX BOOL"))
     # The modern compiler does not treat an empty-parameter declaration as
     # a prototype, and CheckState(char *) clashes with legacy CheckState().
+    # libogc provides static inline gettime/diff_usec in the watchdog header.
+    # The old Peops FPS code only declared externs, causing linker failures.
+    patch_file(root, "PeopsSoftGPU/fps.c",
+               lambda x: replace_once(x,
+                   " long long gettime(void);\n"
+                   " unsigned int diff_usec(long long start,long long end);",
+                   " #include <ogc/lwp_watchdog.h>",
+                   "WiiSXRX Peops FPS libogc timebase"))
     patch_file(root, "misc.h",
                lambda x: replace_once(x, "int CheckState();",
                                       "int CheckState(char *file);",
