@@ -10,7 +10,7 @@
 #define COV_W 128
 #define COV_H 160
 #define COV_BYTES (COV_W*COV_H*4)
-typedef struct { char key[120]; void *pixels; int valid; unsigned last; GXTexObj tex; } Cache;
+typedef struct { char key[120]; void *pixels; int valid; int system; unsigned last; GXTexObj tex; } Cache;
 static Cache cache[12];static unsigned clock_id=0;
 static void key_for(const Game*g,char*key,size_t cap){
  if(g->id[0]){snprintf(key,cap,"%s",g->id);return;}
@@ -23,13 +23,16 @@ static void key_for(const Game*g,char*key,size_t cap){
 static Cache*lookup(const Game*g){
  char key[120];key_for(g,key,sizeof(key));if(!*key)return NULL;
  clock_id++;
- for(int j=0;j<12;j++)if(cache[j].key[0]&&!strcmp(cache[j].key,key)){
+ for(int j=0;j<12;j++)if(cache[j].key[0]&&cache[j].system==(int)g->system&&!strcmp(cache[j].key,key)){
   cache[j].last=clock_id;return cache[j].valid?&cache[j]:NULL;
  }
  int slot=-1;for(int j=0;j<12;j++)if(!cache[j].key[0]){slot=j;break;}
  if(slot<0){slot=0;for(int j=1;j<12;j++)if(cache[j].last<cache[slot].last)slot=j;}
- Cache*c=&cache[slot];free(c->pixels);memset(c,0,sizeof(*c));
- snprintf(c->key,sizeof(c->key),"%s",key);c->last=clock_id;
+ Cache*c=&cache[slot];
+ /* GX can still be reading a prior tile when the LRU slot is reused. */
+ if(c->pixels){GX_DrawDone();free(c->pixels);}
+ memset(c,0,sizeof(*c));
+ snprintf(c->key,sizeof(c->key),"%s",key);c->system=(int)g->system;c->last=clock_id;
  char p[200];FILE*f=NULL;
  for(int root=0;root<2;root++){
   snprintf(p,sizeof(p),"%s:/maizo/covers/%s.gxt",root?"sd":"usb",key);
@@ -43,6 +46,7 @@ static Cache*lookup(const Game*g){
  fclose(f);DCFlushRange(c->pixels,COV_BYTES);
  GX_InitTexObj(&c->tex,c->pixels,COV_W,COV_H,GX_TF_RGBA8,GX_CLAMP,GX_CLAMP,GX_FALSE);
  GX_InitTexObjLOD(&c->tex,GX_LINEAR,GX_LINEAR,0.0f,0.0f,0.0f,GX_FALSE,GX_FALSE,GX_ANISO_1);
+ GX_InvalidateTexAll(); /* reused MEM1 address may retain an old GPU tile */
  c->valid=1;return c;
 }
 static void vertex(float x,float y,float s,float t){
@@ -53,12 +57,14 @@ int cover_draw(const Game*g,float x,float y,float w,float h){
  GX_SetNumTexGens(1);GX_SetTexCoordGen(GX_TEXCOORD0,GX_TG_MTX2x4,GX_TG_TEX0,GX_IDENTITY);
  GX_SetVtxDesc(GX_VA_TEX0,GX_DIRECT);
  GX_SetVtxAttrFmt(GX_VTXFMT0,GX_VA_TEX0,GX_TEX_ST,GX_F32,0);
+ GX_SetTevOrder(GX_TEVSTAGE0,GX_TEXCOORD0,GX_TEXMAP0,GX_COLOR0A0);
  GX_SetTevOp(GX_TEVSTAGE0,GX_MODULATE);
  GX_LoadTexObj(&c->tex,GX_TEXMAP0);
  GX_Begin(GX_QUADS,GX_VTXFMT0,4);
  vertex(x,y,0,0);vertex(x+w,y,1,0);vertex(x+w,y+h,1,1);vertex(x,y+h,0,1);
  GX_End();
  GX_SetVtxDesc(GX_VA_TEX0,GX_NONE);GX_SetNumTexGens(0);
+ GX_SetTevOrder(GX_TEVSTAGE0,GX_TEXCOORDNULL,GX_TEXMAP_NULL,GX_COLOR0A0);
  GX_SetTevOp(GX_TEVSTAGE0,GX_PASSCLR);
  return 1;
 }

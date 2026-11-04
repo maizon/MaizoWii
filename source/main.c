@@ -56,7 +56,8 @@ static void handle(const Input*i){
   return;
  }
  if(state.page==PAGE_INFO){if(i->back||i->accept)state.page=PAGE_LIBRARY;return;}
- if(!state.settings_for_game){
+ if(!state.settings_for_game &&
+    (state.page==PAGE_HOME||state.page==PAGE_LIBRARY||state.page==PAGE_SEARCH)){
   if(i->tab_prev)change_system(-1);
   if(i->tab_next)change_system(1);
  }
@@ -72,8 +73,13 @@ static void handle(const Input*i){
   state.settings_for_game=0;state.settings_row=0;state.page=PAGE_SETTINGS;
   return;
  }
- if(i->search && state.page==PAGE_LIBRARY){state.page=PAGE_SEARCH;state.search_index=1;return;}
- if(i->refresh && state.page==PAGE_HOME){library_begin(&library_state);return;}
+ if(i->search && (state.page==PAGE_LIBRARY||state.page==PAGE_HOME)){state.page=PAGE_SEARCH;state.search_index=1;return;}
+ if(i->refresh && state.page==PAGE_HOME){
+  module_refresh_available();
+  library_begin(&library_state);
+  state.selected=state.scroll=0;
+  return;
+ }
  if(i->refresh && state.page==PAGE_LIBRARY){state.favorites=!state.favorites;state.selected=state.scroll=0;return;}
  if(state.page==PAGE_HOME){
   if(i->left)change_system(-1);if(i->right)change_system(1);
@@ -131,19 +137,35 @@ static void handle(const Input*i){
   }
  }
 }
+/* Start VI/GX first. On hardware, FAT or a USB HID receiver can block:
+ * a visible boot-stage label gives us a precise failure boundary. */
 int main(int argc,char**argv){
  (void)argc;(void)argv;
- fatInitDefault();config_load(&config);
- memset(&state,0,sizeof(state));state.system=SYSTEM_GC;state.page=PAGE_HOME;
- library_begin(&library_state);input_init();
- if(!ui_init()){input_shutdown();library_end(&library_state);return 1;}
- while(1){
-  Input in;input_poll(&in);
+ if(!ui_init())return 1;
+ ui_boot_message("VIDEO GX OK");
+ VIDEO_WaitVSync();
+ ui_boot_message("MONTANDO SD E USB");
+ int storage_ready=fatInitDefault();
+ ui_boot_message(storage_ready?"CARREGANDO CONFIGURACOES":"SEM SD/USB - VERIFIQUE O DISPOSITIVO");
+ config_load(&config);
+ memset(&state,0,sizeof(state));
+ state.system=SYSTEM_GC;
+ state.page=PAGE_HOME;
+ ui_boot_message("VERIFICANDO MODULOS");
+ module_refresh_available();
+ ui_boot_message("INDEXANDO BIBLIOTECA");
+ library_begin(&library_state);
+ ui_boot_message("INICIALIZANDO CONTROLES");
+ input_init();
+ /* Show a complete home frame before the first USB HID probe. */
+ ui_draw(&state,&library_state,&config,0);
+ for(;;){
+  Input in;
+  input_poll(&in);
   handle(&in);
   library_step(&library_state,10);
   clamp_selection();
   ui_draw(&state,&library_state,&config,in.hid_present);
-  VIDEO_WaitVSync();state.frame++;
+  state.frame++;
  }
- ui_shutdown();input_shutdown();library_end(&library_state);return 0;
 }

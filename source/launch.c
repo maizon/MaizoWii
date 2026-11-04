@@ -49,7 +49,20 @@ static const char*paths[SYSTEM_COUNT][4]={
 };
 static const char*resolve(System sys){if(sys<0||sys>=SYSTEM_COUNT)return NULL;
  for(int i=0;i<4;i++)if(file_exists(paths[sys][i]))return paths[sys][i];return NULL;}
-int module_available(System sys){return resolve(sys)!=NULL;}
+/* Availability is an explicit snapshot, NOT repeated fopen() operations
+ * from every home card on every video frame (FAT/USB can block for ms). */
+static unsigned char modules_present[SYSTEM_COUNT];
+static int modules_scanned=0;
+void module_refresh_available(void){
+ for(int i=0;i<SYSTEM_COUNT;i++)
+  modules_present[i]=resolve((System)i)!=NULL;
+ modules_scanned=1;
+}
+int module_available(System sys){
+ if(sys<0||sys>=SYSTEM_COUNT)return 0;
+ if(!modules_scanned)module_refresh_available();
+ return modules_present[sys];
+}
 const char*system_title(System sys){
  switch(sys){
  case SYSTEM_WII:return "NINTENDO WII";case SYSTEM_GC:return "GAMECUBE";

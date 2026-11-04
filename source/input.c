@@ -6,6 +6,7 @@
 #include <wiiuse/wpad.h>
 #include <ogc/usb.h>
 #include <string.h>
+#include <stdio.h>
 #include "../integrations/maizo_hid.inc"
 
 enum {
@@ -31,13 +32,27 @@ void input_hid_diagnostics(HidDiagnostics*out){
   if(mh_live[port])out->connected_ports++;
  }
 }
+/* A safe-mode flag on either FAT volume allows booting without a
+ * problematic USB receiver; GC/Wii input remains available. */
+static unsigned input_frames=0;
+static int skip_hid=0;
+static int hid_started=0;
+static int has_file(const char*name){
+ FILE*f=fopen(name,"rb");
+ if(!f)return 0;
+ fclose(f);return 1;
+}
 void input_init(void){
+ input_frames=0;hid_started=0;
+ skip_hid=has_file("sd:/maizo/disable-hid.flag")||
+          has_file("usb:/maizo/disable-hid.flag");
  PAD_Init();WPAD_Init();
  for(int i=0;i<4;i++)WPAD_SetDataFormat(i,WPAD_FMT_BTNS_ACC_IR);
  /* Driver initializes USB when maizo_hid_tick is first invoked. */
 }
 void input_shutdown(void){
- maizo_hid_shutdown();WPAD_Shutdown();
+ if(hid_started)maizo_hid_shutdown();
+ WPAD_Shutdown();
 }
 static unsigned from_gc(u32 c){
  unsigned m=0;
@@ -74,7 +89,13 @@ void input_poll(Input*out){
  if(!out)return;
  memset(out,0,sizeof(*out));
  PAD_ScanPads();WPAD_ScanPads();
- maizo_hid_tick();
+ /* Let GX finish displaying the first screens before any IOS USB query.
+  * This also prevents exposing an uninitialised XFB when USB stalls. */
+ if(input_frames<0xffffffffu)input_frames++;
+ if(!skip_hid && input_frames>90){
+  hid_started=1;
+  maizo_hid_tick();
+ }
  unsigned m=0;
  for(int port=0;port<4;port++){
   m|=from_gc(PAD_ButtonsHeld(port));

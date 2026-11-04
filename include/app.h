@@ -30,8 +30,10 @@ void config_game_load(Config*,const Config*,const Game*);int config_game_save(co
 void favorites_load(Library*);int favorites_save(const Library*);
 void input_init(void);void input_poll(Input*);void input_shutdown(void);
 void input_hid_diagnostics(HidDiagnostics*);
+void module_refresh_available(void);
 int cover_draw(const Game*,float,float,float,float);
-int ui_init(void);void ui_draw(const State*,const Library*,const Config*,int);void ui_shutdown(void);
+int ui_init(void);void ui_boot_message(const char*);
+void ui_draw(const State*,const Library*,const Config*,int);void ui_shutdown(void);
 int module_launch(const Game*,const Config*,char*,size_t);int module_available(System);
 const char* module_name(System);
 #endif
