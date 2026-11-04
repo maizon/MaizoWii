@@ -89,3 +89,5 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
 - Erros upstream adicionais so podem ser considerados solucionados apos novo CI; HID final e instalacao WAD requerem Wii fisico.
 
 - Verificados logs da CI 41813447548: WiiSXRX ainda tinha gettime/diff_usec indefinidos em PeopsSoftGPU/fps.c; patch substitui prototypes desatualizados por include libogc lwp_watchdog.h. WiiMC falhou no ponteiro const de iconv e nas dependencias NTFS/EXT2 nao disponiveis, desabilitadas temporariamente em favor de FAT32. Build e compatibilidade fisica ainda dependem de nova CI/Wii.
+
+- Run 41813948304: WiiSXRX falhou por macro BOOL do Peops declarada antes de lwp_watchdog; corrigida ordem do include. WiiMC chegou a erros de stricmp, comparacao ponteiro/int e chamadas swscale com const; patches de compatibilidade adicionados. Validacao exige novo CI, sem afirmar HID funcional no console.

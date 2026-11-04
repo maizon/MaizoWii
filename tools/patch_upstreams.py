@@ -98,6 +98,29 @@ def patch_wiimc(root: Path):
                    "ENABLE_EXT2                   = 1",
                    "ENABLE_EXT2                   = 0",
                    "WiiMC disable unavailable EXT2 dependency"))
+    def fileop_compat(t):
+        t = replace_once(t, "#include <string.h>",
+                         "#include <string.h>\n#include <strings.h>\n#define stricmp strcasecmp",
+                         "WiiMC portable stricmp")
+        return replace_once(t, 'strstr(path, "../") > 0',
+                            'strstr(path, "../") != NULL',
+                            "WiiMC pointer comparison")
+    patch_file(root, "source/fileop.cpp", fileop_compat)
+
+    def vf_scale_compat(t):
+        t = replace_once(t, "src2[1]= pal2;",
+                         "src2[1]= (uint8_t *)pal2;",
+                         "WiiMC BE palette cast")
+        for old,new in (
+            ("sws_scale(sws1, src2, src_stride2,",
+             "sws_scale(sws1, (const uint8_t * const *)src2, src_stride2,"),
+            ("sws_scale(sws2, src2, src_stride2,",
+             "sws_scale(sws2, (const uint8_t * const *)src2, src_stride2,"),
+            ("sws_scale(sws1, src2, src_stride,",
+             "sws_scale(sws1, (const uint8_t * const *)src2, src_stride,")):
+            t = replace_once(t, old, new, "WiiMC swscale legacy source-const")
+        return t
+    patch_file(root, "source/mplayer/libmpcodecs/vf_scale.c", vf_scale_compat)
     patch_file(root, "source/filebrowser.h",
                lambda x: replace_once(
                    x, "#include <gccore.h>",
