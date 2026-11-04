@@ -1,0 +1,78 @@
+name: MaizoWii - canal WAD forwarder (teste estrutural)
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/forwarder-wad.yml'
+      - 'tools/render_wad_titles.py'
+      - 'tools/inspect_forwarder_wad.py'
+      - 'forwarder/**'
+      - 'bootstub/**'
+
+permissions:
+  contents: read
+
+jobs:
+  compile-forwarder:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitppc:20261102
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile tested SD/USB forwarder DOL
+        run: |
+          make -C forwarder -j2
+          test -s forwarder/boot.dol
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maizo-forwarder-dol-for-wad
+          path: forwarder/boot.dol
+
+  build-wad:
+    needs: [compile-forwarder]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/download-artifact@v4
+        with:
+          name: maizo-forwarder-dol-for-wad
+          path: wad-input
+      - name: Install banner build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential make zlib1g-dev fonts-dejavu-core
+          python3 -m pip install --user --break-system-packages Pillow pycryptodomex
+      - name: Generate banner with maintained Homebrew Channel layout
+        run: |
+          git clone -q https://github.com/Monsterray/hbc-reborn.git channel-base
+          git -C channel-base checkout --detach 559a768d63a38cfe3fcd142b31c5b5c36d566f49
+          python3 tools/render_wad_titles.py channel-base
+          make -C channel-base/channel/banner -j2
+          test -s channel-base/channel/banner/build/banner.arc
+          test -s channel-base/channel/banner/build/icon.arc
+      - name: Prepare pinned Wii WAD packer
+        run: |
+          git clone -q https://github.com/davi-x86/WadPakk.git wad-builder
+          git -C wad-builder checkout --detach 155a00d4b2180eab968cf5b2f5da68f3c3ebdafd
+          dotnet build wad-builder/WadPakk.csproj -c Release -p:PlatformTarget=AnyCPU -p:RuntimeIdentifier=linux-x64
+      - name: Pack channel using IOS58 and unique title ID MZIO
+        run: |
+          mkdir -p wad-output
+          dotnet wad-builder/bin/Release/net8.0/linux-x64/WadPakk.dll pack \
+            -base wad-builder/Resources/base.wad \
+            -banner channel-base/channel/banner/build/banner.arc \
+            -icon channel-base/channel/banner/build/icon.arc \
+            -dol wad-input/boot.dol \
+            -id MZIO -name "Maizo Wii" -ios 58 -loader comex \
+            -o wad-output/MAIZOWII-Forwarder-MZIO-EXPERIMENTAL.wad
+          python3 tools/inspect_forwarder_wad.py wad-output/MAIZOWII-Forwarder-MZIO-EXPERIMENTAL.wad
+          sha256sum wad-output/MAIZOWII-Forwarder-MZIO-EXPERIMENTAL.wad > wad-output/SHA256SUMS
+          echo "DO NOT INSTALL UNTIL VERIFIED IN DOLPHIN Wii Menu AND NAND BACKUP AVAILABLE" > wad-output/LEIA-ANTES-DE-INSTALAR.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MAIZOWII-WAD-EXPERIMENTAL-NOT-HARDWARE-VERIFIED
+          path: wad-output/
+          retention-days: 14
