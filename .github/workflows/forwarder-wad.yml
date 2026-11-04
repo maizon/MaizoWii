@@ -58,6 +58,7 @@ jobs:
           git clone -q https://github.com/davi-x86/WadPakk.git wad-builder
           git -C wad-builder checkout --detach 155a00d4b2180eab968cf5b2f5da68f3c3ebdafd
           dotnet build wad-builder/WadPakk.csproj -c Release -p:PlatformTarget=AnyCPU -p:RuntimeIdentifier=linux-x64
+          cp -r wad-builder/Resources wad-builder/bin/Release/net8.0/linux-x64/Resources
       - name: Pack channel using IOS58 and unique title ID MZIO
         run: |
           mkdir -p wad-output
