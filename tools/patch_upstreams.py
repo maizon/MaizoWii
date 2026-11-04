@@ -158,6 +158,15 @@ def patch_wiimc(root: Path):
         return replace_once(t, 'prev = now;',
                             'rotate_prev = now;', "WiiMC GUI rotate update")
     patch_file(root, "source/libwiigui/gui_image.cpp", gui_image_compat)
+    patch_file(root, "source/mplayer/libdvdnav/dvdnav_internal.h",
+               lambda x: replace_once(x,
+                                      "typedef mutex_t pthread_mutex_t;",
+                                      "#define pthread_mutex_t mutex_t",
+                                      "WiiMC modern pthread type conflict"))
+    patch_file(root, "source/libwiigui/gui_trigger.cpp",
+               lambda x: (x.replace("prev[", "lastTrigger[")
+                          if x.count("prev[") >= 10 else
+                          (_ for _ in ()).throw(ValueError("Unexpected GUI input history layout"))))
     patch_file(root, "source/musicplaylist.cpp",
                lambda x: replace_once(x, "#include <string.h>",
                                       "#include <string.h>\n#include <strings.h>\n"
