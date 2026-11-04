@@ -18,3 +18,10 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
 - CI da PR #1 (run 41763267253) falhou: `test_zip_windows_drive_blocked` não levantou ValueError; compilação do frontend foi pulada.
 - Correção aplicada na validação de caminhos ZIP com drive Windows e regressão adicional para barras invertidas.
 - 17 pendências iniciais; meta 6. Nenhum item novo considerado concluído antes de CI verde e aceites respectivos.
+
+## Execução 2026-11-04 — verificação posterior
+- GitHub Actions run 41769137203 da PR #1 concluiu com **success** para commit 8bde27b, validando o conjunto de regressões anterior e o build automatizado.
+- R19 marcado concluído segundo seu critério de aceite de testes sintéticos e CI. O teste não substitui ensaio de arquivos maliciosos em ambiente isolado.
+- Backlog no início desta execução: 17 itens (R04–R20); meta 6; itens concluídos confirmados: 1 (R19). Restam 16. Meta de 30% não atingida.
+- Novos testes propostos para ZIP symlink Unix e caminho absoluto; verificar CI do novo commit antes de atribuir êxito aos novos testes.
+- Próxima prioridade: R18 contratos de autoboot; R04–R17 e R20 dependem de integração ou ensaios reais no Wii.

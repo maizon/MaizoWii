@@ -64,6 +64,27 @@ class BundleTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 safe_extract(p / "drive.zip", p / "unpacked")
 
+    def test_zip_symlink_blocked(self):
+        import zipfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            info = zipfile.ZipInfo("link.dol")
+            info.create_system = 3
+            info.external_attr = (0o120777 << 16)
+            with zipfile.ZipFile(path / "link.zip", "w") as z:
+                z.writestr(info, "outside")
+            with self.assertRaises(ValueError):
+                safe_extract(path / "link.zip", path / "unpacked")
+
+    def test_zip_absolute_blocked(self):
+        import zipfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            with zipfile.ZipFile(path / "absolute.zip", "w") as z:
+                z.writestr("/tmp/outside.dol", fake_dol())
+            with self.assertRaises(ValueError):
+                safe_extract(path / "absolute.zip", path / "unpacked")
+
     def test_zip_traversal_blocked(self):
         import zipfile
         with tempfile.TemporaryDirectory() as tmp:

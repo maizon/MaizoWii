@@ -69,8 +69,10 @@ def safe_extract(source: Path, destination: Path):
                 p = PurePosixPath(member.filename.replace("\\", "/"))
                 if (p.is_absolute() or ".." in p.parts or "\0" in member.filename or (p.parts and len(p.parts[0]) >= 2 and p.parts[0][0].isalpha() and p.parts[0][1] == ":")):
                     raise ValueError("unsafe ZIP member")
-                if (member.external_attr >> 16) & 0o170000 == 0o120000:
+                if member.create_system == 3 and (member.external_attr >> 16) & 0o170000 == 0o120000:
                     raise ValueError("symlink in ZIP")
+                if member.file_size > 0 and member.compress_size == 0:
+                    raise ValueError("invalid ZIP compression size")
                 total += member.file_size
                 if total > 160 * 1024 * 1024:
                     raise ValueError("ZIP content exceeds limit")
