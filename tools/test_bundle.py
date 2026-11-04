@@ -163,6 +163,28 @@ class BundleTests(unittest.TestCase):
             safe_extract(p / "good.zip", p / "out")
             self.assertEqual((p / "out/apps/Maizo/boot.dol").read_bytes(), fake_dol())
 
+    def test_zip_rejects_ambiguous_dot_and_empty_components(self):
+        import zipfile
+        for name in ("apps/./maizo/boot.dol", "apps//maizo/boot.dol",
+                     "./boot.dol", "apps/../boot.dol"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                p = Path(tmp)
+                with zipfile.ZipFile(p / "ambiguous.zip", "w") as z:
+                    z.writestr(name, fake_dol())
+                with self.assertRaises(ValueError):
+                    safe_extract(p / "ambiguous.zip", p / "out")
+                self.assertFalse((p / "out").exists())
+
+    def test_zip_normal_directory_entry_still_allowed(self):
+        import zipfile
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            with zipfile.ZipFile(p / "directories.zip", "w") as z:
+                z.writestr("apps/maizo/", "")
+                z.writestr("apps/maizo/boot.dol", fake_dol())
+            safe_extract(p / "directories.zip", p / "out")
+            self.assertEqual((p / "out/apps/maizo/boot.dol").read_bytes(), fake_dol())
+
     def test_zip_traversal_blocked(self):
         import zipfile
         with tempfile.TemporaryDirectory() as tmp:

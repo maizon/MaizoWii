@@ -45,3 +45,9 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
 - Detectado risco adicional: ZIPs com nomes reservados DOS, caracteres proibidos e espaços/pontos finais podem ser aceitos no host mas falhar ou colidir no FAT32 do Wii.
 - Adicionada validação pré-extração e regressões sintéticas para nomes inválidos e caminhos válidos.
 - Mudança proposta para CI; sem comprovação de execução no Wii. Nenhum novo item R04–R18/R20 marcado concluído. R18 continua pendente.
+
+## Execução 2026-11-04 — componentes ambíguos ZIP
+- Início: 16 pendências; meta ceil(16 × 0,30) = 5 itens.
+- Revisão identificou que PurePosixPath normaliza componentes "." e separadores repetidos antes da checagem; a extração poderia aceitar aliases ambíguos.
+- Rejeição explícita de componentes vazios, "." e ".." antes da normalização; preservadas entradas convencionais de diretório terminadas em "/".
+- Acrescentadas duas regressões sintéticas. CI do novo commit ainda não confirmado; 0 itens novos concluídos, 16 pendências permanecem. R18 e ensaios físicos ainda bloqueiam o progresso maior.

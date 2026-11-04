@@ -70,6 +70,11 @@ def safe_extract(source: Path, destination: Path):
             # normalizes names differently on different host platforms.
             for member in members:
                 p = PurePosixPath(member.filename.replace("\\", "/"))
+                raw_parts = member.filename.replace("\\", "/").rstrip("/").split("/")
+                # PurePosixPath silently drops dot/empty components. Reject
+                # ambiguous names before normalization or collision checks.
+                if any(part in ("", ".", "..") for part in raw_parts):
+                    raise ValueError("ambiguous ZIP member path")
                 parts = p.parts
                 if (not parts or p.is_absolute() or ".." in parts
                         or chr(0) in member.filename
