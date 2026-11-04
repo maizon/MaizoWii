@@ -169,6 +169,38 @@ def patch_wiimc(root: Path):
                        s, oldcall, "#if HAVE_PAIRED\n    " +
                        oldcall.replace("if (HAVE_PAIRED)", "").strip() +
                        "\n#endif", "WiiMC guarded PPC paired init " + source))
+    # Modern devkitPPC exports __app_start, whereas this legacy linker
+    # script expects _start. Keep WiiMC's USB stub without dropping CRT0.
+    def modern_wiimc_linker(s):
+        s = replace_once(s, "EXTERN(_start);", "EXTERN(__app_start);",
+                         "WiiMC modern entry symbol")
+        s = replace_once(s, "ENTRY(_start);", "ENTRY(__app_start);",
+                         "WiiMC modern ENTRY directive")
+        return replace_once(
+            s, "KEEP (*crt0.o(*.init))",
+            "KEEP (*(.crt0 .crt0.*))\n\t\tKEEP (*crt0.o(*.init))",
+            "WiiMC modern crt0 section")
+    patch_file(root, "build/wiimc.ld", modern_wiimc_linker)
+    # Old header defined four globals in every C file; GCC -fno-common
+    # rejects the resulting duplicates. Provide one definition in mplayer.c.
+    def extern_mplayer_paths(s):
+        for name in ("DATADIR", "CONFDIR", "LIBDIR", "CSSDIR"):
+            s=replace_once(s, "char MPLAYER_"+name+"[512];",
+                           "extern char MPLAYER_"+name+"[512];",
+                           "WiiMC MPlayer common variable "+name)
+        return s
+    patch_file(root, "source/mplayer/config.h", extern_mplayer_paths)
+    def mplayer_path_owner(s):
+        return replace_once(
+            s, '#include "stream/stream.h"',
+            '#include "stream/stream.h"\n'
+            'char MPLAYER_DATADIR[512]={0};\n'
+            'char MPLAYER_CONFDIR[512]={0};\n'
+            'char MPLAYER_LIBDIR[512]={0};\n'
+            'char MPLAYER_CSSDIR[512]={0};',
+            "WiiMC single owner MPlayer paths")
+    patch_file(root, "source/mplayer/mplayer.c", mplayer_path_owner)
+
     # Pinned historical MPlayer has version.sh without its executable bit.
     # Run through /bin/sh rather than trusting a checkout's file mode.
     patch_file(root, "source/mplayer/Makefile",
