@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fail-closed audit for the ALL-IN-ONE package."""
 import json
+import hashlib
 from pathlib import Path
 import sys
 
@@ -20,6 +21,11 @@ for mandatory in ("apps/maizo/meta.xml", "controllers/0079_0006.ini",
     assert (root / mandatory).is_file(), mandatory
 manifest = json.loads((root / "maizo/MODULE_MANIFEST.json").read_text())
 assert all(manifest["upstream"].get(name) for name in EXPECTED if name != "maizo" and name != "Nintendont")
+hashes = manifest.get("final_dol_sha256")
+assert isinstance(hashes, dict) and set(hashes) == set(EXPECTED), "missing/extra final DOL hashes"
+for name in EXPECTED:
+    actual = hashlib.sha256((root / "apps" / name / "boot.dol").read_bytes()).hexdigest()
+    assert hashes[name] == actual, "DOL SHA-256 mismatch: " + name
 files = list(root.rglob("*"))
 assert not any(f.is_symlink() for f in files)
 print("PASS: all eight application executables and controller profiles present")
