@@ -26,6 +26,19 @@ assert isinstance(hashes, dict) and set(hashes) == set(EXPECTED), "missing/extra
 for name in EXPECTED:
     actual = hashlib.sha256((root / "apps" / name / "boot.dol").read_bytes()).hexdigest()
     assert hashes[name] == actual, "DOL SHA-256 mismatch: " + name
+# Prevent a successful bundle build from silently claiming HID coverage.
+ADAPTABLE = {"usbloader_gx", "WiiSXRX", "WiiMC", "snes9xgx", "fceugx", "vbagx"}
+adapted = manifest.get("adapted_modules")
+fallback = manifest.get("fallback_modules")
+assert isinstance(adapted, list) and isinstance(fallback, list), "adapter inventory missing"
+assert len(adapted) == len(set(adapted)) and len(fallback) == len(set(fallback)), "duplicate adapter inventory"
+assert set(adapted).isdisjoint(fallback) and set(adapted) | set(fallback) == ADAPTABLE, "adapter inventory mismatch"
+assert set(manifest.get("adapted_sha256", {})) == set(adapted), "adapted hash inventory mismatch"
+for name in adapted:
+    assert manifest["adapted_sha256"][name] == hashes[name], "adapted binary hash mismatch: " + name
+for name in ADAPTABLE:
+    provenance = manifest.get("module_input_provenance", {}).get(name, "")
+    assert ("HID source adapter" in provenance) == (name in adapted), "adapter provenance mismatch: " + name
 # Additional HBC DOL and GPL-licensed manager are independent of the
 # eight core modules. Verify their provenance whenever the final manifest
 # declares them; do not treat a naked DOL as an installable channel WAD.
