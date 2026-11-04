@@ -48,6 +48,28 @@ def overlay(adapter_root: Path, dist: Path) -> dict[str,str]:
         if len(contents) > 12 * 1024 * 1024 or not valid_dol(contents):
             raise ValueError("Invalid adapted module: " + module)
         prepared[module] = contents
+    # Installer candidates must pass the same preflight before ANY DOL is
+    # changed. An in-place rerun without its source cannot relabel a previous
+    # HID build as the official YAWM binary.
+    installer = manifest.get("installer")
+    manager_prepared = None
+    manager_dst = dist / "apps/maizo-installer/boot.dol"
+    manager_src = adapter_root / "apps/maizo-installer/boot.dol"
+    if installer:
+        if manager_dst.is_symlink() or not manager_dst.is_file():
+            raise ValueError("Missing or unsafe staged YAWM installer")
+        if manager_src.exists() or manager_src.is_symlink():
+            if manager_src.is_symlink() or not manager_src.is_file():
+                raise ValueError("Unsafe adapted YAWM installer")
+            manager_prepared = manager_src.read_bytes()
+            if len(manager_prepared)>12*1024*1024 or not valid_dol(manager_prepared):
+                raise ValueError("Invalid adapted YAWM installer DOL")
+        elif installer.get("hid_adapted") and (
+            hashlib.sha256(manager_dst.read_bytes()).hexdigest()
+                == installer.get("dol_sha256")
+        ):
+            raise ValueError("Cannot relabel adapted YAWM as official fallback; "
+                             "rebuild clean dist")
     manifest["adapted_sha256"] = {}
     status = {}
     for module in MODULES:
@@ -61,6 +83,17 @@ def overlay(adapter_root: Path, dist: Path) -> dict[str,str]:
         tmp.replace(destination)
         status[module] = "maizo HID source adapter (hardware tests still pending)"
         manifest["adapted_sha256"][module] = hashlib.sha256(contents).hexdigest()
+    if installer:
+        if manager_prepared is None:
+            installer["hid_adapted"] = False
+            status["maizo-installer"] = "official YAWM, USB HID not adapted"
+        else:
+            tmp = manager_dst.with_suffix(".patched")
+            tmp.write_bytes(manager_prepared)
+            tmp.replace(manager_dst)
+            installer["hid_adapted"] = True
+            installer["dol_sha256"] = hashlib.sha256(manager_prepared).hexdigest()
+            status["maizo-installer"] = "HID source adapted, NOT Wii hardware validated"
     status["Nintendont"]="official own HID driver / controller.ini"
     # Record the final on-disk executable for every module, including fallbacks.
     # This is intentionally calculated AFTER overlays so the manifest cannot
@@ -77,7 +110,8 @@ def overlay(adapter_root: Path, dist: Path) -> dict[str,str]:
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8")
     (dist / "HID-COMPATIBILITY.txt").write_text(
-        "MAIZO: USB HID 0079:0006 and configurable profiles.\n" +
+        "MAIZO: Nintendont profiles and standard HID report descriptor parser;\n" +
+        "unsupported IOS/device protocols are not automatically emulated.\n" +
         "\n".join(f"{k}: {v}" for k, v in status.items()) +
         "\nHID support with unsupported USB protocols "
         "(0810:0001, XInput) is NOT guaranteed.\n",

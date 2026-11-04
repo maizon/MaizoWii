@@ -150,3 +150,18 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
 - Commit 7d232798: valida previamente todos os módulos adaptados e destinos, rejeita symlinks e entradas ausentes antes de copiar. Commit 06b521ab: teste de regressão comprova que adaptador WiiSXRX inválido não modifica o usbloader_gx anterior nem o manifesto.
 - Limite: pré-validação evita mutação parcial por entrada inválida, mas não garante rollback de erros de I/O durante cópia. Não declarar transação atômica completa.
 - CI do novo HEAD ainda não confirmado nesta atualização; 0 novos requisitos concluídos, meta de 30% não atingida. Próximo: conferir CI, diagnosticar WiiMC fallback e testar HID em console real.
+
+
+## Integração HID universal — entrega em um único commit
+- Base da branch verificada: 2d63534a139e421073df7c300f48c5772dd51b0a.
+- Novo decoder portátil `integrations/maizo_report.h` com testes compilando
+  o C de produção; não afirma cobertura de USB HID proprietário ou XInput.
+- Mesmo driver USB no frontend e nos módulos, eliminando divergência de
+  comportamento e mantendo `controller.ini` como fallback conhecido.
+- Build adaptado do YAWM ModMii Edition pinado, com controles ligados a
+  `WaitButtons` e reinicialização de USB após IOS reload; fallback oficial
+  declarado no manifesto caso o source não compile.
+- Forwarder existente continua apenas .dol HBC. Instalação do canal .wad,
+  compatibilidade física universal e retorno após emulador continuam pendentes.
+- Meta declarada pelo usuário: 30 recursos em um commit. O critério de aceite
+  físico não pode ser fechado por simulação; status só muda com evidência real.

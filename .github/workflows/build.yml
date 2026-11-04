@@ -38,6 +38,43 @@ jobs:
           path: stage/
           retention-days: 14
 
+  installer-hid:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitppc:20261102
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned YAWM ModMii Edition source
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git clone --depth 1 https://github.com/modmii/YAWM-ModMii-Edition.git upstream-yawm
+          cd upstream-yawm
+          git fetch --depth 1 origin 62205f9ab507cdceae94c77197b1b459f0276d39
+          git checkout --detach 62205f9ab507cdceae94c77197b1b459f0276d39
+          git config --global --add safe.directory "$PWD"
+      - name: Apply shared HID to YAWM without bypassing NAND confirmation
+        run: python3 tools/patch_yawm.py upstream-yawm
+      - name: Compile adapted YAWM DOL
+        id: compilation
+        continue-on-error: true
+        run: make -C upstream-yawm -j2
+      - name: Package HID-enabled YAWM only after compilation
+        if: steps.compilation.outcome == 'success'
+        run: |
+          test -s upstream-yawm/boot.dol
+          mkdir -p patched/apps/maizo-installer
+          cp upstream-yawm/boot.dol patched/apps/maizo-installer/boot.dol
+      - name: Report safe fallback if adaptation fails
+        if: steps.compilation.outcome != 'success'
+        run: echo "YAWM HID build failed; package unmodified official YAWM without HID"
+      - uses: actions/upload-artifact@v4
+        if: steps.compilation.outcome == 'success'
+        with:
+          name: MAIZO-ADAPTED-installer
+          path: patched/
+          retention-days: 14
+
   launch-contracts:
     runs-on: ubuntu-latest
     steps:
@@ -50,7 +87,7 @@ jobs:
 
   all-in-one:
     runs-on: ubuntu-latest
-    needs: [frontend, adapted, launch-contracts]
+    needs: [frontend, adapted, launch-contracts, installer-hid]
     if: always() && needs.frontend.result == 'success' && needs.launch-contracts.result == 'success'
     steps:
       - uses: actions/checkout@v4

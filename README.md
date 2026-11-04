@@ -153,3 +153,22 @@ Nao e canal WAD. Inclui YAWM ModMii Edition em apps/maizo-installer/boot.dol,
 instalador **interativo**, que solicita a escolha/confirmacao do WAD.
 O WAD MaizoWii ainda NAO foi produzido nem validado para instalacao na NAND.
 Consulte docs/FORWARDER_INSTALADOR.md.
+
+
+## HID compartilhado e compilação do instalador (nova rodada)
+O frontend e os módulos adaptados compartilham o MESMO código fonte
+`integrations/maizo_hid.inc` + `integrations/maizo_report.h`.
+O parser permite reconhecer **gamepads HID de relatório padrão** por descritor
+(USB HID Report Descriptor, report IDs e campos de botões/eixos/hat), sem
+cadastrar cada VID/PID. Dispositivos com protocolo proprietário ainda podem
+requerer `controllers/VID_PID.ini`, exatamente como nos perfis do Nintendont.
+O driver atual aceita um único dispositivo USB físico ativo por DOL, embora
+interprete até quatro portas lógicas de receptores `MultiIn` suportados.
+
+O workflow também tenta recompilar o YAWM ModMii Edition com o mesmo driver,
+integrando gamepad na rotina de `WaitButtons` e reinicialização após IOS
+reload. O binário adaptado **só substitui** o oficial se a compilação e a
+validação DOL passarem. O campo `installer.hid_adapted` do manifesto confirma
+qual executável efetivamente foi distribuído. A instalação de WAD continua
+**interativa, nunca automática**. Sem WAD de canal próprio validado, não existe
+instalação do canal MaizoWii pronta. Teste real no console continua obrigatório.
