@@ -25,17 +25,53 @@ static void change_system(int diff){state.system=(System)((state.system+SYSTEM_C
  state.selected=0;state.scroll=0;state.favorites=0;state.search[0]=0;
  if(state.page==PAGE_DETAIL)state.page=PAGE_LIBRARY;
  state.settings_row=0;}
+static void close_settings(void){
+ if(state.settings_for_game){
+  int idx=state.detail;
+  int ok=idx>=0 && idx<library_state.count &&
+         config_game_save(&state.game_config,&library_state.games[idx]);
+  state.settings_for_game=0;
+  if(ok)state.page=PAGE_DETAIL;
+  else {
+   snprintf(state.info,sizeof(state.info),
+            "FALHA AO SALVAR OPCOES DESTE JOGO");
+   state.page=PAGE_INFO;
+  }
+ }else{
+  config_save(&config);state.page=PAGE_HOME;
+ }
+}
 static void option_change(int dir){
  if(state.settings_row>=settings_count(state.system)-1){
-  config_save(&config);state.page=PAGE_HOME;return;
+  close_settings();return;
  }
- if(settings_change(&config,state.system,state.settings_row,dir))config_save(&config);
+ if(state.settings_for_game && state.settings_row<2)return;
+ Config*active=state.settings_for_game?&state.game_config:&config;
+ if(settings_change(active,state.system,state.settings_row,dir) &&
+    !state.settings_for_game)config_save(&config);
 }
 static void handle(const Input*i){
+ if(state.page==PAGE_HID){
+  if(i->back||i->settings||i->accept)state.page=PAGE_SETTINGS;
+  return;
+ }
  if(state.page==PAGE_INFO){if(i->back||i->accept)state.page=PAGE_LIBRARY;return;}
- if(i->tab_prev)change_system(-1);
- if(i->tab_next)change_system(1);
- if(i->settings && state.page!=PAGE_SETTINGS && state.page!=PAGE_SEARCH){state.page=PAGE_SETTINGS;return;}
+ if(!state.settings_for_game){
+  if(i->tab_prev)change_system(-1);
+  if(i->tab_next)change_system(1);
+ }
+ if(i->settings && state.page==PAGE_DETAIL){
+  if(state.detail>=0&&state.detail<library_state.count){
+   const Game*g=&library_state.games[state.detail];
+   config_game_load(&state.game_config,&config,g);
+   state.settings_for_game=1;state.settings_row=2;state.page=PAGE_SETTINGS;
+  }
+  return;
+ }
+ if(i->settings && state.page!=PAGE_SETTINGS && state.page!=PAGE_SEARCH){
+  state.settings_for_game=0;state.settings_row=0;state.page=PAGE_SETTINGS;
+  return;
+ }
  if(i->search && state.page==PAGE_LIBRARY){state.page=PAGE_SEARCH;state.search_index=1;return;}
  if(i->refresh && state.page==PAGE_HOME){library_begin(&library_state);return;}
  if(i->refresh && state.page==PAGE_LIBRARY){state.favorites=!state.favorites;state.selected=state.scroll=0;return;}
@@ -46,11 +82,12 @@ static void handle(const Input*i){
   return;
  }
  if(state.page==PAGE_SETTINGS){
+  if(i->refresh){state.page=PAGE_HID;return;}
   if(i->up&&state.settings_row>0)state.settings_row--;
   if(i->down&&state.settings_row<settings_count(state.system)-1)state.settings_row++;
   if(i->left)option_change(-1);
   if(i->right||i->accept)option_change(1);
-  if(i->back){config_save(&config);state.page=PAGE_HOME;}
+  if(i->back)close_settings();
   return;
  }
  if(state.page==PAGE_SEARCH){
@@ -86,7 +123,9 @@ static void handle(const Input*i){
   if(i->favorite&&state.detail>=0&&state.detail<library_state.count){library_state.games[state.detail].favorite^=1;favorites_save(&library_state);}
   if(i->accept&&state.detail>=0&&state.detail<library_state.count){
    char error[160]="";
-   module_launch(&library_state.games[state.detail],&config,error,sizeof(error));
+   const Game*g=&library_state.games[state.detail];
+   Config effective;config_game_load(&effective,&config,g);
+   module_launch(g,&effective,error,sizeof(error));
    snprintf(state.info,sizeof(state.info),"%s",error);
    state.page=PAGE_INFO;
   }

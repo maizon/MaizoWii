@@ -18,27 +18,88 @@ jobs:
         run: |
           python3 tools/test_contract.py
           python3 -m unittest discover -s tools -p "test_*.py"
+          python3 -m unittest discover -s tests -p "test_*.py"
           python3 -m py_compile tools/package_all.py
       - name: Compile the Wii frontend
-        run: make -j2
+        run: |
+          make -j2
+          make -C forwarder -j2
       - name: Stage frontend
         run: |
           test -s boot.dol
           mkdir -p stage/apps/maizo
           cp boot.dol apps/maizo/meta.xml stage/apps/maizo/
+          test -s forwarder/boot.dol
+          mkdir -p stage/apps/maizo-forwarder
+          cp forwarder/boot.dol forwarder/meta.xml stage/apps/maizo-forwarder/
       - uses: actions/upload-artifact@v4
         with:
           name: MAIZOWII-FRONTEND
           path: stage/
           retention-days: 14
 
+  installer-hid:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitppc:20261102
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned YAWM ModMii Edition source
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git clone --depth 1 https://github.com/modmii/YAWM-ModMii-Edition.git upstream-yawm
+          cd upstream-yawm
+          git fetch --depth 1 origin 62205f9ab507cdceae94c77197b1b459f0276d39
+          git checkout --detach 62205f9ab507cdceae94c77197b1b459f0276d39
+          git config --global --add safe.directory "$PWD"
+      - name: Apply shared HID to YAWM without bypassing NAND confirmation
+        run: python3 tools/patch_yawm.py upstream-yawm
+      - name: Compile adapted YAWM DOL
+        id: compilation
+        continue-on-error: true
+        run: make -C upstream-yawm -j2
+      - name: Diagnose YAWM small-data link failure (no false success)
+        if: steps.compilation.outcome != 'success'
+        run: |
+          echo "YAWM source build failed; checking actual PPC linker map."
+          MAP=upstream-yawm/build/boot.elf.map
+          if [ -f "$MAP" ]; then
+            grep -n -E '^\\.(sdata|sbss)|_SDA_BASE_|__ppc_(excpt_sp|main_sp)|__system_argv|\\.sdata\\.hId' "$MAP" | head -65 || true
+            ls -lh "$MAP"
+          else
+            echo "No linker map generated."
+          fi
+      - name: Package HID-enabled YAWM only after compilation
+        if: steps.compilation.outcome == 'success'
+        run: |
+          test -s upstream-yawm/boot.dol
+          mkdir -p patched/apps/maizo-installer
+          cp upstream-yawm/boot.dol patched/apps/maizo-installer/boot.dol
+      - name: Report safe fallback if adaptation fails
+        if: steps.compilation.outcome != 'success'
+        run: echo "YAWM HID build failed; package unmodified official YAWM without HID"
+      - uses: actions/upload-artifact@v4
+        if: steps.compilation.outcome == 'success'
+        with:
+          name: MAIZO-ADAPTED-installer
+          path: patched/
+          retention-days: 14
+
+  launch-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and execute the production argv builder on host GCC
+        run: python3 -m unittest discover -s tools -p 'test_launch_args.py' -v
+
   adapted:
     uses: ./.github/workflows/build-adapted-modules.yml
 
   all-in-one:
     runs-on: ubuntu-latest
-    needs: [frontend, adapted]
-    if: always() && needs.frontend.result == 'success'
+    needs: [frontend, adapted, launch-contracts, installer-hid]
+    if: always() && needs.frontend.result == 'success' && needs.launch-contracts.result == 'success'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -55,11 +116,26 @@ jobs:
       - name: Install archive extractor
         run: sudo apt-get update && sudo apt-get install -y p7zip-full
       - name: Collect pinned official homebrew modules
-        run: python3 tools/package_all.py --frontend stage/apps/maizo/boot.dol --out dist
+        run: python3 tools/package_all.py --frontend stage/apps/maizo/boot.dol --forwarder stage/apps/maizo-forwarder/boot.dol --out dist
       - name: Overlay HID builds with fail-safe official fallback
         run: python3 tools/overlay_adapted.py patched dist
+      - name: Require HID YAWM for ALL-IN-ONE release
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("dist/maizo/MODULE_MANIFEST.json").read_text())
+          manager=m.get("installer",{})
+          assert manager.get("hid_adapted") is True, (
+              "YAWM official fallback is NOT a HID installer. "
+              "The required source-built HID manager failed to compile. "
+              "No ALL-IN-ONE release can be published until this is fixed.")
+          print("PASS: YAWM USB HID source binary included with SHA-256")
+          PY
       - name: Verify every executable and zip the storage root
         run: |
+          test -s dist/apps/maizo-installer/boot.dol
+          test -s dist/apps/maizo-forwarder/boot.dol
           python3 tools/verify_bundle.py dist
           cd dist
           zip -q -r ../MAIZOWII-ALL-IN-ONE.zip .

@@ -30,9 +30,10 @@ def patch_file(root: Path, rel: str, fun):
     print("PATCH", rel)
 
 def install_inc(root: Path, folder: str):
-    dest = root / folder / "maizo_hid.inc"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(SOURCE, dest)
+    target = root / folder
+    target.mkdir(parents=True, exist_ok=True)
+    for name in ("maizo_hid.inc", "maizo_report.h", "maizo_multi.h"):
+        shutil.copyfile(SOURCE.parent / name, target / name)
 
 def fix_pad_update(text: str, key: str, is_wiimc: bool):
     text = replace_once(text, key, key + '\n\tmaizo_hid_tick();', "UpdatePads")
@@ -76,6 +77,205 @@ def patch_wiimc(root: Path):
           'extern int stream_error(stream_t *);', "WiiMC stream/MPlayer legacy compatibility")
         return t
     patch_file(root, "source/mplayer/mplayer.c", mplayer_patch)
+    # Modern iconv expects mutable char** and the old MPlayer code passes
+    # const char**. Keep input bytes unmodified but give iconv its own pointer.
+    patch_file(root, "source/mplayer/mp_msg.c",
+               lambda x: replace_once(
+                   replace_once(x,
+                     "    precoded = recoded_filename;",
+                     "    precoded = recoded_filename;\n"
+                     "    char *mutable_filename = (char *)filename;",
+                     "WiiMC iconv input pointer"),
+                   "iconv(inv_msgiconv, &filename, &filename_len,",
+                   "iconv(inv_msgiconv, &mutable_filename, &filename_len,",
+                   "WiiMC iconv mutable pointer"))
+    # Original WiiMC defaults to NTFS and EXT2, whose obsolete portlibs are
+    # absent from the pinned toolchain. FAT32/ISO/SMB remain enabled.
+    patch_file(root, "Makefile",
+               lambda x: replace_once(
+                   replace_once(x, "ENABLE_NTFS                   = 1",
+                                "ENABLE_NTFS                   = 0",
+                                "WiiMC disable unavailable NTFS dependency"),
+                   "ENABLE_EXT2                   = 1",
+                   "ENABLE_EXT2                   = 0",
+                   "WiiMC disable unavailable EXT2 dependency"))
+    def fileop_compat(t):
+        t = replace_once(t, "#include <string.h>",
+                         "#include <string.h>\n#include <strings.h>\n#define stricmp strcasecmp",
+                         "WiiMC portable stricmp")
+        return replace_once(t, 'strstr(path, "../") > 0',
+                            'strstr(path, "../") != NULL',
+                            "WiiMC pointer comparison")
+    patch_file(root, "source/fileop.cpp", fileop_compat)
+
+    def vf_scale_compat(t):
+        t = replace_once(t, "src2[1]= pal2;",
+                         "src2[1]= (uint8_t *)pal2;",
+                         "WiiMC BE palette cast")
+        for old,new in (
+            ("sws_scale(sws1, src2, src_stride2,",
+             "sws_scale(sws1, (const uint8_t * const *)src2, src_stride2,"),
+            ("sws_scale(sws2, src2, src_stride2,",
+             "sws_scale(sws2, (const uint8_t * const *)src2, src_stride2,"),
+            ("sws_scale(sws1, src2, src_stride,",
+             "sws_scale(sws1, (const uint8_t * const *)src2, src_stride,")):
+            t = replace_once(t, old, new, "WiiMC swscale legacy source-const")
+        return t
+    patch_file(root, "source/mplayer/libmpcodecs/vf_scale.c", vf_scale_compat)
+    patch_file(root, "source/mplayer/sub/spudec.c",
+               lambda x: replace_once(
+                   replace_once(x, "sws_scale(ctx,&s1,",
+                                "sws_scale(ctx,(const uint8_t * const *)&s1,",
+                                "WiiMC subtitle swscale first call"),
+                   "sws_scale(ctx,&s2,",
+                   "sws_scale(ctx,(const uint8_t * const *)&s2,",
+                   "WiiMC subtitle swscale second call"))
+    def wiimc_callbacks(t):
+        t = replace_once(t,
+                         "static ssize_t __out_write(struct _reent *r, int fd,",
+                         "static ssize_t __out_write(struct _reent *r, void *fd,",
+                         "WiiMC newlib devoptab output callback")
+        t = replace_once(t, "static void ResetCB()",
+                         "static void ResetCB(u32 irq, void *userdata)",
+                         "WiiMC libogc reset callback signature")
+        return t
+    patch_file(root, "source/wiimc.cpp", wiimc_callbacks)
+    def wii_subtitles_compat(t):
+        t = replace_once(t, 'c = utf8_get_char(&t);',
+                         '{ const char *cursor=(const char *)t; '
+                         'c = utf8_get_char(&cursor); '
+                         't = (unsigned char *)cursor; }',
+                         "WiiMC subtitle UTF8 input pointer")
+        return replace_once(t, '#include "sub.h"',
+                            '#include "sub.h"\n#ifdef GEKKO\n'
+                            'int mpctx_get_set_of_sub_size(void);\n#endif',
+                            "WiiMC subtitle settings prototype")
+    patch_file(root, "source/mplayer/sub/sub.c", wii_subtitles_compat)
+    def gui_image_compat(t):
+        t=replace_once(t, 'static u64 prev;',
+                       'static u64 rotate_prev;', "WiiMC GUI rotate state")
+        t=replace_once(t, 'diff_usec(prev, now)',
+                       'diff_usec(rotate_prev, now)', "WiiMC GUI rotate elapsed")
+        return replace_once(t, 'prev = now;',
+                            'rotate_prev = now;', "WiiMC GUI rotate update")
+    patch_file(root, "source/libwiigui/gui_image.cpp", gui_image_compat)
+    patch_file(root, "source/mplayer/libdvdnav/dvdnav_internal.h",
+               lambda x: replace_once(x,
+                                      "typedef mutex_t pthread_mutex_t;",
+                                      "#define pthread_mutex_t mutex_t",
+                                      "WiiMC modern pthread type conflict"))
+    patch_file(root, "source/libwiigui/gui_trigger.cpp",
+               lambda x: (x.replace("prev[", "lastTrigger[")
+                          if x.count("prev[") >= 10 else
+                          (_ for _ in ()).throw(ValueError("Unexpected GUI input history layout"))))
+    patch_file(root, "source/musicplaylist.cpp",
+               lambda x: replace_once(x, "#include <string.h>",
+                                      "#include <string.h>\n#include <strings.h>\n"
+                                      "#define stricmp strcasecmp",
+                                      "WiiMC portable music sort"))
+    patch_file(root, "source/mplayer/loader/qtx/qtxsdk/components.h",
+               lambda x: replace_once(x,
+                                      "unsigned int* p=cd->wantedDestinationPixelTypes;",
+                                      "unsigned int* p=(unsigned int*)(void*)"
+                                      "cd->wantedDestinationPixelTypes;",
+                                      "WiiMC QuickTime debug pointer cast"))
+    patch_file(root, "source/settings.h",
+               lambda x: replace_once(x, '#include "networkop.h"',
+                                      '#include "networkop.h"\n'
+                                      '#ifndef MAXPATHLEN\n#define MAXPATHLEN 1024\n#endif',
+                                      "WiiMC legacy MAXPATHLEN in settings"))
+    patch_file(root, "source/input.cpp",
+               lambda x: (x.replace("prev[", "rumblePrev[")
+                          if x.count("prev[") >= 4 else
+                          (_ for _ in ()).throw(ValueError("Unexpected rumble variable layout"))))
+    patch_file(root, "source/mplayer/libmpdemux/demux_film.c",
+               lambda x: replace_once(x,
+                                      "unsigned short* tmp = dp->buffer;",
+                                      "unsigned short* tmp = (unsigned short*)dp->buffer;",
+                                      "WiiMC 16-bit film audio buffer cast"))
+    patch_file(root, "source/filebrowser.h",
+               lambda x: replace_once(
+                   x, "#include <gccore.h>",
+                   "#include <gccore.h>\n#ifndef MAXPATHLEN\n#define MAXPATHLEN 1024\n#endif",
+                   "WiiMC legacy MAXPATHLEN definition"))
+    patch_file(root, "source/mplayer/osdep/gx_supp.c",
+               lambda x: replace_once(
+                   replace_once(x, "extern timerFadeBlack;",
+                                "extern int timerFadeBlack;",
+                                "WiiMC timerFadeBlack declaration"),
+                   "void TakeScreenshot();",
+                   "void TakeScreenshot();\nextern void wiiPause(void);",
+                   "WiiMC wiiPause declaration"))
+
+    patch_file(root, "source/mplayer/libmpcodecs/vf_screenshot.c",
+               lambda x: replace_once(
+                   replace_once(x,
+                      "sws_scale(priv->ctx, mpi->planes,",
+                      "sws_scale(priv->ctx, (const uint8_t * const *)mpi->planes,",
+                      "WiiMC screenshot plane const"),
+                   "sws_scale(vf->priv->ctx, src,",
+                   "sws_scale(vf->priv->ctx, (const uint8_t * const *)src,",
+                   "WiiMC screenshot slice const"))
+    def ftp_compat(t):
+        t = replace_once(t, "#include <stdlib.h>",
+                         "#include <stdlib.h>\n#include <stdint.h>",
+                         "WiiMC FTP pointer portability")
+        for name in ("st_spare1","st_spare2","st_spare3"):
+            t = replace_once(t, "st->"+name+" = 0;", "/* legacy field removed: "+name+" */",
+                             "WiiMC FTP struct stat compatibility")
+        t = replace_once(t, "if_config(myIP, NULL, NULL, true)",
+                         "if_config(myIP, NULL, NULL, true, 20)",
+                         "WiiMC FTP network retry parameter")
+        # newlib changed private devoptab callbacks from int fd to void*.
+        # Avoid C function pointer casts: adapt the boundary explicitly.
+        wrappers = '''
+static int maizo_ftp_close(struct _reent*r,void*fd){
+ return __ftp_close(r,(int)(uintptr_t)fd);
+}
+static ssize_t maizo_ftp_write(struct _reent*r,void*fd,const char*buf,size_t n){
+ return __ftp_write(r,(int)(uintptr_t)fd,buf,n);
+}
+static ssize_t maizo_ftp_read(struct _reent*r,void*fd,char*buf,size_t n){
+ return __ftp_read(r,(int)(uintptr_t)fd,buf,n);
+}
+static off_t maizo_ftp_seek(struct _reent*r,void*fd,off_t off,int whence){
+ return __ftp_seek(r,(int)(uintptr_t)fd,off,whence);
+}
+static int maizo_ftp_fstat(struct _reent*r,void*fd,struct stat*st){
+ return __ftp_fstat(r,(int)(uintptr_t)fd,st);
+}
+'''
+        t=replace_once(t,"static void MountDevice(", wrappers+"\nstatic void MountDevice(",
+                       "WiiMC newlib FTP adapter wrappers")
+        for func in ("close","write","read","seek","fstat"):
+            t=replace_once(t,"dotab_ftp->"+func+"_r=__ftp_"+func+";",
+                           "dotab_ftp->"+func+"_r=maizo_ftp_"+func+";",
+                           "WiiMC FTP "+func+" callback")
+        return t
+    patch_file(root,"source/utils/ftp_devoptab.c",ftp_compat)
+    def subtitles_font_compat(t):
+        t=replace_once(t,"extern const font_ttf[];",
+                       "extern const unsigned char font_ttf[];",
+                       "WiiMC FreeType embedded default font")
+        t=replace_once(t,"extern font_mem;",
+                       "extern unsigned char *font_mem;",
+                       "WiiMC FreeType font cache pointer")
+        return replace_once(t,"extern mono_mem;",
+                            "extern unsigned char *mono_mem;",
+                            "WiiMC FreeType mono font cache pointer")
+    patch_file(root,"source/mplayer/libass/ass_font.c",subtitles_font_compat)
+
+    # This 2010-era custom linker script omits exception symbols that
+    # current libogc's interrupt handler requires. Use the *documented
+    # standard address layout* from devkitPro/devkitppc-crtls:
+    # libogc_common.ld, not a guessed RAM buffer.
+    patch_file(root, "build/wiimc.ld",
+               lambda t: replace_once(
+                   t, "__isIPL = 0;",
+                   "PROVIDE_HIDDEN(__ppc_excpt_buf = 0x800000d0);\n"
+                   "PROVIDE_HIDDEN(__ppc_excpt_table = 0x80003000);\n"
+                   "__isIPL = 0;",
+                   "WiiMC modern libogc exception symbols"))
     patch_file(root, "source/mplayer/osdep/ave-rvl.c",
                lambda x: replace_once(x, "#include <gccore.h>",
                                       "#include <gccore.h>\n#include <string.h>\nextern void udelay(int us);",
@@ -121,13 +321,38 @@ def patch_wiisx(root: Path):
     patch_file(root, "Gamecube/gc_input/controller-GC.c", change)
     # Preserve the exception-spec syntax used by this legacy WiiSXRX codebase.
     patch_file(root, "Gamecube/Makefile_Wii",
-               lambda x: replace_once(x, "CXXFLAGS\t=\t$(CFLAGS)",
-                                      "CXXFLAGS\t=\t$(CFLAGS) -std=gnu++14", "WiiSXRX C++ standard"))
+               lambda x: replace_once(
+                   replace_once(x, "CFLAGS\t= -g -flto",
+                                "CFLAGS\t= -fgnu89-inline -fcommon -g -flto",
+                                "WiiSXRX legacy GCC C inline and common symbol semantics"),
+                   "CXXFLAGS\t=\t$(CFLAGS)",
+                   "CXXFLAGS\t=\t$(CFLAGS) -std=gnu++14", "WiiSXRX C++ standard"))
+    patch_file(root, "Gamecube/Makefile_Wii",
+               lambda x: replace_once(x, "$(DEVKITPPC)/bin/elf2dol",
+                                      "elf2dol", "WiiSXRX current elf2dol location"))
 
     # Modern GCC no longer accepts implicit function prototypes and the
     # old BOOL typedef is not present in newer libogc headers.
     patch_file(root, "Gamecube/gc_input/controller.h",
                lambda x: replace_once(x, "BOOL          inUse;", "bool          inUse;", "WiiSXRX BOOL"))
+    # The modern compiler does not treat an empty-parameter declaration as
+    # a prototype, and CheckState(char *) clashes with legacy CheckState().
+    # libogc provides static inline gettime/diff_usec in the watchdog header.
+    # The old Peops FPS code only declared externs, causing linker failures.
+    patch_file(root, "PeopsSoftGPU/fps.c",
+               lambda x: replace_once(
+                   replace_once(x, '#include "stdafx.h"',
+                                '#include <ogc/lwp_watchdog.h>\n#include "stdafx.h"',
+                                "WiiSXRX load watchdog before legacy BOOL macro"),
+                   " long long gettime(void);\n"
+                   " unsigned int diff_usec(long long start,long long end);",
+                   " /* timers provided by libogc watchdog */",
+                   "WiiSXRX remove obsolete timer prototypes"))
+    patch_file(root, "misc.h",
+               lambda x: replace_once(x, "int CheckState();",
+                                      "int CheckState(char *file);",
+                                      "WiiSXRX CheckState prototype"))
+
     patch_file(root, "Gamecube/PlugCD.h",
                lambda x: replace_once(x, "unsigned char* getSector();",
                                       "unsigned char* getSector(int subchannel);", "WiiSXRX getSector"))

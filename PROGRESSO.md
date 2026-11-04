@@ -1,0 +1,205 @@
+# PROGRESSO — execução 2026-11-03
+
+Base: `d4f14cb13961fd55a67c00ad57dd9638fff53588`.
+Backlog inicial: 17 pendências (R04–R20). Meta aspiracional desta execução: ceil(17 × 0,30) = **6 itens**.
+Concluídos com evidência nesta execução: **0/17 até confirmação do CI**. R19 recebe testes e correção propostos, mas permanece pendente até CI verde.
+
+Mudanças propostas:
+- Empacotador não falha imediatamente se o DOL preferido estiver corrompido e houver outro executável válido.
+- ZIP com caminho absoluto de drive Windows é rejeitado antes da extração.
+- Testes de regressão para fallback, forwarder e caminho com drive.
+- Roadmap auditável e critérios de aceite.
+
+Verificações anteriores: workflows build e upstream HID na main estavam verdes (GitHub Actions runs 41757066210 e 41757066264). **Essas execuções não validam esta PR**.
+Pendências de maior risco: execução física do bootstub, compatibilidade HID em módulos e WiiMC/PS1.
+Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e testes de hardware.
+
+## Execução 2026-11-04
+- CI da PR #1 (run 41763267253) falhou: `test_zip_windows_drive_blocked` não levantou ValueError; compilação do frontend foi pulada.
+- Correção aplicada na validação de caminhos ZIP com drive Windows e regressão adicional para barras invertidas.
+- 17 pendências iniciais; meta 6. Nenhum item novo considerado concluído antes de CI verde e aceites respectivos.
+
+## Execução 2026-11-04 — verificação posterior
+- GitHub Actions run 41769137203 da PR #1 concluiu com **success** para commit 8bde27b, validando o conjunto de regressões anterior e o build automatizado.
+- R19 marcado concluído segundo seu critério de aceite de testes sintéticos e CI. O teste não substitui ensaio de arquivos maliciosos em ambiente isolado.
+- Backlog no início desta execução: 17 itens (R04–R20); meta 6; itens concluídos confirmados: 1 (R19). Restam 16. Meta de 30% não atingida.
+- Novos testes propostos para ZIP symlink Unix e caminho absoluto; verificar CI do novo commit antes de atribuir êxito aos novos testes.
+- Próxima prioridade: R18 contratos de autoboot; R04–R17 e R20 dependem de integração ou ensaios reais no Wii.
+
+## Execução 2026-11-04 — endurecimento adicional do ZIP
+- Início: 16 pendências (R04–R18, R20); meta ceil(16 × 0,30) = 5 itens.
+- CI do commit b500965d: workflow 41775432315 **success**.
+- Correção proposta: normalização explícita de barras invertidas na extração ZIP, rejeição de caminhos duplicados sem distinção de caixa e tipos especiais Unix; testes sintéticos novos.
+- A validação CI deste commit e testes no Wii ainda precisam ser observados. Nenhum item novo marcado concluído nesta execução; R19 permanece concluído com CI anterior.
+- R18 permanece pendente: ainda faltam fixtures dos contratos reais de autoboot. Meta de 30% não atingida.
+
+## Execução 2026-11-04 — colisões de diretórios ZIP
+- Início: 16 pendências (R04–R18, R20); meta ceil(16 × 0,30) = 5 itens.
+- CI do commit anterior 2c01de8: run 41782080860 concluído com success.
+- Corrigida validação pré-extração de ZIP para rejeitar arquivo que se apresenta como diretório pai de outro membro, em qualquer ordem, inclusive com diferença de caixa.
+- Adicionados testes sintéticos de regressão; aprovação de CI do novo commit ainda pendente. Nenhum novo item do roadmap marcado concluído: 4/20 no total, 16 pendentes.
+- Próximo: R18 fixtures de autoboot; R04–R17/R20 exigem implementação e/ou testes físicos adicionais.
+
+## Execução 2026-11-04 — nomes incompatíveis com FAT32
+- Início: 16 pendências; meta ceil(16 × 0,30) = 5 itens.
+- Detectado risco adicional: ZIPs com nomes reservados DOS, caracteres proibidos e espaços/pontos finais podem ser aceitos no host mas falhar ou colidir no FAT32 do Wii.
+- Adicionada validação pré-extração e regressões sintéticas para nomes inválidos e caminhos válidos.
+- Mudança proposta para CI; sem comprovação de execução no Wii. Nenhum novo item R04–R18/R20 marcado concluído. R18 continua pendente.
+
+## Execução 2026-11-04 — componentes ambíguos ZIP
+- Início: 16 pendências; meta ceil(16 × 0,30) = 5 itens.
+- Revisão identificou que PurePosixPath normaliza componentes "." e separadores repetidos antes da checagem; a extração poderia aceitar aliases ambíguos.
+- Rejeição explícita de componentes vazios, "." e ".." antes da normalização; preservadas entradas convencionais de diretório terminadas em "/".
+- Acrescentadas duas regressões sintéticas. CI do novo commit ainda não confirmado; 0 itens novos concluídos, 16 pendências permanecem. R18 e ensaios físicos ainda bloqueiam o progresso maior.
+
+## Execução 2026-11-04 — autoboot testável, diagnóstico e CI
+- Ponto de partida: 16 itens pendentes (R04–R18, R20); meta ceil(16 × 0,30) = **5 itens**.
+- Causa raiz apurada do CI anterior (run 41802871787): test_zip_backslash_normalized usava **dois** backslashes no nome ZIP e contradizia a nova regra de caminhos ambíguos; corrigido fixture de barra simples e criada regressão separada para barra duplicada.
+- Extraído construtor de argumentos real para source/launch_args.c e conectado ao código de lançamento source/launch.c; a contagem argc agora deriva do bloco produzido, em vez de tabela manual independente.
+- O autoboot Wii sem ID6 válido falha de forma explícita, evitando sucesso aparente que apenas abria o menu do USB Loader GX. Paths e opções inválidas agora produzem mensagens de erro antes de transferir controle.
+- Teste de contrato **dinâmico** via ctypes: compila source/launch_args.c com GCC nativo e exercita os oito sistemas, NULs, argc, áudio, IOS, nomes de mídia e caminhos incorretos. launch-contracts adicionado ao workflow e como condição da geração do pacote completo.
+- Diagnóstico de HID parcial em AJUSTES: VID/PID visto, estado, perfil, relatórios e erros. Twin 0810:0001 continua **sem perfil validado**, o código não tenta abrir dispositivo não suportado.
+- Evidência de desenvolvimento local: **7 testes de unidade do construtor nativo PASS** com GCC; compilação devkitPPC, suíte ZIP completa e workflow GitHub Actions da alteração aguardam execução/resultado (não presumir verde).
+- Formalmente novos itens fechados antes do CI novo: **0**. R18 é candidato de conclusão após CI; R17 requer testar no Wii. Mantidos 4/20 concluídos e 16 pendentes até confirmação adicional.
+- Bloqueio incontornável nesta execução: não há Wii físico sob controle do agente, e os aceites R04–R13/R17/R20 exigem funcionamento real de DOL/IOS/USB, controles e vídeo. Progresso abaixo da meta de 30%; próximo passo é examinar CI deste commit e resolver eventual erro, depois coletar checklist de ensaio físico em docs/TESTES_WII.md.
+
+## Execução 2026-11-04 — integridade dos DOLs finais
+- Base da PR #1: a3e245e; R18 foi confirmado pelo job launch-contracts do workflow 41808890786, portanto 5/20 concluídos e **15 pendentes** (R04–R17 e R20).
+- Meta inicial: ceil(15 × 0,30) = **5**. Não houve conclusão de cinco itens; manter a meta aberta.
+- R16 parcial: overlay_adapted.py agora calcula SHA-256 de todos os oito DOLs **após** aplicar adaptações/fallbacks, e verify_bundle.py exige correspondência exata com manifest.
+- Três regressões sintéticas em test_final_integrity.py: fallback íntegro, corrupção de DOL e hash ausente. A CI da PR deve confirmar a execução; nenhum teste físico Wii executado.
+- Commits de implementação: 8277868, 539285f, 9c477e9, f87a6bf. R16 não é concluído: falta pacote integral reproduzível/licenciamento e teste dos módulos no console.
+- Próximo: verificar CI deste HEAD e corrigir qualquer falha; investigar os erros upstream WiiMC/WiiSXRX e testar hardware HID real.
+
+
+## Execucao 2026-11-04 — forwarder e HID (solicitacao adicional)
+- Base inicial 5/20 concluidos, 15 pendentes. R21 adicionada pelo pedido
+  de canal forwarder: 16 pendentes, meta ceil(16 x 0,30) = 5 itens.
+- Patch WiiSXRX: corrigir prototipo CheckState para compilacao moderna.
+- Patch WiiMC: corrigir declaracoes C de timerFadeBlack e wiiPause;
+  caminho FreeType legado ajustado no workflow.
+- Shim HID: MultiIn 1/2/4 e portas logicas por relatorio; sem teste fisico.
+- DOL forwarder original em forwarder/, build separado do frontend.
+- Gerenciador YAWM ModMii 1.1 incluido como instalador interativo no ZIP.
+- NAO foi criado nem validado WAD do canal. Sem acesso a Wii fisico,
+  R21 permanece pendente. Nao declarar os cinco itens fechados.
+
+- Revisao CI: erro preexistente de sintaxe no tools/overlay_adapted.py corrigido em f2b845d; build do frontend, contrato argv e forwarder passaram no workflow 41813183252.
+- Logs de adapters mostraram WiiSXRX com incompatibilidade das regras de inline GCC e simbolos common; flags de compatibilidade incluidas. WiiMC tinha MAXPATHLEN ausente; header de compatibilidade corrigido.
+- Erros upstream adicionais so podem ser considerados solucionados apos novo CI; HID final e instalacao WAD requerem Wii fisico.
+
+- Verificados logs da CI 41813447548: WiiSXRX ainda tinha gettime/diff_usec indefinidos em PeopsSoftGPU/fps.c; patch substitui prototypes desatualizados por include libogc lwp_watchdog.h. WiiMC falhou no ponteiro const de iconv e nas dependencias NTFS/EXT2 nao disponiveis, desabilitadas temporariamente em favor de FAT32. Build e compatibilidade fisica ainda dependem de nova CI/Wii.
+
+- Run 41813948304: WiiSXRX falhou por macro BOOL do Peops declarada antes de lwp_watchdog; corrigida ordem do include. WiiMC chegou a erros de stricmp, comparacao ponteiro/int e chamadas swscale com const; patches de compatibilidade adicionados. Validacao exige novo CI, sem afirmar HID funcional no console.
+
+- No CI 41814247602 PS1 ainda sofreu colisao da macro BOOL com gcbool.h porque watchdog foi incluido depois de externals; movido para ANTES de stdafx.h. WiiMC falhou em MAXPATHLEN (settings.h), prev ambiguo (input.cpp), cast de audio 16-bit (demux_film.c); corrigidos upstream via patch no mesmo pipeline. Testes do Wii fisico seguem abertos.
+
+- Run 41814572079: WiiSXRX chegou a ELF linkado e so falhou no conversor elf2dol legado (agora usa elf2dol no PATH). WiiMC falhou em cast de debug QuickTime e stricmp de musicplaylist; compatibilizados no patch upstream. A saida final depende de proxima CI, sem garantia de HID fisico.
+
+- CI 41814935187: WiiSXRX adaptado passou na compilacao e obteve DOL; firmware HID ainda nao testado no console. WiiMC avanca mas falha em swscale de legendas, callbacks newlib/libogc e sprintf inseguro de argv; correcoes aplicadas ao upstream para tentativa seguinte.
+
+- CI 41815266286 falhou na etapa de patches WiiMC porque o mesmo sprintf inseguro havia sido corrigido duas vezes no script; removido patch duplicado, preservando correção original. Necessario reexecutar CI para verificar DOLs e ZIP final.
+
+- CI 41815423424: WiiSXRX gerou DOL adaptado. WiiMC continua fallback por tipagem UTF-8, declaracao de funcao e variavel GUI ambigua. Novos patches submetidos a validacao. Itens dependentes de Wii fisico continuam abertos.
+
+- CI 41815938327: WiiSXRX HID adaptado compilado; WiiMC ainda requer ajustes da antiga definicao pthread_mutex_t no libdvdnav e conflito de nome de estado de repeticao em gui_trigger.cpp. Corrigidos para nova rodada de CI; testes fisicos pendentes.
+
+## Execução 2026-11-04 — auditoria HID universal
+- Inicial: 16 pendências (5/21 concluídos), meta ceil(16 x 0,30) = 5; R22 acrescentado para explicitar HID do instalador e suporte genérico, passando a 17 pendências (5/22).
+- CI 41816282992 SUCCESS no SHA 0f9c837: frontend e módulos selecionados compilaram, mas WiiMC executou fallback oficial (Stage patched DOL skipped, Report fallback success). Não atribuir aceite de WiiMC nem HID universal.
+- Novo contrato de aceite em docs/HID_UNIVERSAL_ACCEPTANCE.md. Commit a684c3c. Documentação não equivale a implementação concluída: 0 itens fechados nesta rodada; meta de 30% não alcançada.
+- Próxima ação: corrigir a causa raiz de compilação WiiMC consultando log da etapa Compile Wii DOL, exigir prova de DOL adaptado, acrescentar testes de parser HID e depois validar no Wii real.
+
+## Execução 2026-11-04 — auditoria de proveniência de módulos
+- Início: 17 pendências de 22 (R04–R17, R20–R22); meta ceil(17 × 0,30) = **6**.
+- Corrigido overlay para registrar explicitamente `adapted_modules` e `fallback_modules` no manifesto; a verificação final rejeita inventários sobrepostos/incompletos, hashes inconsistentes e proveniência que anuncie HID sem binário adaptado.
+- Acrescentados testes de regressão contra declaração falsa de HID e proveniência adulterada. Commits c12a62a, f3f0b6e, b8b39d3.
+- CI GitHub Actions observado em fila para commits intermediários (run 41824373023); resultado do HEAD b8b39d3 **ainda não confirmado**. Não declarar testes aprovados nem conclusão de R12/R16/R22.
+- Concluídos novos nesta execução: **0/17** até evidência de CI e hardware. Total conservador 5/22, restam 17. Meta 6 não alcançada.
+- Próximo: revisar CI do HEAD, corrigir regressões, exigir DOL WiiMC adaptado sem fallback e testar entrada HID nos módulos no Wii físico. O host/CI não prova que Microntek ou Twin USB funcionem em IOS/libogc real.
+
+## Execução 2026-11-04 — regressão de manifesto HID obsoleto
+- Ponto de partida: **17 pendentes de 22**, meta ceil(17 × 0,30) = **6**; 5/22 previamente concluídos.
+- Confirmado GitHub Actions **41824415450 SUCCESS** para HEAD anterior 24b4b84; isto valida o conjunto de integridade/proveniência anterior, não o funcionamento HID físico.
+- Identificado defeito real: `overlay_adapted.py` reutilizava `adapted_sha256` de um manifesto anterior. Uma nova execução sem DOL adaptado poderia conservar uma alegação falsa de suporte HID.
+- Corrigida reinicialização do inventário antes de analisar os DOLs desta execução; adicionada regressão que injeta hash obsoleto e exige inventário de fallback correto. O workflow agora descobre também testes em `tests/`.
+- Commits: 571591f, 37b070b, 7be426d. **CI do HEAD novo ainda não confirmado**; não marcar R16/R22 concluídos.
+- Novos requisitos concluídos nesta execução: **0 de 6** da meta; total **5/22**, 17 pendentes. Nenhum ensaio no Wii físico.
+- Próximo: conferir CI do commit 7be426d, investigar WiiMC adaptado sem fallback, e validar HID Microntek/Twin no console.
+
+## Execução 2026-11-04 — correção de sintaxe no overlay HID
+- Início: 17 pendências de 22 (5 concluídas); meta ceil(17 × 0,30) = **6**.
+- Auditoria do código da branch identificou falha crítica introduzida na atualização anterior: sequências literais `\\n` no código Python deixavam `manifest["adapted_sha256"] = {}`, `status={}` e o laço `for` dentro de comentário, impedindo a execução do overlay.
+- Corrigida a separação das linhas em tools/overlay_adapted.py (commit 2d6711d). Criado teste de regressão tests/test_overlay_stale_manifest.py (commit e3fd996), que simula segunda execução com hash obsoleto e exige inventário somente fallback.
+- Teste sintático isolado do trecho corrigido com ast.parse: PASS. **A suíte integral, build devkitPPC e GitHub Actions do HEAD ainda não têm resultado confirmado nesta execução.** O teste novo não comprova comportamento no Wii.
+- Novos requisitos integralmente concluídos: **0**. Total conservador 5/22 (22,7%), 17 pendentes; meta 6 não atingida.
+- Próximo: verificar CI da PR #1, corrigir qualquer falha do overlay/testes, investigar compilação WiiMC adaptado e executar testes físicos USB HID, autoboot e vídeo.
+
+## Execução 2026-11-04 — rerun seguro do overlay
+- Estado inicial auditado na PR #1: 5/22 requisitos concluídos, 17 pendentes; meta ceil(17 × 0,30) = **6 requisitos**.
+- GitHub Actions run **41842575429 SUCCESS** para HEAD anterior 5f6a262: validou o conserto sintático do overlay e os testes existentes, mas não prova entrada HID no Wii.
+- Defeito adicional: executar overlay novamente em um dist que ainda contém um DOL adaptado, porém sem o adaptador de origem, podia rotular o binário remanescente como fallback oficial. Corrigido com falha explícita quando SHA-256 anterior coincide com o DOL existente; exige reconstruir o staging limpo.
+- Teste de regressão acrescentado para garantir rejeição sem modificar o DOL. Commits 34dac7b e 003dd6c.
+- O CI do novo HEAD precisa confirmar a regressão; nenhum teste físico realizado. **0/6 requisitos integralmente concluídos nesta execução**, total conservador 5/22 (17 pendentes).
+- Próximo: inspecionar CI, desbloquear WiiMC adaptado sem fallback, obter evidências HID no Wii para Microntek 0079:0006 e Twin 0810:0001 e validar retorno/autoboot dos módulos.
+
+## Execução 2026-11-04 — pré-validação dos adaptadores HID
+- Início: 17 pendências de 22, meta ceil(17 × 0,30) = **6**; total confirmado permanece 5/22.
+- GitHub Actions run **41852036418** concluiu com **success** para o commit anterior 7382732; não comprova HID no Wii físico.
+- Detectada falha de atomicidade: overlay copiava o primeiro DOL adaptado antes de validar o seguinte; adaptador posterior inválido deixava pacote parcialmente alterado e manifesto antigo.
+- Commit 7d232798: valida previamente todos os módulos adaptados e destinos, rejeita symlinks e entradas ausentes antes de copiar. Commit 06b521ab: teste de regressão comprova que adaptador WiiSXRX inválido não modifica o usbloader_gx anterior nem o manifesto.
+- Limite: pré-validação evita mutação parcial por entrada inválida, mas não garante rollback de erros de I/O durante cópia. Não declarar transação atômica completa.
+- CI do novo HEAD ainda não confirmado nesta atualização; 0 novos requisitos concluídos, meta de 30% não atingida. Próximo: conferir CI, diagnosticar WiiMC fallback e testar HID em console real.
+
+
+## Integração HID universal — entrega em um único commit
+- Base da branch verificada: 2d63534a139e421073df7c300f48c5772dd51b0a.
+- Novo decoder portátil `integrations/maizo_report.h` com testes compilando
+  o C de produção; não afirma cobertura de USB HID proprietário ou XInput.
+- Mesmo driver USB no frontend e nos módulos, eliminando divergência de
+  comportamento e mantendo `controller.ini` como fallback conhecido.
+- Build adaptado do YAWM ModMii Edition pinado, com controles ligados a
+  `WaitButtons` e reinicialização de USB após IOS reload; fallback oficial
+  declarado no manifesto caso o source não compile.
+- Forwarder existente continua apenas .dol HBC. Instalação do canal .wad,
+  compatibilidade física universal e retorno após emulador continuam pendentes.
+- Meta declarada pelo usuário: 30 recursos em um commit. O critério de aceite
+  físico não pode ser fechado por simulação; status só muda com evidência real.
+
+## Candidato de melhorias — prioridade YAWM HID / rotas MultiIn / perfis por jogo
+- O usuário revogou uso de automação: tarefa horária MaizoWii HID foi
+  explicitamente desativada. As mudanças seguintes são desta sessão.
+- PR #2, commit único de base `dd2179df`, acrescentou roteamento MultiIn
+  3 por stride (além dos modos 0/1/2/4), correção do DPAD padrão do
+  `controller.ini`, e validação do tamanho real do pacote.
+- Perfis individuais armazenados por hash FNV64 no dispositivo do jogo,
+  editados por START no detalhe. Não alteram configurações globais.
+- YAWM USB HID ainda requer DOL adaptado comprovado no ZIP; build antigo
+  falhou no linker PPC (SDA21) e GitHub Actions mais recente encerrou jobs
+  antes de executar passos. NÃO marcar R22/YAWM como concluído.
+- O WAD de canal e testes físicos não foram realizados.
+
+## Candidato: diagnósticos USB HID navegáveis sem Wii Remote
+- A tela PAGE_HID é aberta com SELECT em Configurações e fechada com B, A ou Start; mantém a navegação pelo controle.
+- Instrumentação exibe o último VID:PID, modo de roteamento MultiIn, perfil INI/descritor, endpoint, tamanho do relatório, contadores e botões/eixos para quatro portas.
+- A UI NÃO prova reconhecimento de controles XInput/proprietários nem funcionamento no Wii físico. CI do novo commit pendente por falha de jobs antes do setup.
+
+## Correção 04/11 — MultiIn e persistência individual (sem automação)
+- Precisão com FIX94/Nintendont: MultiIn=2 permite `MultiInValue=0` como limite mínimo, e MultiIn=3 divide relatório por stride de bytes (até quatro controles), ignorando bytes finais incompletos.
+- Tela HID já implementada, mas reconhecimento em Wii físico não demonstrado.
+- Salvamento individual de opções agora tem cópia de rollback ao substituir arquivos em FAT.
+- GitHub Actions dos commits recentes começou a encerrar jobs sem executar etapas; CI novo do HEAD precisa confirmação. Uma execução antiga com status SUCCESS não confirma YAWM HID adaptado porque aceitou fallback oficial.
+- Bloqueados por hardware ou material externo: prova de instalação do canal NAND, teste real de gamepads sem fio, retorno de DOL e WAD.
+
+## Correção de critério de aprovação — YAWM em primeiro lugar
+- O pipeline deixou de aprovar/publicar ZIP final caso o YAWM de origem não tenha sido recompilado com HID. O manifesto `installer.hid_adapted` deve ser `true` no estágio ALL-IN-ONE; fallback original significa compilação/release incompleta.
+- GitHub Actions de novas revisões permaneceu em fila ou falhou sem executar jobs; nenhum teste físico foi inventado. Próxima etapa: liberar runner para compilar linker PPC, corrigir falha real se ocorrer e só então executar verificação de binário, ROMs e NAND.
+
+## Ajuste adicional do decoder HID
+- Removido limite artificial de 15 em Report IDs; o decoder C agora suporta o campo HID de oito bits completo (1–255). Novo caso de teste com ID 0xFE e ID desconhecido.
+- Ainda sem teste de HID no Wii físico; CI e compilação devkitPPC do novo HEAD dependem de runners GitHub Actions que permanecem em fila.
+
+## Fallback USB vendor-class para perfis Nintendont
+- Fallback em segunda varredura usa classe USB genérica **somente** para VID/PID com perfil `controller.ini` conhecido. Endpoints de interrupção e comprimento são verificados; dispositivos vendor-class desconhecidos não são abertos.
+- Isso amplia possibilidades para receptores sem fio de protocolos semelhantes ao HID, mas não prova compatibilidade com XInput nem substitui driver específico.
+- Automação MaizoWii permanece desativada por solicitação expressa. O trabalho foi feito nesta execução interativa.

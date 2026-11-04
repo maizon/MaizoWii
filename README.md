@@ -58,6 +58,15 @@ real do Wii antes de criar o respectivo `.ini`. Consulte
 de responsabilidade do emulador. O controle USB usado no frontend
 **não é automaticamente convertido em Wiimote/GC pad nos jogos**.
 
+Na página AJUSTES, o rodapé exibe o último VID/PID USB HID visto, status
+(conectado, desconectado ou sem perfil), número de relatórios e erros. A
+presença de um receptor Twin 0810:0001 **não** significa que exista um
+mapeamento funcional. A versão atual continua lendo um controle HID por vez.
+
+Os argumentos usados no autoboot são montados por `source/launch_args.c` e
+verificados em teste C nativo no CI. Jogos Wii sem ID6 válido geram erro
+explícito em vez de abrir silenciosamente o menu do loader.
+
 ## Configurações
 
 - Gerais: tema violeta/turquesa/coral, lista/grade.
@@ -135,3 +144,45 @@ Nintendont (GPL-2.0), WiiMC-SSLC (GPL-3.0), WiiSXRX (licença de upstream),
 NeoStation (GPL-3.0, inspiração, não copiado), Flat Gamepad Icons
 (CC BY-SA 4.0), Tabler (MIT), Font8x8 (domínio público).
 Veja `THIRD_PARTY.md`.
+
+
+## Forwarder e instalador
+O ZIP inclui um DOL de forwarder para HBC em apps/maizo-forwarder/boot.dol,
+que tenta iniciar sd:/apps/maizo/boot.dol ou usb:/apps/maizo/boot.dol.
+Nao e canal WAD. Inclui YAWM ModMii Edition em apps/maizo-installer/boot.dol,
+instalador **interativo**, que solicita a escolha/confirmacao do WAD.
+O WAD MaizoWii ainda NAO foi produzido nem validado para instalacao na NAND.
+Consulte docs/FORWARDER_INSTALADOR.md.
+
+
+## HID compartilhado e compilação do instalador (nova rodada)
+O frontend e os módulos adaptados compartilham o MESMO código fonte
+`integrations/maizo_hid.inc` + `integrations/maizo_report.h`.
+O parser permite reconhecer **gamepads HID de relatório padrão** por descritor
+(USB HID Report Descriptor, report IDs e campos de botões/eixos/hat), sem
+cadastrar cada VID/PID. Dispositivos com protocolo proprietário ainda podem
+requerer `controllers/VID_PID.ini`, exatamente como nos perfis do Nintendont.
+O driver atual aceita um único dispositivo USB físico ativo por DOL, embora
+interprete até quatro portas lógicas de receptores `MultiIn` suportados.
+
+O workflow também tenta recompilar o YAWM ModMii Edition com o mesmo driver,
+integrando gamepad na rotina de `WaitButtons` e reinicialização após IOS
+reload. O binário adaptado **só substitui** o oficial se a compilação e a
+validação DOL passarem. O campo `installer.hid_adapted` do manifesto confirma
+qual executável efetivamente foi distribuído. A instalação de WAD continua
+**interativa, nunca automática**. Sem WAD de canal próprio validado, não existe
+instalação do canal MaizoWii pronta. Teste real no console continua obrigatório.
+
+## Candidato: gamepads USB HID MultiIn e perfis por jogo
+Foi implementado roteamento de pacotes MultiIn 0–4 com convenções reais
+do Nintendont, inclusive modo 3 (múltiplos pads em um relatório) e
+modo 4 (relatório individual por pad), e testes C de limites dos pacotes.
+O frontend abre configurações individuais com START na tela do jogo e
+salva somente campos com contrato do módulo em
+`sd:/maizo/game-profiles/` ou `usb:/maizo/game-profiles/`.
+Veja `docs/GAME_PROFILES.md`. Tudo isso exige CI recompilado e teste Wii
+real antes de ser anunciado como compatibilidade de hardware.
+
+**Diagnóstico pelo controle:** Configurações → Select abre uma tela de informações USB HID com VID/PID, origem do perfil, endpoint, quantidade de relatórios, falhas e botões/eixos de até quatro portas lógicas. Detalhes em `docs/HID_DIAGNOSTICS.md`. Suporte real aos dispositivos depende do IOS e do Wii físico.
+
+**Tema grafite (NeoStation/CRT):** o seletor global agora oferece quatro paletas, incluindo GRAFITE com cartões cinza e contraste moderado. É apenas opção visual; não altera modo de vídeo PAL-M/NTSC nem garante overscan corrigido em TV de tubo. Configurações individuais usam fallback `.bak` ao ler perfis se uma gravação FAT foi interrompida.

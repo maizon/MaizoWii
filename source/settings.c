@@ -39,7 +39,7 @@ static unsigned get(const Config*c,System s,int row){
 void settings_value(const Config*c,System s,int row,char*dest,size_t cap){
  if(row==settings_count(s)-1){snprintf(dest,cap,"A / B");return;}
  unsigned v=get(c,s,row);
- if(row==0){snprintf(dest,cap,"%s",v==0?"VIOLETA":v==1?"TURQUESA":"CORAL");return;}
+ if(row==0){const char*themes[]={"VIOLETA","TURQUESA","CORAL","GRAFITE"};snprintf(dest,cap,"%s",themes[v%4]);return;}
  if(row==1){snprintf(dest,cap,"%s",v?"LISTA":"GRADE");return;}
  if(s==SYSTEM_WII){if(row==2)snprintf(dest,cap,"IOS %u",v);
   else snprintf(dest,cap,"USB %u",v);return;}
@@ -52,7 +52,7 @@ void settings_value(const Config*c,System s,int row,char*dest,size_t cap){
 int settings_change(Config*c,System s,int row,int dir){
  if(row>=settings_count(s)-1||row<0)return 0;
  unsigned*v=NULL,lim=2;
- if(row==0){v=&c->theme;lim=3;}
+ if(row==0){v=&c->theme;lim=4;}
  else if(row==1)v=&c->layout;
  else if(s==SYSTEM_WII&&row==2){
   const unsigned ios[]={58,249,250,251,252};int n=1;

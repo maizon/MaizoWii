@@ -26,6 +26,11 @@ RELEASES = {
     "vbagx": ("dborth/vbagx", "3.0.5", "VisualBoyAdvanceGX-3.0.5-Wii.zip"),
     "WiiMC": ("SuperrSonic/WiiMC-SSLC", "v3.0.0-2024", "WiiMC-SS_3.0.0_2024_v1.7z"),
 }
+# GPL-2.0 licensed WAD manager: interactive, requires an actual user-created WAD.
+# Never silently installs anything to NAND.
+INSTALLER_RELEASE = ("modmii/YAWM-ModMii-Edition", "1.1", "yawmME.zip")
+INSTALLER_LICENSE = ("https://raw.githubusercontent.com/modmii/"
+                     "YAWM-ModMii-Edition/1.1/LICENSE")
 NINTENDONT_REF = "c683db301c941a64e6fe5cef6ac079bd1a726074"
 NINTENDONT_BASE = "https://raw.githubusercontent.com/FIX94/Nintendont/" + NINTENDONT_REF + "/"
 NINTENDONT_PROFILE = "controllerconfigs/controller_Genreic_USB_Gamepad_PID=0079_VID=0006.ini"
@@ -65,16 +70,65 @@ def safe_extract(source: Path, destination: Path):
         with zipfile.ZipFile(source) as archive:
             members = archive.infolist()
             total = 0
+            seen = {}
+            # Validate every member before writing anything. ZIP's extractall
+            # normalizes names differently on different host platforms.
             for member in members:
                 p = PurePosixPath(member.filename.replace("\\", "/"))
-                if p.is_absolute() or ".." in p.parts or "\0" in member.filename:
+                raw_parts = member.filename.replace("\\", "/").rstrip("/").split("/")
+                # PurePosixPath silently drops dot/empty components. Reject
+                # ambiguous names before normalization or collision checks.
+                if any(part in ("", ".", "..") for part in raw_parts):
+                    raise ValueError("ambiguous ZIP member path")
+                parts = p.parts
+                if (not parts or p.is_absolute() or ".." in parts
+                        or chr(0) in member.filename
+                        or (len(parts[0]) >= 2 and parts[0][0].isalpha()
+                            and parts[0][1] == ":")):
                     raise ValueError("unsafe ZIP member")
-                if (member.external_attr >> 16) & 0o170000 == 0o120000:
-                    raise ValueError("symlink in ZIP")
+                # FAT32 cannot safely represent trailing dots/spaces, DOS device
+                # names or characters forbidden by Windows-compatible tools.
+                # Reject them before writing any archive member.
+                for component in parts:
+                    base = component.split(".")[0].upper()
+                    if (component in (".", "") or component.rstrip(" .") != component
+                            or any(ch in component for ch in '<>:"|?*')
+                            or any(ord(ch) < 32 for ch in component)
+                            or base in {"CON", "PRN", "AUX", "NUL"}
+                            or (len(base) == 4 and base[:3] in ("COM", "LPT")
+                                and base[3] in "123456789")):
+                        raise ValueError("ZIP name incompatible with FAT32")
+                key = "/".join(parts).casefold()
+                # A file cannot also be a parent directory. Detect conflicts
+                # before extraction so order cannot affect the result.
+                kind = "dir" if member.is_dir() else "file"
+                if key in seen:
+                    raise ValueError("duplicate ZIP member")
+                for index in range(1, len(parts)):
+                    parent = "/".join(parts[:index]).casefold()
+                    if seen.get(parent) == "file":
+                        raise ValueError("ZIP parent is a file")
+                if kind == "file" and any(existing.startswith(key + "/") for existing in seen):
+                    raise ValueError("ZIP file shadows directory")
+                seen[key] = kind
+                mode = (member.external_attr >> 16) & 0o170000
+                if member.create_system == 3 and mode not in (0, 0o100000, 0o040000):
+                    raise ValueError("unsupported ZIP file type")
+                if member.file_size > 0 and member.compress_size == 0:
+                    raise ValueError("invalid ZIP compression size")
                 total += member.file_size
                 if total > 160 * 1024 * 1024:
                     raise ValueError("ZIP content exceeds limit")
-            archive.extractall(destination)
+            destination.mkdir(parents=True, exist_ok=True)
+            for member in members:
+                p = PurePosixPath(member.filename.replace("\\", "/"))
+                target = destination.joinpath(*p.parts)
+                if member.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with archive.open(member) as src, target.open("xb") as dst:
+                        shutil.copyfileobj(src, dst)
     elif source.suffix.lower() == ".7z":
         subprocess.run(["7z", "x", "-y", str(source), "-o" + str(destination)], check=True,
                        stdout=subprocess.DEVNULL, timeout=120)
@@ -121,12 +175,16 @@ def choose_dol(src: Path, name: str):
     candidates.sort(key=score, reverse=True)
     if not candidates:
         raise ValueError(name + ": archive has no DOL")
-    chosen = candidates[0]
-    if score(chosen)[0] < 0:
+    safe_candidates = [p for p in candidates if score(p)[0] == 0]
+    if not safe_candidates:
         raise ValueError(name + ": only forwarder/GameCube/WiiU DOL found")
-    if not valid_dol(chosen.read_bytes()):
-        raise ValueError(name + ": invalid Wii DOL " + str(chosen))
-    return chosen
+    # A release may contain an invalid preview/placeholder alongside a valid
+    # Wii executable. Validate all eligible candidates before failing.
+    for chosen in safe_candidates:
+        if valid_dol(chosen.read_bytes()):
+            return chosen
+    raise ValueError(name + ": no valid Wii DOL among " +
+                     str(len(safe_candidates)) + " candidates")
 
 def copy_module(src: Path, dst: Path, name: str):
     chosen = choose_dol(src, name)
@@ -142,6 +200,8 @@ def copy_module(src: Path, dst: Path, name: str):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--frontend", type=Path, default=Path("boot.dol"))
+    parser.add_argument("--forwarder", type=Path,
+                        help="HBC-testable SD/USB forwarder DOL from CI")
     parser.add_argument("--out", type=Path, default=Path("dist"))
     args = parser.parse_args()
     assert valid_dol(args.frontend.read_bytes()), "Frontend DOL is invalid"
@@ -150,6 +210,18 @@ def main():
     (out / "apps/maizo").mkdir(parents=True, exist_ok=True)
     shutil.copy2(args.frontend, out / "apps/maizo/boot.dol")
     shutil.copy2("apps/maizo/meta.xml", out / "apps/maizo/meta.xml")
+    if args.forwarder is not None:
+        if not valid_dol(args.forwarder.read_bytes()):
+            raise ValueError("Forwarder DOL failed validation")
+        fwdir = out / "apps/maizo-forwarder"
+        fwdir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(args.forwarder, fwdir / "boot.dol")
+        shutil.copy2("forwarder/meta.xml", fwdir / "meta.xml")
+        # Testable as an HBC app, but NOT a NAND channel or .wad file.
+        (out / "maizo").mkdir(exist_ok=True)
+        (out / "maizo/FORWARDER_SHA256.txt").write_text(
+            hashlib.sha256(args.forwarder.read_bytes()).hexdigest() +
+            "  apps/maizo-forwarder/boot.dol\n", encoding="ascii")
     (out / "maizo/controllers").mkdir(parents=True, exist_ok=True)
     shutil.copy2("profiles/0079_0006.ini", out / "maizo/controllers/0079_0006.ini")
     (out / "maizo/tools").mkdir(parents=True, exist_ok=True)
@@ -185,6 +257,59 @@ def main():
                             target = out / name / rel
                             target.parent.mkdir(parents=True, exist_ok=True)
                             shutil.copy2(f, target)
+        # Include the real, GPL-licensed YAWM manager as an interactive
+        # Maizo installer entrypoint. It does not bypass installer confirmations.
+        # No fake, unsigned or third-party channel WAD is supplied.
+        manager, version, archive = INSTALLER_RELEASE
+        manager_zip = tmp / archive
+        manager_checksum = download(
+            f"https://github.com/{manager}/releases/download/{version}/{archive}",
+            manager_zip)
+        manager_files = tmp / "yawm-manager"
+        manager_files.mkdir()
+        safe_extract(manager_zip, manager_files)
+        manager_dir = out / "apps/maizo-installer"
+        manager_dir.mkdir(parents=True, exist_ok=True)
+        manager_dol = choose_dol(manager_files, "yawmME")
+        shutil.copy2(manager_dol, manager_dir / "boot.dol")
+        # Keep upstream source attribution and license text in package.
+        license_dest = out / "maizo/YAWM-LICENSE"
+        license_dest.parent.mkdir(parents=True, exist_ok=True)
+        download(INSTALLER_LICENSE, license_dest)
+        (manager_dir / "meta.xml").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<app version="1"><name>Maizo Installer (YAWM ModMii)</name>'
+            '<coder>modmii/YAWM-ModMii-Edition</coder><version>1.1</version>'
+            '<short_description>Seleciona e instala WADs com confirmacao</short_description>'
+            '<long_description>Gerenciador YAWM GPL-2.0; selecione apenas '
+            'o WAD de canal Maizo depois de conferir sua origem.</long_description>'
+            '</app>\n', encoding="utf-8")
+        wad_dir = out / "wad"
+        wad_dir.mkdir(exist_ok=True)
+        (wad_dir / "LEIA-ANTES-DE-INSTALAR.txt").write_text(
+            "Nenhum WAD de canal foi incluido: requer banner e empacotamento "
+            "licenciados e validacao especifica.\n"
+            "O app Maizo Installer executa YAWM ModMii Edition interativo; "
+            "NUNCA instala automaticamente.\n"
+            "Instalar WAD na NAND pode causar brick. Antes: backup NAND, "
+            "BootMii/Priiloader e conferir title ID.\n"
+            "O DOL forwarder presente em apps/maizo-forwarder NAO e um WAD.\n",
+            encoding="utf-8")
+        (wad_dir / "wm_config.txt").write_text("StartupPath=/wad\n", encoding="utf-8")
+        manifest["installer"] = {
+            "type": "YAWM ModMii Edition interactive WAD installer",
+            "source": manager, "version": version,
+            "archive": manager_checksum,
+            "dol_sha256": hashlib.sha256((manager_dir / "boot.dol").read_bytes()).hexdigest(),
+            "auto_installs": False,
+            "channel_wad_included": False,
+        }
+        if args.forwarder is not None:
+            manifest["forwarder"] = {
+                "path": "apps/maizo-forwarder/boot.dol",
+                "sha256": hashlib.sha256(args.forwarder.read_bytes()).hexdigest(),
+                "mode": "HBC DOL only; no NAND channel",
+            }
         # Bundle the Nintendont community controller database used by its own HID driver.
         controller_zip = tmp / "nin-controllers.zip"
         manifest["upstream"]["nintendont:controllers.zip"] = download(
@@ -226,7 +351,11 @@ def main():
             "Inclui DOLs oficiais sem patches HID entre modulos.\n"
             "Os jogos, BIOS e chaves Wii/cIOS NAO estao incluidos.\n"
             "Nem todos os gamepads compativeis com MAIZO funcionam dentro dos emuladores.\n"
-            "Consulte docs do repositorio para limitacoes e testes.\n",
+            "Consulte docs do repositorio para limitacoes e testes.\n"
+            "Forwarder HBC em apps/maizo-forwarder (NAO .wad).\n"
+            "Maizo Installer em apps/maizo-installer (YAWM interativo).\n"
+            "WAD NAO fornecido: precisa de empacotamento licenciado e "
+            "teste no Wii real antes de gravar NAND.\n",
             encoding="utf-8")
         print("PASS bundle: all seven external module executables validated")
 

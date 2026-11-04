@@ -95,6 +95,20 @@ jobs:
                   raw=path.read_bytes()
                   path.write_bytes(raw.replace(b'-mpaired',b''))
           PY
+          # Old upstream ft2build.h searches <freetype/config/ftheader.h>
+          # while modern portlibs commonly installs it under freetype2/.
+          for prefix in /opt/devkitpro/portlibs/ppc /opt/devkitpro/portlibs/wii; do
+            if [ -f "$prefix/include/freetype2/freetype/config/ftheader.h" ] &&
+               [ ! -e "$prefix/include/freetype" ]; then
+              ln -s freetype2/freetype "$prefix/include/freetype"
+            fi
+          done
+          find /opt/devkitpro/portlibs -name ftheader.h -print
+          # Upstream WiiMC expects an EHC object that this pinned source
+          # snapshot only carries as its original compiled backup. Use the
+          # upstream binary verbatim; do not fabricate a missing USB module.
+          test -s upstream/source/utils/ehcmodule.elf.o_BAK
+          cp upstream/source/utils/ehcmodule.elf.o_BAK upstream/source/utils/ehcmodule.elf.o
           find upstream/source/mplayer -name '*.d' -delete
       - name: Compile Wii DOL
         id: compilation
