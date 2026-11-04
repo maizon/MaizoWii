@@ -142,3 +142,11 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
 - Teste de regressão acrescentado para garantir rejeição sem modificar o DOL. Commits 34dac7b e 003dd6c.
 - O CI do novo HEAD precisa confirmar a regressão; nenhum teste físico realizado. **0/6 requisitos integralmente concluídos nesta execução**, total conservador 5/22 (17 pendentes).
 - Próximo: inspecionar CI, desbloquear WiiMC adaptado sem fallback, obter evidências HID no Wii para Microntek 0079:0006 e Twin 0810:0001 e validar retorno/autoboot dos módulos.
+
+## Execução 2026-11-04 — pré-validação dos adaptadores HID
+- Início: 17 pendências de 22, meta ceil(17 × 0,30) = **6**; total confirmado permanece 5/22.
+- GitHub Actions run **41852036418** concluiu com **success** para o commit anterior 7382732; não comprova HID no Wii físico.
+- Detectada falha de atomicidade: overlay copiava o primeiro DOL adaptado antes de validar o seguinte; adaptador posterior inválido deixava pacote parcialmente alterado e manifesto antigo.
+- Commit 7d232798: valida previamente todos os módulos adaptados e destinos, rejeita symlinks e entradas ausentes antes de copiar. Commit 06b521ab: teste de regressão comprova que adaptador WiiSXRX inválido não modifica o usbloader_gx anterior nem o manifesto.
+- Limite: pré-validação evita mutação parcial por entrada inválida, mas não garante rollback de erros de I/O durante cópia. Não declarar transação atômica completa.
+- CI do novo HEAD ainda não confirmado nesta atualização; 0 novos requisitos concluídos, meta de 30% não atingida. Próximo: conferir CI, diagnosticar WiiMC fallback e testar HID em console real.
