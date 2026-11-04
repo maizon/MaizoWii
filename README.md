@@ -58,6 +58,15 @@ real do Wii antes de criar o respectivo `.ini`. Consulte
 de responsabilidade do emulador. O controle USB usado no frontend
 **não é automaticamente convertido em Wiimote/GC pad nos jogos**.
 
+Na página AJUSTES, o rodapé exibe o último VID/PID USB HID visto, status
+(conectado, desconectado ou sem perfil), número de relatórios e erros. A
+presença de um receptor Twin 0810:0001 **não** significa que exista um
+mapeamento funcional. A versão atual continua lendo um controle HID por vez.
+
+Os argumentos usados no autoboot são montados por `source/launch_args.c` e
+verificados em teste C nativo no CI. Jogos Wii sem ID6 válido geram erro
+explícito em vez de abrir silenciosamente o menu do loader.
+
 ## Configurações
 
 - Gerais: tema violeta/turquesa/coral, lista/grade.

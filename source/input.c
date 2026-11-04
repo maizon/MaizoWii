@@ -14,6 +14,15 @@ static unsigned char hid_data[64] ATTRIBUTE_ALIGN(32);
 static volatile unsigned hid_mask=0;static volatile int running=0,connected=0;
 static u16 active_vid=0,active_pid=0;static unsigned tick=0;
 static volatile int broken=0;
+static volatile unsigned report_count=0,read_error_count=0;
+static u16 last_seen_vid=0,last_seen_pid=0;
+static int last_profile_loaded=0;
+void input_hid_diagnostics(HidDiagnostics*out){
+ if(!out)return;
+ out->vid=last_seen_vid;out->pid=last_seen_pid;
+ out->reports=report_count;out->read_errors=read_error_count;
+ out->connected=connected;out->profile_loaded=last_profile_loaded;
+}
 typedef struct {
  int enabled,x,y,hat,hat_shift,hat_mask,nin_dpad;
  int off[8];unsigned mask[8];
@@ -146,21 +155,23 @@ static unsigned decode(const unsigned char*b,int n){
 }
 static s32 on_report(s32 result,void*unused){
  if(!running)return 0;
- if(result>=0){hid_mask=decode(hid_data,hid_len);connected=1;
-  if(USB_ReadIntrMsgAsync(hid_fd,hid_ep,hid_len,hid_data,on_report,NULL)<0){connected=0;broken=1;}
- }else{connected=0;hid_mask=0;broken=1;}
+ if(result>=0){report_count++;hid_mask=decode(hid_data,hid_len);connected=1;
+  if(USB_ReadIntrMsgAsync(hid_fd,hid_ep,hid_len,hid_data,on_report,NULL)<0){read_error_count++;connected=0;broken=1;}
+ }else{read_error_count++;connected=0;hid_mask=0;broken=1;}
  return 0;
 }
 static void search_hid(void){
  if(hid_fd>=0)return;
  usb_device_entry found[32] ATTRIBUTE_ALIGN(32);u8 count=0;
- if(USB_GetDeviceList(found,32,USB_CLASS_HID,&count)<0)return;
+ if(USB_GetDeviceList(found,32,USB_CLASS_HID,&count)<0){read_error_count++;return;}
  for(int i=0;i<count;i++){
   /* Accept any actual USB HID device with a matching Nintendont/MAIZO
    * VID_PID profile. Never guess a report map by VID alone. */
   int defined=profile_read(found[i].vid,found[i].pid);
-  if(!defined && !(found[i].vid==0x0079&&found[i].pid==0x0006))continue;
-  s32 fd=-1;if(USB_OpenDevice(found[i].device_id,found[i].vid,found[i].pid,&fd)<0||fd<0)continue;
+  last_seen_vid=found[i].vid;last_seen_pid=found[i].pid;
+  last_profile_loaded=defined || (found[i].vid==0x0079&&found[i].pid==0x0006);
+  if(!last_profile_loaded)continue;
+  s32 fd=-1;if(USB_OpenDevice(found[i].device_id,found[i].vid,found[i].pid,&fd)<0||fd<0){read_error_count++;continue;}
   usb_devdesc desc;memset(&desc,0,sizeof(desc));int good=0;
   if(USB_GetDescriptors(fd,&desc)>=0){
    for(int a=0;a<desc.bNumConfigurations&&!good;a++){
@@ -180,9 +191,9 @@ static void search_hid(void){
    }
    USB_FreeDescriptors(&desc);
   }
-  if(!good){USB_CloseDevice(&fd);continue;}
+  if(!good){read_error_count++;USB_CloseDevice(&fd);continue;}
   hid_fd=fd;active_vid=found[i].vid;active_pid=found[i].pid;broken=0;
-  if(USB_ReadIntrMsgAsync(fd,hid_ep,hid_len,hid_data,on_report,NULL)<0){connected=0;hid_fd=-1;USB_CloseDevice(&fd);}
+  if(USB_ReadIntrMsgAsync(fd,hid_ep,hid_len,hid_data,on_report,NULL)<0){read_error_count++;connected=0;hid_fd=-1;USB_CloseDevice(&fd);}
   return;
  }
 }

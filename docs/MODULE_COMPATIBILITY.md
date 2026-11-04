@@ -35,3 +35,12 @@ afirmar suporte a HID 0810:0001 ou a XInput sem teste físico.
 ficar com tela preta. Sempre guardar saída AUTO como padrão. CHD/M3U são
 listados, mas são bloqueados no lançamento PS1 original por ausência de
 suporte comprovado.
+
+### Contratos executáveis testados no host
+
+`source/launch_args.c` monta os argumentos que o `source/launch.c` envia
+para `__argv`. O CI compila esse mesmo C no host e verifica cada um dos oito
+sistemas, contagem de argumentos, rejeições de ID6, CHD/M3U e nomes WiiMC
+com `%`. Isso **não** confirma consumo correto por cada DOL nem execução no Wii.
+Sem ID6 válido, Wii agora mostra erro antes da troca de DOL em vez de abrir
+o menu USB Loader GX silenciosamente.

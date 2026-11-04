@@ -101,9 +101,19 @@ class BundleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp)
             with zipfile.ZipFile(p / "path.zip", "w") as z:
-                z.writestr("apps\\\\Nintendont\\\\boot.dol", fake_dol())
+                z.writestr(r"apps\Nintendont\boot.dol", fake_dol())
             safe_extract(p / "path.zip", p / "out")
             self.assertEqual((p / "out/apps/Nintendont/boot.dol").read_bytes(), fake_dol())
+
+    def test_zip_rejects_double_backslash_alias(self):
+        import zipfile
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            with zipfile.ZipFile(p / "badpath.zip", "w") as z:
+                z.writestr(r"apps\\Nintendont\\boot.dol", fake_dol())
+            with self.assertRaises(ValueError):
+                safe_extract(p / "badpath.zip", p / "out")
+            self.assertFalse((p / "out").exists())
 
     def test_zip_rejects_unix_special_file(self):
         import zipfile

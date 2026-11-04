@@ -139,6 +139,15 @@ static void search_ui(const State*u,const Library*l){
  }
  label(119,415,"START: RESULTADOS   L/R: SISTEMA",0.98f,0xffaeb0c8u);
 }
+static void hid_diagnostics_line(void){
+ HidDiagnostics d;input_hid_diagnostics(&d);
+ char status[112];
+ if(!d.vid)snprintf(status,sizeof(status),"HID USB: NENHUM DETECTADO");
+ else snprintf(status,sizeof(status),"HID %04X:%04X  %s  REL:%u ERR:%u",
+  d.vid,d.pid,d.connected?"CONECTADO":d.profile_loaded?"DESCONECTADO":"SEM PERFIL",
+  d.reports,d.read_errors);
+ clipped(119,424,status,0.77f,0xffc2c7e5u,65);
+}
 static void settings(const State*u,const Config*c){
  label(119,77,"CONFIGURACOES",1.53f,0xffffffffu);
  clipped(119,105,system_title(u->system),1.07f,0xffb4b8d6u,35);
@@ -154,6 +163,7 @@ static void settings(const State*u,const Config*c){
  else if(u->system==SYSTEM_MEDIA)label(119,406,"VOLUME: NECESSITA ADAPTACAO DO WIIMC",0.85f,0xffb2b7d1u);
  else if(u->system!=SYSTEM_GC&&u->system!=SYSTEM_PS1)
   label(119,406,"AJUSTES AVANCADOS NO MOTOR ORIGINAL",0.93f,0xffb2b7d1u);
+ hid_diagnostics_line();
 }
 int ui_init(void){
  VIDEO_Init();vmode=VIDEO_GetPreferredMode(NULL);if(!vmode)return 0;

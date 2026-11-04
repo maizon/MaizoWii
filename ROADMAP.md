@@ -18,9 +18,9 @@ Base: main d4f14cb (03/11/2026). Cada item é uma capacidade independente com cr
 - [ ] R14 — Ajustes por jogo persistentes. Aceite: editar, reiniciar e relançar com mesmas opções.
 - [ ] R15 — Capas e cache robustos. Aceite: biblioteca grande, imagens ausentes e mídia removida sem crash.
 - [ ] R16 — Pacote integral reproduzível e licenciado. Aceite: manifest, hashes e todos módulos compatíveis.
-- [ ] R17 — Diagnóstico USB/HID em tela. Aceite: VID/PID, estado e falhas visíveis no Wii.
-- [ ] R18 — Testes automatizados para contratos reais de autoboot. Aceite: fixtures de argumentos e CI.
+- [ ] R17 — Diagnóstico USB/HID em tela. Aceite: VID/PID, estado e falhas visíveis no Wii. Código de status e contadores introduzido; testar visualização em Wii físico.
+- [ ] R18 — Testes automatizados para contratos reais de autoboot. Aceite: fixtures executando o C de produção e CI verde. Implementados testes nativos para os oito sistemas; não fechar até CI do novo commit aprovar.
 - [x] R19 — Cobertura de segurança do empacotador. Aceite: ZIP traversal, drives, symlinks e fallback DOL testados.
 - [ ] R20 — Release validado no console. Aceite: smoke test completo e ZIP final documentado.
 
-Nota: R01–R03 são evidências de CI/código, não garantia de funcionamento no Wii. Não marcar R19 até os novos testes passarem no CI.
+Nota: R01–R03 e R19 são evidências de CI/código, não garantia de funcionamento no Wii. R18 aguarda a conclusão do novo job launch-contracts do GitHub Actions. Não marcar R04–R17/R20 por implementação parcial ou simulação host.

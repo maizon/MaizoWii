@@ -1,4 +1,5 @@
 #include "app.h"
+#include "launch_args.h"
 #include <gccore.h>
 #include <ogcsys.h>
 #include <ogc/machine/processor.h>
@@ -130,49 +131,15 @@ int module_launch(const Game*g,const Config*c,char*error,size_t cap){
  }
  if(g->system==SYSTEM_GC&&!save_nincfg(g,c)){snprintf(error,cap,"Falha ao gravar nincfg.bin");return 0;}
  save_launch_record(g,c);
- /* Original WiiSXRX and WiiMC-SSLC accept argv autoboot; no module source changes here. */
- char command[2048];size_t used=0;
- #define APPEND_TEXT(s) do{size_t n=strlen(s)+1;if(n>sizeof(command)-used){snprintf(error,cap,"Parametros excedem limite");return 0;}memcpy(command+used,s,n);used+=n;}while(0)
- APPEND_TEXT(exe);
- if(g->system==SYSTEM_WII){
-  /* USB Loader GX Enhanced recognizes six-character game ID for quick boot.
-   * If the ID cannot be identified, open its menu instead. */
-  if(strlen(g->id)==6)APPEND_TEXT(g->id);
-  char option[64];
-  snprintf(option,sizeof(option),"-bootios=%u",c->wii_ios);APPEND_TEXT(option);
-  snprintf(option,sizeof(option),"-usbport=%u",c->wii_usb_port);APPEND_TEXT(option);
- }
- if(g->system==SYSTEM_PS1){
-  char dir[MAIZO_PATH],game[MAIZO_PATH];snprintf(dir,sizeof(dir),"%s",g->path);
-  char*slash=strrchr(dir,'/');if(!slash){snprintf(error,cap,"Caminho invalido");return 0;}
-  snprintf(game,sizeof(game),"%s",slash+1);slash[1]=0;APPEND_TEXT(dir);APPEND_TEXT(game);
-  char option[64];snprintf(option,sizeof(option),"Core=%u",c->ps1_interpreter);APPEND_TEXT(option);
-  snprintf(option,sizeof(option),"Audio=%u",c->ps1_audio);APPEND_TEXT(option);
-  snprintf(option,sizeof(option),"SkipFrames=%u",c->ps1_frameskip);APPEND_TEXT(option);
- } else if(g->system==SYSTEM_SNES||g->system==SYSTEM_NES||
-           g->system==SYSTEM_GBA||g->system==SYSTEM_GB){
-  /* GX autoboot: these upstream mains already call AutoloadGame(argv[1],argv[2]).
-   * Passing only argv[0] would silently open their menus. */
-  char dir[MAIZO_PATH],name[MAIZO_PATH];
-  snprintf(dir,sizeof(dir),"%s",g->path);
-  char*slash=strrchr(dir,'/');
-  if(!slash||!slash[1]){snprintf(error,cap,"Caminho do jogo invalido");return 0;}
-  snprintf(name,sizeof(name),"%s",slash+1);slash[1]=0;
-  APPEND_TEXT(dir);APPEND_TEXT(name);
- } else if(g->system==SYSTEM_MEDIA) {
-  /* Upstream WiiMC-SSLC uses argv[1] as an unsafe printf format string. */
-  if(strchr(g->path,'%')){snprintf(error,cap,"Nome com %% inseguro no WiiMC original");return 0;}
-  /* WiiMC enumerates FAT partitions as usb1:/ or sd1:/.
-   * The default partition index (1) requires hardware confirmation. */
-  char media_path[MAIZO_PATH+2];
-  if(!strncmp(g->path,"usb:/",5))
-    snprintf(media_path,sizeof(media_path),"usb1:/%s",g->path+5);
-  else if(!strncmp(g->path,"sd:/",4))
-    snprintf(media_path,sizeof(media_path),"sd1:/%s",g->path+4);
-  else {snprintf(error,cap,"Particao de midia nao suportada");return 0;}
-  APPEND_TEXT(media_path);
- }
- #undef APPEND_TEXT
+ /* Construct arguments with the exact same portable code exercised in CI.
+  * Keep the Nintendont nincfg.bin contract separate from argv. */
+ MaizoLaunchSpec spec={0};
+ spec.system=(int)g->system;spec.executable=exe;spec.path=g->path;spec.id=g->id;
+ spec.wii_ios=c->wii_ios;spec.wii_usb_port=c->wii_usb_port;
+ spec.ps1_interpreter=c->ps1_interpreter;spec.ps1_frameskip=c->ps1_frameskip;
+ spec.ps1_audio=c->ps1_audio;
+ MaizoLaunchArgs command;
+ if(!maizo_build_args(&spec,&command,error,cap))return 0;
  FILE*f=fopen(exe,"rb");if(!f){snprintf(error,cap,"Nao abre o modulo");return 0;}
  if(fseek(f,0,SEEK_END)!=0){fclose(f);snprintf(error,cap,"Seek falhou");return 0;}
  long size=ftell(f);rewind(f);
@@ -188,16 +155,15 @@ int module_launch(const Game*g,const Config*c,char*error,size_t cap){
  struct __argv *args=(struct __argv*)(uintptr_t)MAIZO_ARG_ADDR;
  const u32 argv_base=(MAIZO_ARG_ADDR+sizeof(struct __argv)+31u)&~31u;
  char*line=(char*)(uintptr_t)argv_base;
- if(used>0x10000u-(argv_base-MAIZO_ARG_ADDR)){
+ if(command.length>0x10000u-(argv_base-MAIZO_ARG_ADDR)){
   snprintf(error,cap,"Argumentos excedem regiao reservada");return 0;
  }
- memset(args,0,sizeof(*args));memcpy(line,command,used);
+ memset(args,0,sizeof(*args));memcpy(line,command.data,command.length);
  args->argvMagic=ARGV_MAGIC;
- args->commandLine=line;args->length=used;
- args->argc=g->system==SYSTEM_PS1?6:(g->system==SYSTEM_WII?(strlen(g->id)==6?4:3):
- (g->system==SYSTEM_MEDIA?2:(g->system==SYSTEM_GC?1:3)));
+ args->commandLine=line;args->length=command.length;
+ args->argc=command.argc;
  args->argv=&args->commandLine;args->endARGV=args->argv+1;
- DCFlushRange(args,(u32)(argv_base-MAIZO_ARG_ADDR+used+31u)&~31u);
+ DCFlushRange(args,(u32)(argv_base-MAIZO_ARG_ADDR+command.length+31u)&~31u);
  memcpy((void*)(uintptr_t)MAIZO_BOOT_ADDR,maizo_bootstub,maizo_bootstub_len);
  DCFlushRange((void*)(uintptr_t)MAIZO_BOOT_ADDR,(maizo_bootstub_len+31u)&~31u);
  ICInvalidateRange((void*)(uintptr_t)MAIZO_BOOT_ADDR,(maizo_bootstub_len+31u)&~31u);

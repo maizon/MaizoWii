@@ -9,6 +9,7 @@ read = lambda p: (root / p).read_text(encoding="utf-8")
 header = read("include/app.h")
 library = read("source/library.c")
 launch = read("source/launch.c")
+launch_args = read("source/launch_args.c")
 input_src = read("source/input.c")
 ui = read("source/ui.c")
 settings = read("source/settings.c")
@@ -30,8 +31,11 @@ for extension in (".wbfs", ".iso", ".gcm", ".cue", ".bin",
     assert extension in library, extension
 for k in ("nincfg.bin", "NIN_CFG_AUTO_BOOT", "NIN_CFG_MC_MULTI",
           "NIN_CFG_NATIVE_SI", "-bootios=%u", "-usbport=%u",
-          "Core=%u", "Audio=%u", "SkipFrames=%u", "APPEND_TEXT(media_path)"):
-    assert k in launch, k
+          "Core=%u", "Audio=%u", "SkipFrames=%u", "usb1:/%s"):
+    assert k in (launch + launch_args), k
+assert "maizo_build_args(&spec,&command" in launch
+assert "args->argc=command.argc" in launch
+assert "APPEND_TEXT" not in launch
 assert "MAIZO_BOOT_ADDR" in launch and "maizo_bootstub" in launch
 assert "static u32 install_dol" not in launch
 assert "SYS_ResetSystem(SYS_SHUTDOWN" in launch

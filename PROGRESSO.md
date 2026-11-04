@@ -51,3 +51,14 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
 - Revisão identificou que PurePosixPath normaliza componentes "." e separadores repetidos antes da checagem; a extração poderia aceitar aliases ambíguos.
 - Rejeição explícita de componentes vazios, "." e ".." antes da normalização; preservadas entradas convencionais de diretório terminadas em "/".
 - Acrescentadas duas regressões sintéticas. CI do novo commit ainda não confirmado; 0 itens novos concluídos, 16 pendências permanecem. R18 e ensaios físicos ainda bloqueiam o progresso maior.
+
+## Execução 2026-11-04 — autoboot testável, diagnóstico e CI
+- Ponto de partida: 16 itens pendentes (R04–R18, R20); meta ceil(16 × 0,30) = **5 itens**.
+- Causa raiz apurada do CI anterior (run 41802871787): test_zip_backslash_normalized usava **dois** backslashes no nome ZIP e contradizia a nova regra de caminhos ambíguos; corrigido fixture de barra simples e criada regressão separada para barra duplicada.
+- Extraído construtor de argumentos real para source/launch_args.c e conectado ao código de lançamento source/launch.c; a contagem argc agora deriva do bloco produzido, em vez de tabela manual independente.
+- O autoboot Wii sem ID6 válido falha de forma explícita, evitando sucesso aparente que apenas abria o menu do USB Loader GX. Paths e opções inválidas agora produzem mensagens de erro antes de transferir controle.
+- Teste de contrato **dinâmico** via ctypes: compila source/launch_args.c com GCC nativo e exercita os oito sistemas, NULs, argc, áudio, IOS, nomes de mídia e caminhos incorretos. launch-contracts adicionado ao workflow e como condição da geração do pacote completo.
+- Diagnóstico de HID parcial em AJUSTES: VID/PID visto, estado, perfil, relatórios e erros. Twin 0810:0001 continua **sem perfil validado**, o código não tenta abrir dispositivo não suportado.
+- Evidência de desenvolvimento local: **7 testes de unidade do construtor nativo PASS** com GCC; compilação devkitPPC, suíte ZIP completa e workflow GitHub Actions da alteração aguardam execução/resultado (não presumir verde).
+- Formalmente novos itens fechados antes do CI novo: **0**. R18 é candidato de conclusão após CI; R17 requer testar no Wii. Mantidos 4/20 concluídos e 16 pendentes até confirmação adicional.
+- Bloqueio incontornável nesta execução: não há Wii físico sob controle do agente, e os aceites R04–R13/R17/R20 exigem funcionamento real de DOL/IOS/USB, controles e vídeo. Progresso abaixo da meta de 30%; próximo passo é examinar CI deste commit e resolver eventual erro, depois coletar checklist de ensaio físico em docs/TESTES_WII.md.
