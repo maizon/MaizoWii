@@ -32,24 +32,35 @@ def overlay(adapter_root: Path, dist: Path) -> dict[str,str]:
             if current_hash == previous_hash:
                 raise ValueError("Cannot relabel adapted DOL as official fallback: " + module +
                                  "; rebuild clean dist before overlay")
-    manifest["adapted_sha256"] = {}
-    status={}
+    # Validate every input before touching dist: a corrupt later adapter must
+    # never leave an earlier module replaced with a stale manifest.
+    prepared = {}
     for module in MODULES:
-        source=adapter_root/"apps"/module/"boot.dol"
-        destination=dist/"apps"/module/"boot.dol"
-        if not source.is_file():
-            status[module]="official (HID adapter binary unavailable)"
+        source = adapter_root / "apps" / module / "boot.dol"
+        destination = dist / "apps" / module / "boot.dol"
+        if destination.is_symlink() or not destination.is_file():
+            raise ValueError("Missing or unsafe staged module: " + module)
+        if not source.exists() and not source.is_symlink():
             continue
-        if source.is_symlink():
-            raise ValueError("Symlink adapted binary: "+str(source))
-        contents=source.read_bytes()
-        if len(contents)>12*1024*1024 or not valid_dol(contents):
-            raise ValueError("Invalid adapted module: "+module)
-        tmp=destination.with_suffix(".patched")
+        if source.is_symlink() or not source.is_file():
+            raise ValueError("Unsafe adapted binary: " + str(source))
+        contents = source.read_bytes()
+        if len(contents) > 12 * 1024 * 1024 or not valid_dol(contents):
+            raise ValueError("Invalid adapted module: " + module)
+        prepared[module] = contents
+    manifest["adapted_sha256"] = {}
+    status = {}
+    for module in MODULES:
+        destination = dist / "apps" / module / "boot.dol"
+        if module not in prepared:
+            status[module] = "official (HID adapter binary unavailable)"
+            continue
+        contents = prepared[module]
+        tmp = destination.with_suffix(".patched")
         tmp.write_bytes(contents)
         tmp.replace(destination)
-        status[module]="maizo HID source adapter (hardware tests still pending)"
-        manifest.setdefault("adapted_sha256",{})[module]=hashlib.sha256(contents).hexdigest()
+        status[module] = "maizo HID source adapter (hardware tests still pending)"
+        manifest["adapted_sha256"][module] = hashlib.sha256(contents).hexdigest()
     status["Nintendont"]="official own HID driver / controller.ini"
     # Record the final on-disk executable for every module, including fallbacks.
     # This is intentionally calculated AFTER overlays so the manifest cannot
