@@ -103,3 +103,9 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
 - CI 41815423424: WiiSXRX gerou DOL adaptado. WiiMC continua fallback por tipagem UTF-8, declaracao de funcao e variavel GUI ambigua. Novos patches submetidos a validacao. Itens dependentes de Wii fisico continuam abertos.
 
 - CI 41815938327: WiiSXRX HID adaptado compilado; WiiMC ainda requer ajustes da antiga definicao pthread_mutex_t no libdvdnav e conflito de nome de estado de repeticao em gui_trigger.cpp. Corrigidos para nova rodada de CI; testes fisicos pendentes.
+
+## Execução 2026-11-04 — auditoria HID universal
+- Inicial: 16 pendências (5/21 concluídos), meta ceil(16 x 0,30) = 5; R22 acrescentado para explicitar HID do instalador e suporte genérico, passando a 17 pendências (5/22).
+- CI 41816282992 SUCCESS no SHA 0f9c837: frontend e módulos selecionados compilaram, mas WiiMC executou fallback oficial (Stage patched DOL skipped, Report fallback success). Não atribuir aceite de WiiMC nem HID universal.
+- Novo contrato de aceite em docs/HID_UNIVERSAL_ACCEPTANCE.md. Commit a684c3c. Documentação não equivale a implementação concluída: 0 itens fechados nesta rodada; meta de 30% não alcançada.
+- Próxima ação: corrigir a causa raiz de compilação WiiMC consultando log da etapa Compile Wii DOL, exigir prova de DOL adaptado, acrescentar testes de parser HID e depois validar no Wii real.
