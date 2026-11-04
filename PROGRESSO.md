@@ -109,3 +109,11 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
 - CI 41816282992 SUCCESS no SHA 0f9c837: frontend e módulos selecionados compilaram, mas WiiMC executou fallback oficial (Stage patched DOL skipped, Report fallback success). Não atribuir aceite de WiiMC nem HID universal.
 - Novo contrato de aceite em docs/HID_UNIVERSAL_ACCEPTANCE.md. Commit a684c3c. Documentação não equivale a implementação concluída: 0 itens fechados nesta rodada; meta de 30% não alcançada.
 - Próxima ação: corrigir a causa raiz de compilação WiiMC consultando log da etapa Compile Wii DOL, exigir prova de DOL adaptado, acrescentar testes de parser HID e depois validar no Wii real.
+
+## Execução 2026-11-04 — auditoria de proveniência de módulos
+- Início: 17 pendências de 22 (R04–R17, R20–R22); meta ceil(17 × 0,30) = **6**.
+- Corrigido overlay para registrar explicitamente `adapted_modules` e `fallback_modules` no manifesto; a verificação final rejeita inventários sobrepostos/incompletos, hashes inconsistentes e proveniência que anuncie HID sem binário adaptado.
+- Acrescentados testes de regressão contra declaração falsa de HID e proveniência adulterada. Commits c12a62a, f3f0b6e, b8b39d3.
+- CI GitHub Actions observado em fila para commits intermediários (run 41824373023); resultado do HEAD b8b39d3 **ainda não confirmado**. Não declarar testes aprovados nem conclusão de R12/R16/R22.
+- Concluídos novos nesta execução: **0/17** até evidência de CI e hardware. Total conservador 5/22, restam 17. Meta 6 não alcançada.
+- Próximo: revisar CI do HEAD, corrigir regressões, exigir DOL WiiMC adaptado sem fallback e testar entrada HID nos módulos no Wii físico. O host/CI não prova que Microntek ou Twin USB funcionem em IOS/libogc real.
