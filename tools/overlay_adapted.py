@@ -44,6 +44,8 @@ def overlay(adapter_root: Path, dist: Path) -> dict[str,str]:
         (dist/"apps"/name/"boot.dol").read_bytes()).hexdigest()
         for name in all_modules}
     manifest["module_input_provenance"]=status
+    manifest["adapted_modules"]=sorted(name for name in MODULES if name in manifest.get("adapted_sha256", {}))
+    manifest["fallback_modules"]=sorted(name for name in MODULES if name not in manifest.get("adapted_sha256", {}))
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8")
