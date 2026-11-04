@@ -85,6 +85,38 @@ class BundleTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 safe_extract(path / "absolute.zip", path / "unpacked")
 
+    def test_zip_duplicate_member_blocked(self):
+        import zipfile
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            with zipfile.ZipFile(p / "dup.zip", "w") as z:
+                z.writestr("dir/file.ini", "one")
+                z.writestr("dir/FILE.ini", "two")
+            with self.assertRaises(ValueError):
+                safe_extract(p / "dup.zip", p / "out")
+            self.assertFalse((p / "out").exists())
+
+    def test_zip_backslash_normalized(self):
+        import zipfile
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            with zipfile.ZipFile(p / "path.zip", "w") as z:
+                z.writestr("apps\\\\Nintendont\\\\boot.dol", fake_dol())
+            safe_extract(p / "path.zip", p / "out")
+            self.assertEqual((p / "out/apps/Nintendont/boot.dol").read_bytes(), fake_dol())
+
+    def test_zip_rejects_unix_special_file(self):
+        import zipfile
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            info = zipfile.ZipInfo("device")
+            info.create_system = 3
+            info.external_attr = (0o020666 << 16)
+            with zipfile.ZipFile(p / "special.zip", "w") as z:
+                z.writestr(info, "data")
+            with self.assertRaises(ValueError):
+                safe_extract(p / "special.zip", p / "out")
+
     def test_zip_traversal_blocked(self):
         import zipfile
         with tempfile.TemporaryDirectory() as tmp:

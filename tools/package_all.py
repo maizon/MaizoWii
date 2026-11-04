@@ -65,18 +65,39 @@ def safe_extract(source: Path, destination: Path):
         with zipfile.ZipFile(source) as archive:
             members = archive.infolist()
             total = 0
+            seen = set()
+            # Validate every member before writing anything. ZIP's extractall
+            # normalizes names differently on different host platforms.
             for member in members:
                 p = PurePosixPath(member.filename.replace("\\", "/"))
-                if (p.is_absolute() or ".." in p.parts or "\0" in member.filename or (p.parts and len(p.parts[0]) >= 2 and p.parts[0][0].isalpha() and p.parts[0][1] == ":")):
+                parts = p.parts
+                if (not parts or p.is_absolute() or ".." in parts
+                        or "\\0" in member.filename
+                        or (len(parts[0]) >= 2 and parts[0][0].isalpha()
+                            and parts[0][1] == ":")):
                     raise ValueError("unsafe ZIP member")
-                if member.create_system == 3 and (member.external_attr >> 16) & 0o170000 == 0o120000:
-                    raise ValueError("symlink in ZIP")
+                key = "/".join(parts).casefold()
+                if key in seen:
+                    raise ValueError("duplicate ZIP member")
+                seen.add(key)
+                mode = (member.external_attr >> 16) & 0o170000
+                if member.create_system == 3 and mode not in (0, 0o100000, 0o040000):
+                    raise ValueError("unsupported ZIP file type")
                 if member.file_size > 0 and member.compress_size == 0:
                     raise ValueError("invalid ZIP compression size")
                 total += member.file_size
                 if total > 160 * 1024 * 1024:
                     raise ValueError("ZIP content exceeds limit")
-            archive.extractall(destination)
+            destination.mkdir(parents=True, exist_ok=True)
+            for member in members:
+                p = PurePosixPath(member.filename.replace("\\", "/"))
+                target = destination.joinpath(*p.parts)
+                if member.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with archive.open(member) as src, target.open("xb") as dst:
+                        shutil.copyfileobj(src, dst)
     elif source.suffix.lower() == ".7z":
         subprocess.run(["7z", "x", "-y", str(source), "-o" + str(destination)], check=True,
                        stdout=subprocess.DEVNULL, timeout=120)

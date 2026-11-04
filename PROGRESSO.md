@@ -25,3 +25,10 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
 - Backlog no início desta execução: 17 itens (R04–R20); meta 6; itens concluídos confirmados: 1 (R19). Restam 16. Meta de 30% não atingida.
 - Novos testes propostos para ZIP symlink Unix e caminho absoluto; verificar CI do novo commit antes de atribuir êxito aos novos testes.
 - Próxima prioridade: R18 contratos de autoboot; R04–R17 e R20 dependem de integração ou ensaios reais no Wii.
+
+## Execução 2026-11-04 — endurecimento adicional do ZIP
+- Início: 16 pendências (R04–R18, R20); meta ceil(16 × 0,30) = 5 itens.
+- CI do commit b500965d: workflow 41775432315 **success**.
+- Correção proposta: normalização explícita de barras invertidas na extração ZIP, rejeição de caminhos duplicados sem distinção de caixa e tipos especiais Unix; testes sintéticos novos.
+- A validação CI deste commit e testes no Wii ainda precisam ser observados. Nenhum item novo marcado concluído nesta execução; R19 permanece concluído com CI anterior.
+- R18 permanece pendente: ainda faltam fixtures dos contratos reais de autoboot. Meta de 30% não atingida.
