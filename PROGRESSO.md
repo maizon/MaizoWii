@@ -93,3 +93,5 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
 - Run 41813948304: WiiSXRX falhou por macro BOOL do Peops declarada antes de lwp_watchdog; corrigida ordem do include. WiiMC chegou a erros de stricmp, comparacao ponteiro/int e chamadas swscale com const; patches de compatibilidade adicionados. Validacao exige novo CI, sem afirmar HID funcional no console.
 
 - No CI 41814247602 PS1 ainda sofreu colisao da macro BOOL com gcbool.h porque watchdog foi incluido depois de externals; movido para ANTES de stdafx.h. WiiMC falhou em MAXPATHLEN (settings.h), prev ambiguo (input.cpp), cast de audio 16-bit (demux_film.c); corrigidos upstream via patch no mesmo pipeline. Testes do Wii fisico seguem abertos.
+
+- Run 41814572079: WiiSXRX chegou a ELF linkado e so falhou no conversor elf2dol legado (agora usa elf2dol no PATH). WiiMC falhou em cast de debug QuickTime e stricmp de musicplaylist; compatibilizados no patch upstream. A saida final depende de proxima CI, sem garantia de HID fisico.

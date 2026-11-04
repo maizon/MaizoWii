@@ -121,6 +121,17 @@ def patch_wiimc(root: Path):
             t = replace_once(t, old, new, "WiiMC swscale legacy source-const")
         return t
     patch_file(root, "source/mplayer/libmpcodecs/vf_scale.c", vf_scale_compat)
+    patch_file(root, "source/musicplaylist.cpp",
+               lambda x: replace_once(x, "#include <string.h>",
+                                      "#include <string.h>\n#include <strings.h>\n"
+                                      "#define stricmp strcasecmp",
+                                      "WiiMC portable music sort"))
+    patch_file(root, "source/mplayer/loader/qtx/qtxsdk/components.h",
+               lambda x: replace_once(x,
+                                      "unsigned int* p=cd->wantedDestinationPixelTypes;",
+                                      "unsigned int* p=(unsigned int*)(void*)"
+                                      "cd->wantedDestinationPixelTypes;",
+                                      "WiiMC QuickTime debug pointer cast"))
     patch_file(root, "source/settings.h",
                lambda x: replace_once(x, '#include "networkop.h"',
                                       '#include "networkop.h"\n'
@@ -200,6 +211,9 @@ def patch_wiisx(root: Path):
                                 "WiiSXRX legacy GCC C inline and common symbol semantics"),
                    "CXXFLAGS\t=\t$(CFLAGS)",
                    "CXXFLAGS\t=\t$(CFLAGS) -std=gnu++14", "WiiSXRX C++ standard"))
+    patch_file(root, "Gamecube/Makefile_Wii",
+               lambda x: replace_once(x, "$(DEVKITPPC)/bin/elf2dol",
+                                      "elf2dol", "WiiSXRX current elf2dol location"))
 
     # Modern GCC no longer accepts implicit function prototypes and the
     # old BOOL typedef is not present in newer libogc headers.
