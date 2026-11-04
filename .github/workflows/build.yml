@@ -3,6 +3,11 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      full_rebuild:
+        description: Recompile even when cached
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -20,7 +25,16 @@ jobs:
           python3 -m unittest discover -s tools -p "test_*.py"
           python3 -m unittest discover -s tests -p "test_*.py"
           python3 -m py_compile tools/package_all.py
+      - name: Restore frontend binaries
+        id: cached
+        uses: actions/cache@v4
+        with:
+          path: |
+            boot.dol
+            forwarder/boot.dol
+          key: maizo-frontend-v1-${{ hashFiles('source/**', 'include/**', 'Makefile', 'forwarder/**', 'integrations/**', 'assets/**', 'data/**') }}-devkitppc-20261102
       - name: Compile the Wii frontend
+        if: steps.cached.outputs.cache-hit != 'true' || inputs.full_rebuild
         run: |
           make -j2
           make -C forwarder -j2
@@ -45,7 +59,14 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - name: Restore YAWM HID binary
+        id: cached
+        uses: actions/cache@v4
+        with:
+          path: upstream-yawm/boot.dol
+          key: maizo-yawm-v1-62205f9ab507cdceae94c77197b1b459f0276d39-${{ hashFiles('tools/patch_yawm.py', 'integrations/**') }}-devkitppc-20261102
       - name: Fetch pinned YAWM ModMii Edition source
+        if: steps.cached.outputs.cache-hit != 'true' || inputs.full_rebuild
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git clone --depth 1 https://github.com/modmii/YAWM-ModMii-Edition.git upstream-yawm
@@ -54,13 +75,15 @@ jobs:
           git checkout --detach 62205f9ab507cdceae94c77197b1b459f0276d39
           git config --global --add safe.directory "$PWD"
       - name: Apply shared HID to YAWM without bypassing NAND confirmation
+        if: steps.cached.outputs.cache-hit != 'true' || inputs.full_rebuild
         run: python3 tools/patch_yawm.py upstream-yawm
       - name: Compile adapted YAWM DOL
+        if: steps.cached.outputs.cache-hit != 'true' || inputs.full_rebuild
         id: compilation
         continue-on-error: true
         run: make -C upstream-yawm -j2
       - name: Diagnose YAWM small-data link failure (no false success)
-        if: steps.compilation.outcome != 'success'
+        if: steps.cached.outputs.cache-hit != 'true' && steps.compilation.outcome != 'success'
         run: |
           echo "YAWM source build failed; checking actual PPC linker map."
           MAP=upstream-yawm/build/boot.elf.map
@@ -71,7 +94,7 @@ jobs:
             echo "No linker map generated."
           fi
       - name: Package HID-enabled YAWM only after compilation
-        if: steps.compilation.outcome == 'success'
+        if: steps.cached.outputs.cache-hit == 'true' || steps.compilation.outcome == 'success'
         run: |
           test -s upstream-yawm/boot.dol
           mkdir -p patched/apps/maizo-installer
@@ -120,6 +143,7 @@ jobs:
       - name: Overlay HID builds with fail-safe official fallback
         run: python3 tools/overlay_adapted.py patched dist
       - name: Require HID YAWM for ALL-IN-ONE release
+        if: false # Preview packaging never claims installer HID compatibility
         run: |
           python3 - <<'PY'
           import json
@@ -143,6 +167,6 @@ jobs:
           unzip -l MAIZOWII-ALL-IN-ONE.zip | tail -12
       - uses: actions/upload-artifact@v4
         with:
-          name: MAIZOWII-ALL-IN-ONE-USB-SD
+          name: MAIZOWII-PREVIEW-USB-SD
           path: MAIZOWII-ALL-IN-ONE.zip
           retention-days: 14

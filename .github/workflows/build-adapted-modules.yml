@@ -41,7 +41,14 @@ jobs:
     container: ${{ matrix.container }}
     steps:
       - uses: actions/checkout@v4
+      - name: Restore compiled module
+        id: cached
+        uses: actions/cache@v4
+        with:
+          path: patched/apps/${{ matrix.module }}/boot.dol
+          key: maizo-module-v1-${{ matrix.module }}-${{ matrix.ref }}-${{ hashFiles('tools/patch_upstreams.py', 'integrations/**') }}-${{ matrix.container }}
       - name: Fetch fixed upstream snapshot
+        if: steps.cached.outputs.cache-hit != 'true'
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git clone --depth 1 https://github.com/${{ matrix.repo }}.git upstream
@@ -50,15 +57,16 @@ jobs:
           git checkout --detach ${{ matrix.ref }}
           git config --global --add safe.directory "$PWD"
       - name: Apply HID source adapter
+        if: steps.cached.outputs.cache-hit != 'true'
         run: python3 tools/patch_upstreams.py ${{ matrix.module }} upstream
       - name: Install matching upstream dependencies
-        if: contains(fromJSON('["snes9xgx","fceugx","vbagx"]'), matrix.module)
+        if: steps.cached.outputs.cache-hit != 'true' && contains(fromJSON('["snes9xgx","fceugx","vbagx"]'), matrix.module)
         run: |
           git clone --depth 1 https://github.com/dborth/libsmb2.git /tmp/libsmb2
           cd /tmp/libsmb2
           make -f Makefile.platform wii_install
       - name: Install WiiSXRX legacy USB controller libraries
-        if: matrix.module == 'WiiSXRX'
+        if: steps.cached.outputs.cache-hit != 'true' && matrix.module == 'WiiSXRX'
         continue-on-error: true
         run: |
           for module in libwupc libwiidrc; do
@@ -72,14 +80,14 @@ jobs:
             done
           done
       - name: Install FreeType Wii headers for legacy WiiMC
-        if: matrix.module == 'WiiMC'
+        if: steps.cached.outputs.cache-hit != 'true' && matrix.module == 'WiiMC'
         continue-on-error: true
         run: |
           if command -v dkp-pacman >/dev/null 2>&1; then
             dkp-pacman -Sy --noconfirm ppc-freetype || true
           fi
       - name: Diagnose WiiMC legacy dependencies
-        if: matrix.module == 'WiiMC'
+        if: steps.cached.outputs.cache-hit != 'true' && matrix.module == 'WiiMC'
         run: |
           python3 -c "import zipfile,io; p='upstream/other/WiiMC_portlibs_libogc.zip'; z=zipfile.ZipFile(p); print('WIIMC_ARCHIVE_HEAD',z.namelist()[:48]); [(lambda f: print('INNER_ZIP',f,zipfile.ZipFile(io.BytesIO(z.read(f))).namelist()[:24]))(f) for f in z.namelist() if f.endswith('.zip')];"
           python3 - <<'PY'
@@ -111,6 +119,7 @@ jobs:
           cp upstream/source/utils/ehcmodule.elf.o_BAK upstream/source/utils/ehcmodule.elf.o
           find upstream/source/mplayer -name '*.d' -delete
       - name: Compile Wii DOL
+        if: steps.cached.outputs.cache-hit != 'true'
         id: compilation
         continue-on-error: true
         working-directory: upstream
@@ -130,7 +139,7 @@ jobs:
               ;;
           esac
       - name: Stage patched DOL
-        if: steps.compilation.outcome == 'success'
+        if: steps.cached.outputs.cache-hit != 'true' && steps.compilation.outcome == 'success'
         run: |
           mkdir -p patched/apps/${{ matrix.module }}
           case "${{ matrix.module }}" in
@@ -148,8 +157,11 @@ jobs:
               ;;
           esac
           test -s patched/apps/${{ matrix.module }}/boot.dol
+      - name: Verify cached or freshly compiled DOL
+        if: steps.cached.outputs.cache-hit == 'true' || steps.compilation.outcome == 'success'
+        run: test -s patched/apps/${{ matrix.module }}/boot.dol
       - name: Report fallback
-        if: steps.compilation.outcome != 'success'
+        if: steps.cached.outputs.cache-hit != 'true' && steps.compilation.outcome != 'success'
         run: |
           echo "MODULE FALLBACK: ${{ matrix.module }} - original upstream binary will be packaged"
       - uses: actions/upload-artifact@v4
