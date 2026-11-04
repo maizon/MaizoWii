@@ -19,6 +19,19 @@ def overlay(adapter_root: Path, dist: Path) -> dict[str,str]:
     manifest=json.loads(manifest_path.read_text(encoding="utf-8"))
     # Rebuild provenance from this invocation, never trust a prior manifest.
     # Otherwise a second packaging pass can claim an official fallback as HID.
+    previous_adapted = manifest.get("adapted_sha256", {})
+    # An in-place rerun may contain an adapted DOL from a previous pass.
+    # If its source disappears, do not relabel that binary as official.
+    # A clean package_all.py staging pass is required to restore fallback.
+    for module in MODULES:
+        previous_hash = previous_adapted.get(module)
+        candidate = dist / "apps" / module / "boot.dol"
+        source = adapter_root / "apps" / module / "boot.dol"
+        if previous_hash and not source.is_file() and candidate.is_file():
+            current_hash = hashlib.sha256(candidate.read_bytes()).hexdigest()
+            if current_hash == previous_hash:
+                raise ValueError("Cannot relabel adapted DOL as official fallback: " + module +
+                                 "; rebuild clean dist before overlay")
     manifest["adapted_sha256"] = {}
     status={}
     for module in MODULES:
