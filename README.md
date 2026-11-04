@@ -210,3 +210,28 @@ módulos e os recompila; um cache ausente ou expirado exige nova compilação;
 adaptações com falha anteriormente armazenada. O empacotamento e testes podem
 rodar a cada commit sem recompilar módulos preservados. A cache de GitHub
 Actions não é armazenamento permanente e não garante reuso indefinido.
+
+
+### Correcao de carregamento no Wii real — 04/11/2026
+- A build #166 produz DOLs cujo ponto de entrada e **0x80003F00**, perfeitamente
+  valido para devkitPro; o verificador anterior exigia 0x80004000 e rejeitava
+  frontend e SNES9x GX. Frontend e forwarder agora aceitam 0x80003F00.
+- O forwarder exibe detalhes de abertura, tamanho, leitura e validacao do DOL,
+  e tenta montagem SD/USB explicita apos a tentativa FAT padrao.
+- O bootstub limpa a area BSS declarada pelo DOL antes da transferencia.
+- WiiMC: patch para nao sair/reiniciar automaticamente ao terminar um video
+  enviado por argv; permanece no ambiente do WiiMC. Adaptacao HID depende de
+  compilacao bem-sucedida e **teste real do controle**, nao apenas de cache.
+- WiiSXRX: selecao por nome exato e menu de erro quando nao encontra o jogo,
+  em vez de iniciar o ultimo arquivo do diretorio.
+- O WAD de exemplo Nintendont (Title ID LXVS) foi analisado apenas como
+  referencia de estrutura. **Nenhum WAD foi alterado ou instalado na NAND**;
+  compilacao de um forwarder DOL nao prova seguranca de um canal WAD.
+- A execucao de jogos de PS1 e compatibilidade USB HID precisam de teste
+  em Wii real; compilacao verde nao garante compatibilidade.
+
+- Seguranca de build WiiMC: o snapshot antigo traz um DOL precompilado.
+  As builds #166 e #167 produziram WiiMC com o **mesmo SHA-256** apesar
+  de patches diferentes: isso nao comprova integracao HID. A recompilacao
+  agora exige novo DOL, propagacao dos erros do MPlayer e mudanca de hash.
+  Se falhar, o ALL-IN-ONE mantem o WiiMC oficial que ja reproduz videos.

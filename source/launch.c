@@ -121,18 +121,29 @@ static int overlap(u32 a,u32 n,u32 b,u32 len){
 
 static int valid_dol(const unsigned char*image,size_t len){
  if(len<sizeof(DolHeader))return 0;const DolHeader*h=(const DolHeader*)image;
- if(h->entry_point<0x80004000u||h->entry_point>=0x94000000u)return 0;
+ /* Modern devkitPro DOLs (including our frontend and adapted SNES9x GX)
+  * start at 0x80003F00, not 0x80004000. Verified against build #166. */
+ if(h->entry_point<0x80003F00u||h->entry_point>=0x94000000u)return 0;
+ int sections=0,entry_in_text=0;
  for(int i=0;i<18;i++){
   u32 off=i<7?h->text_pos[i]:h->data_pos[i-7];
   u32 sz=i<7?h->text_size[i]:h->data_size[i-7];
   u32 addr=i<7?h->text_start[i]:h->data_start[i-7];
   if(!sz)continue;
-  if(off>=len||sz>len-off||addr<0x80004000u||addr>=0x94000000u||sz>0x94000000u-addr)return 0;
+  sections++;
+  if(off<0x100u||off>=len||sz>len-off||addr<0x80003F00u||addr>=0x94000000u||sz>0x94000000u-addr)return 0;
+  if(i<7 && h->entry_point>=addr && h->entry_point<addr+sz)entry_in_text=1;
   if(overlap(addr,sz,MAIZO_DOL_IMAGE,12*1024*1024u)||
      overlap(addr,sz,MAIZO_BOOT_ADDR,0x20000u)||
      overlap(addr,sz,MAIZO_ARG_ADDR,0x10000u))return 0;
  }
- return 1;
+ if(h->bss_size &&
+   (h->bss_start<0x80003F00u||h->bss_start>=0x94000000u||
+    h->bss_size>0x94000000u-h->bss_start||
+    overlap(h->bss_start,h->bss_size,MAIZO_DOL_IMAGE,12*1024*1024u)||
+    overlap(h->bss_start,h->bss_size,MAIZO_BOOT_ADDR,0x20000u)||
+    overlap(h->bss_start,h->bss_size,MAIZO_ARG_ADDR,0x10000u)))return 0;
+ return sections>0 && entry_in_text;
 }
 int module_launch(const Game*g,const Config*c,char*error,size_t cap){
  const char*exe=resolve(g->system);if(!exe){snprintf(error,cap,"DOL do %s nao encontrado",module_name(g->system));return 0;}

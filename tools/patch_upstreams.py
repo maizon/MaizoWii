@@ -67,9 +67,103 @@ def patch_wiimc(root: Path):
                          "u16 held = PAD_ButtonsHeld(cur_chan) | maizo_hid_held(cur_chan);", "MPlayerInput")
         return s
     patch_file(root, "source/input.cpp", input_patch)
-    patch_file(root, "source/wiimc.cpp",
-               lambda s: replace_once(s,"sprintf(loadedFile, argv[1]);",
-                  'snprintf(loadedFile, sizeof(loadedFile), "%s", argv[1]);', "WiiMC argv format"))
+    def wiimc_autoplay(s):
+        s = replace_once(s, "sprintf(loadedFile, argv[1]);",
+                         'snprintf(loadedFile, sizeof(loadedFile), "%s", argv[1]);',
+                         "WiiMC argv format")
+        # WiiMC deliberately sets AutobootExit on argv playback and then
+        # reboots when the movie ends. Keep the working player but return
+        # to its normal browser / playback GUI instead of resetting Wii.
+        return replace_once(
+            s, 'snprintf(loadedFile, sizeof(loadedFile), "%s", argv[1]);\n\t\tAutobootExit = true;',
+            'snprintf(loadedFile, sizeof(loadedFile), "%s", argv[1]);\n\t\tAutobootExit = false;',
+            "WiiMC do not reboot at video EOF")
+    patch_file(root, "source/wiimc.cpp", wiimc_autoplay)
+    # This legacy MPlayer subtitle tag attempted to call libogc pad motor
+    # from the isolated MPlayer C build without its header. Discard only
+    # this nonessential subtitle-triggered rumble, preserving playback.
+    patch_file(root, "source/mplayer/libass/ass_parse.c",
+               lambda s: replace_once(
+                   replace_once(s, "PAD_ControlMotor(0, i);", "(void)i;",
+                                "WiiMC subtitle motor effect"),
+                   "PAD_ControlMotor(0, 0);", "(void)0;",
+                   "WiiMC subtitle motor reset"))
+    # libass still calls memalign(), which modern GCC requires a prototype for.
+    patch_file(root, "source/mplayer/libass/ass_render.c",
+               lambda s: replace_once(s, "#include <math.h>",
+                                      "#include <math.h>\n#include <malloc.h>",
+                                      "WiiMC libass aligned allocator prototype"))
+    # GEKKO rmff.h deliberately excludes POSIX sockets; the Wii API is
+    # net_recv, not an implicit recv(int,void*,size_t,int) declaration.
+    patch_file(root, "source/mplayer/stream/realrtsp/rmff.c",
+               lambda s: replace_once(s, '#include "rmff.h"',
+                                      '#include "rmff.h"\n#ifdef GEKKO\n'
+                                      '#include <network.h>\n#define recv net_recv\n#endif',
+                                      "WiiMC RealRTSP Wii network recv"))
+    patch_file(root, "source/mplayer/stream/cache2.c",
+               lambda s: replace_once(
+                   replace_once(s, '#include "stream.h"',
+                                '#include "stream.h"\n#ifndef MAXPATHLEN\n'
+                                '#define MAXPATHLEN 1024\n#endif',
+                                "WiiMC cache2 MAXPATHLEN"),
+                   'if(global_buffer==NULL) global_buffer=0x90002000;',
+                   'if(global_buffer==NULL) global_buffer=(unsigned char *)0x90002000u;',
+                   "WiiMC cache2 fixed MEM2 pointer type"))
+    # Old FFmpeg was configured before libogc gained POSIX sockaddr_storage
+    # and addrinfo. Avoid redeclaring those native Wii structures.
+    def ffmpeg_network(t):
+        t = replace_once(t, '#if !HAVE_STRUCT_SOCKADDR_STORAGE',
+                         '#if !HAVE_STRUCT_SOCKADDR_STORAGE && !defined(GEKKO)',
+                         "WiiMC ffmpeg sockaddr_storage")
+        return replace_once(t, '#if !HAVE_STRUCT_ADDRINFO',
+                            '#if !HAVE_STRUCT_ADDRINFO && !defined(GEKKO)',
+                            "WiiMC ffmpeg addrinfo")
+    patch_file(root, "source/mplayer/ffmpeg/libavformat/network.h", ffmpeg_network)
+    # This old PPC paired-single header implements its own psq_* intrinsics.
+    # A redundant legacy devkitPro <paired.h> was removed from modern SDKs.
+    patch_file(root, "source/mplayer/ffmpeg/libavutil/ppc/paired.h",
+               lambda s: replace_once(s, "#include <paired.h>",
+                                      "/* paired.h legacy SDK dependency removed */",
+                                      "WiiMC inline paired PPC intrinsics"))
+    # Modern devkitPPC no longer supports the old -mpaired extension.
+    # The software DSP fallback is safe on Broadway; enable paired-single
+    # acceleration only when a supported compiler/toolchain is available.
+    patch_file(root, "source/mplayer/config.h",
+               lambda s: replace_once(s, "#define HAVE_PAIRED 1",
+                                      "#define HAVE_PAIRED 0",
+                                      "WiiMC modern PPC paired fallback"))
+    patch_file(root, "source/mplayer/config.mak",
+               lambda s: replace_once(s, "HAVE_PAIRED = yes",
+                                      "HAVE_PAIRED = no\n"
+                                      "CFLAGS += -Wno-error=incompatible-pointer-types",
+                                      "WiiMC disable paired and accept historical swscale callback types"))
+    def patch_bink(s):
+        if s.count("#ifdef HAVE_PAIRED") != 2:
+            raise ValueError("Unexpected Bink paired-CPU compile guards")
+        s = s.replace("#ifdef HAVE_PAIRED", "#if HAVE_PAIRED")
+        return replace_once(
+            s, "if (HAVE_PAIRED) c->scale_block = scale_block_paired;",
+            "#if HAVE_PAIRED\n    c->scale_block = scale_block_paired;\n#endif",
+            "WiiMC Bink legacy accelerated function absent on modern GCC")
+    patch_file(root, "source/mplayer/ffmpeg/libavcodec/binkdsp.c", patch_bink)
+    # Generated config.h has HAVE_PAIRED=0; C runtime 'if(0)' still references
+    # undeclared paired functions because C compilation type-checks dead code.
+    for source, oldcall in (
+        ("fft.c", "if (HAVE_PAIRED)  ff_fft_init_paired(s);"),
+        ("rdft.c", "if (HAVE_PAIRED) ff_rdft_init_paired(s);"),
+        ("vc1dsp.c", "if (HAVE_PAIRED)\n        ff_vc1dsp_init_paired(dsp);"),
+    ):
+        patch_file(root, "source/mplayer/ffmpeg/libavcodec/" + source,
+                   lambda s, oldcall=oldcall: replace_once(
+                       s, oldcall, "#if HAVE_PAIRED\n    " +
+                       oldcall.replace("if (HAVE_PAIRED)", "").strip() +
+                       "\n#endif", "WiiMC guarded PPC paired init " + source))
+    # Pinned historical MPlayer has version.sh without its executable bit.
+    # Run through /bin/sh rather than trusting a checkout's file mode.
+    patch_file(root, "source/mplayer/Makefile",
+               lambda s: replace_once(s, "./$< `$(CC) -dumpversion`",
+                                      "sh ./$< `$(CC) -dumpversion`",
+                                      "WiiMC MPlayer non-executable version script"))
 
     def mplayer_patch(t):
         t=replace_once(t, '#include "stream/stream.h"',
@@ -99,6 +193,13 @@ def patch_wiimc(root: Path):
                    "ENABLE_EXT2                   = 1",
                    "ENABLE_EXT2                   = 0",
                    "WiiMC disable unavailable EXT2 dependency"))
+    # Upstream's build recipe ends with 'cd ../..', concealing a failing
+    # nested MPlayer make exit status. Never publish the prebuilt DOL as HID.
+    patch_file(root, "Makefile",
+               lambda s: replace_once(
+                   s, "cd source/mplayer; $(MAKE) -f Makefile; cd ../..",
+                   "$(MAKE) -C source/mplayer -f Makefile",
+                   "WiiMC propagate MPlayer build failures"))
     def fileop_compat(t):
         t = replace_once(t, "#include <string.h>",
                          "#include <string.h>\n#include <strings.h>\n#define stricmp strcasecmp",
@@ -318,7 +419,84 @@ def patch_wiisx(root: Path):
                        "static void refreshAvailable(void){\n\tmaizo_hid_tick();\n"
                        "\tif(maizo_hid_connected(0))gc_connected |= 1;", "WiiSXRX availability")
         return s
-    patch_file(root, "Gamecube/gc_input/controller-GC.c", change)
+    def gui_exports(s):
+        s = change(s)
+        return replace_once(
+            s, '#include "maizo_hid.inc"',
+            '#include "maizo_hid.inc"\n'
+            '/* One shared USB connection for PS1 emulation AND its GUI. */\n'
+            'void maizo_gui_hid_poll(void){ maizo_hid_tick(); }\n'
+            'unsigned int maizo_gui_hid_held(int port){ return maizo_hid_held(port); }',
+            "WiiSXRX GUI HID exports")
+    patch_file(root, "Gamecube/gc_input/controller-GC.c", gui_exports)
+    # WiiSXRX uses PAD_ButtonsHeld() DIRECTLY in its separate GUI source;
+    # the controller-GC.c emulator patch alone never reached its menus.
+    def gui_focus(s):
+        s = replace_once(s, '#include "FocusManager.h"',
+                         '#include "FocusManager.h"\n'
+                         'extern "C" unsigned int maizo_gui_hid_held(int port);',
+                         "WiiSXRX GUI focus HID declarations")
+        if s.count("PAD_ButtonsHeld(i)") != 2:
+            raise ValueError("Unexpected WiiSXRX FocusManager PAD input layout")
+        return s.replace("PAD_ButtonsHeld(i)",
+                         "(PAD_ButtonsHeld(i) | maizo_gui_hid_held(i))")
+    patch_file(root, "Gamecube/libgui/FocusManager.cpp", gui_focus)
+    def gui_input(s):
+        s = replace_once(s, '#include "InputManager.h"',
+                         '#include "InputManager.h"\n'
+                         'extern "C" void maizo_gui_hid_poll(void);\n'
+                         'extern "C" unsigned int maizo_gui_hid_held(int port);',
+                         "WiiSXRX GUI HID polling declarations")
+        return replace_once(
+            s, 'PAD_Clamp(gcPad);',
+            'PAD_Clamp(gcPad);\n'
+            '\tmaizo_gui_hid_poll();\n'
+            '\tfor(int port=0;port<4;port++)\n'
+            '\t\tgcPad[port].button |= maizo_gui_hid_held(port);',
+            "WiiSXRX GUI HID frame polling")
+    patch_file(root, "Gamecube/libgui/InputManager.cpp", gui_input)
+    def gui_files(s):
+        s = replace_once(s, '#include "FileBrowserFrame.h"',
+                         '#include "FileBrowserFrame.h"\n'
+                         'extern "C" unsigned int maizo_gui_hid_held(int port);',
+                         "WiiSXRX GUI file browser HID declaration")
+        return replace_once(
+            s, 'u16 currentButtonsGC = PAD_ButtonsHeld(i);',
+            'u16 currentButtonsGC = PAD_ButtonsHeld(i) | maizo_gui_hid_held(i);',
+            "WiiSXRX file browser controller paging")
+    patch_file(root, "Gamecube/menu/FileBrowserFrame.cpp", gui_files)
+    # Upstream autoboot previously selected the LAST file in a directory
+    # if the requested filename was absent (loop ended at num_entries-1).
+    # That can start the wrong image and leave a black screen. Fail safely
+    # to the real emulator menu instead.
+    old_autoboot = """void fileBrowserFrame_AutoBootFile()
+{
+	int i;
+	for(i = 0; i < num_entries - 1; i++)
+		if(strcasestr(dir_entries[i].name, AutobootROM) != NULL)
+			break;
+	fileBrowserFrame_LoadFile(i);
+}"""
+    new_autoboot = """void fileBrowserFrame_AutoBootFile()
+{
+	if(dir_entries && num_entries > 0 && AutobootROM[0]){
+		for(int i = 0; i < num_entries; i++){
+			const char *name = filenameFromAbsPath(dir_entries[i].name);
+			if(name && !(dir_entries[i].attr & FILE_BROWSER_ATTR_DIR) &&
+			   strcasecmp(name, AutobootROM) == 0){
+				fileBrowserFrame_LoadFile(i);
+				return;
+			}
+		}
+	}
+	Autoboot = false;
+	pMenuContext->setActiveFrame(MenuContext::FRAME_MAIN);
+	menu::MessageBox::getInstance().setMessage(
+		"MAIZO: PS1 nao encontrado nesta pasta. Selecione o jogo pelo menu.");
+}"""
+    patch_file(root, "Gamecube/menu/FileBrowserFrame.cpp",
+               lambda s: replace_once(s, old_autoboot, new_autoboot,
+                                      "WiiSXRX exact autoboot filename"))
     # Preserve the exception-spec syntax used by this legacy WiiSXRX codebase.
     patch_file(root, "Gamecube/Makefile_Wii",
                lambda x: replace_once(

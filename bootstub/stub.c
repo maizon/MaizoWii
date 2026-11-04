@@ -16,6 +16,10 @@ static void copy_bytes(void *to,const void *from,uint32_t n){
  unsigned char *d=(unsigned char *)to;const unsigned char *s=(const unsigned char *)from;
  for(uint32_t i=0;i<n;i++)d[i]=s[i];
 }
+static void clear_bytes(void *p,uint32_t n){
+ unsigned char *d=(unsigned char *)p;
+ for(uint32_t i=0;i<n;i++)d[i]=0;
+}
 static void flush_code(void *p,uint32_t n){
  uintptr_t a=((uintptr_t)p)&~31u;
  uintptr_t e=(((uintptr_t)p)+n+31u)&~31u;
@@ -33,6 +37,9 @@ void maizo_boot_main(void){
   copy_bytes(target,DOL_IMAGE+h->off[i],h->size[i]);
   flush_code(target,h->size[i]);
  }
+ /* The DOL header reserves BSS separately from file-backed sections.
+  * Previous loader left stale frontend state in child global variables. */
+ if(h->bss_size)clear_bytes((void *)(uintptr_t)h->bss,h->bss_size);
  uintptr_t entry=h->entry;
  if(ARG_BLOCK->argvMagic==ARGV_MAGIC){
   void *argv_slot=(void *)(entry+8);

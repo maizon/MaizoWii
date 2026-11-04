@@ -152,7 +152,20 @@ jobs:
               make -C Gamecube -f Makefile_Wii -j2
               ;;
             WiiMC)
+              # Pinned WiiMC tree contains a prebuilt DOL. Previously a
+              # failed MPlayer submake silently shipped that SAME binary
+              # as an allegedly HID-patched module (identical SHA in #166).
+              if test -s wiimc.dol; then
+                sha256sum wiimc.dol | cut -d' ' -f1 > .maizo-pristine-sha
+              fi
+              rm -f wiimc.dol wiimc.elf
               make -j2
+              test -s wiimc.dol
+              if test -s .maizo-pristine-sha &&
+                 test "$(sha256sum wiimc.dol | cut -d' ' -f1)" = "$(cat .maizo-pristine-sha)"; then
+                echo "ERROR: WiiMC source adaptation did not change the binary" >&2
+                exit 1
+              fi
               ;;
           esac
       - name: Stage patched DOL
