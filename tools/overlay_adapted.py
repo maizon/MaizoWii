@@ -17,7 +17,11 @@ MODULES=("usbloader_gx","WiiSXRX","WiiMC","snes9xgx","fceugx","vbagx")
 def overlay(adapter_root: Path, dist: Path) -> dict[str,str]:
     manifest_path=dist/"maizo/MODULE_MANIFEST.json"
     manifest=json.loads(manifest_path.read_text(encoding="utf-8"))
-    # Rebuild provenance from this invocation, never trust a prior manifest.\n    # Otherwise a second packaging pass can claim an official fallback as HID.\n    manifest["adapted_sha256"] = {}\n    status={}\n    for module in MODULES:
+    # Rebuild provenance from this invocation, never trust a prior manifest.
+    # Otherwise a second packaging pass can claim an official fallback as HID.
+    manifest["adapted_sha256"] = {}
+    status={}
+    for module in MODULES:
         source=adapter_root/"apps"/module/"boot.dol"
         destination=dist/"apps"/module/"boot.dol"
         if not source.is_file():
