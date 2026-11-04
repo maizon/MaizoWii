@@ -35,7 +35,7 @@ def overlay(adapter_root: Path, dist: Path) -> dict[str,str]:
         status[module]="maizo HID source adapter (hardware tests still pending)"
         manifest.setdefault("adapted_sha256",{})[module]=hashlib.sha256(contents).hexdigest()
     status["Nintendont"]="official own HID driver / controller.ini"
-    manifest["module_input_provenance"]=status
+    # Record the final on-disk executable for every module, including fallbacks.\n    # This is intentionally calculated AFTER overlays so the manifest cannot\n    # describe a superseded upstream binary.\n    all_modules=("maizo", "usbloader_gx", "Nintendont", "WiiSXRX",\n                 "snes9xgx", "fceugx", "vbagx", "WiiMC")\n    manifest["final_dol_sha256"]={name: hashlib.sha256(\n        (dist/"apps"/name/"boot.dol").read_bytes()).hexdigest()\n        for name in all_modules}\n    manifest["module_input_provenance"]=status
     manifest_path.write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
     (dist/"HID-COMPATIBILITY.txt").write_text(
         "MAIZO: USB HID 0079:0006 and configurable profiles.\n"+
