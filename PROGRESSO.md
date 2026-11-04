@@ -117,3 +117,12 @@ Não foi alcançada a meta de 30%; continuar pelos contratos de autoboot e teste
 - CI GitHub Actions observado em fila para commits intermediários (run 41824373023); resultado do HEAD b8b39d3 **ainda não confirmado**. Não declarar testes aprovados nem conclusão de R12/R16/R22.
 - Concluídos novos nesta execução: **0/17** até evidência de CI e hardware. Total conservador 5/22, restam 17. Meta 6 não alcançada.
 - Próximo: revisar CI do HEAD, corrigir regressões, exigir DOL WiiMC adaptado sem fallback e testar entrada HID nos módulos no Wii físico. O host/CI não prova que Microntek ou Twin USB funcionem em IOS/libogc real.
+
+## Execução 2026-11-04 — regressão de manifesto HID obsoleto
+- Ponto de partida: **17 pendentes de 22**, meta ceil(17 × 0,30) = **6**; 5/22 previamente concluídos.
+- Confirmado GitHub Actions **41824415450 SUCCESS** para HEAD anterior 24b4b84; isto valida o conjunto de integridade/proveniência anterior, não o funcionamento HID físico.
+- Identificado defeito real: `overlay_adapted.py` reutilizava `adapted_sha256` de um manifesto anterior. Uma nova execução sem DOL adaptado poderia conservar uma alegação falsa de suporte HID.
+- Corrigida reinicialização do inventário antes de analisar os DOLs desta execução; adicionada regressão que injeta hash obsoleto e exige inventário de fallback correto. O workflow agora descobre também testes em `tests/`.
+- Commits: 571591f, 37b070b, 7be426d. **CI do HEAD novo ainda não confirmado**; não marcar R16/R22 concluídos.
+- Novos requisitos concluídos nesta execução: **0 de 6** da meta; total **5/22**, 17 pendentes. Nenhum ensaio no Wii físico.
+- Próximo: conferir CI do commit 7be426d, investigar WiiMC adaptado sem fallback, e validar HID Microntek/Twin no console.
