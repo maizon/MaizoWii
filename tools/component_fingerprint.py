@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PATCH_FUNCTIONS = {
     "WiiMC": "patch_wiimc",
     "WiiSXRX": "patch_wiisx",
+    "WiiSX": "patch_wiisx422",
     "usbloader_gx": "patch_usbloader",
     "snes9xgx": "patch_snes",
     "fceugx": "patch_gx",

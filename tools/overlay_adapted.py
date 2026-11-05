@@ -12,7 +12,7 @@ import shutil
 import sys
 from package_all import valid_dol
 
-MODULES=("usbloader_gx","WiiSXRX","WiiMC","snes9xgx","fceugx","vbagx")
+MODULES=("usbloader_gx","WiiSXRX","WiiSX","WiiMC","snes9xgx","fceugx","vbagx")
 
 def overlay(adapter_root: Path, dist: Path) -> dict[str,str]:
     manifest_path=dist/"maizo/MODULE_MANIFEST.json"

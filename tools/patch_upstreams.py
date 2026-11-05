@@ -849,6 +849,72 @@ def patch_wiisx(root: Path):
                                       "WiiSXRX legacy boolean defines"))
 
 
+
+def patch_wiisx422(root: Path):
+    """Beta 4.2.2: the stock archive has no Maizo HID layer at all.
+    Inject the same proven-in-source GC/GUI bridge as WiiSXRX, but use
+    the 4.2.2 CMake source layout. Hardware testing remains required.
+    """
+    install_inc(root, "Gamecube/gc_input")
+    def core(t):
+        t = replace_once(t, '#include "controller.h"',
+            '#include "controller.h"\n#include "maizo_hid.inc"\n'
+            'void maizo_gui_hid_poll(void){ maizo_hid_tick(); }\n'
+            'unsigned int maizo_gui_hid_held(int port){ return maizo_hid_held(port); }',
+            "WiiSX 4.2.2 native HID bridge")
+        t = replace_once(t, 'unsigned int b = PAD_ButtonsHeld(Control);',
+            'unsigned int b = PAD_ButtonsHeld(Control) | maizo_hid_held(Control);',
+            "WiiSX 4.2.2 held buttons")
+        scan='if(padNeedScan){ gc_connected = PAD_ScanPads(); padNeedScan = 0; }'
+        if t.count(scan)!=2:
+            raise ValueError("WiiSX 4.2.2 scan sites changed")
+        t=t.replace(scan,scan+'\n\tif(maizo_hid_connected(0)) gc_connected |= 1;')
+        for native,shim in (("PAD_StickX","maizo_hid_stickX"),
+                            ("PAD_StickY","maizo_hid_stickY"),
+                            ("PAD_SubStickX","maizo_hid_substickX"),
+                            ("PAD_SubStickY","maizo_hid_substickY")):
+            t=t.replace(native+"(Control)",shim+"(Control, "+native+"(Control))")
+        # In-game input may tick independent of UI frame polling.
+        t=replace_once(t, "static int _GetKeys(int Control, BUTTONS * Keys, controller_config_t* config, int psxType)\n{",
+            "static int _GetKeys(int Control, BUTTONS * Keys, controller_config_t* config, int psxType)\n{\n\tmaizo_hid_tick();",
+            "WiiSX 4.2.2 in-game HID polling")
+        return t
+    patch_file(root, "Gamecube/gc_input/controller-GC.c", core)
+    def input_mgr(t):
+        t=replace_once(t, '#include "InputManager.h"',
+            '#include "InputManager.h"\n'
+            'extern "C" void maizo_gui_hid_poll(void);\n'
+            'extern "C" unsigned int maizo_gui_hid_held(int port);',
+            "WiiSX 4.2.2 GUI HID exports")
+        return replace_once(t, 'PAD_Clamp(gcPad);',
+            'PAD_Clamp(gcPad);\n'
+            '\tmaizo_gui_hid_poll();\n'
+            '\tfor(int port=0;port<4;port++)\n'
+            '\t\tgcPad[port].button |= maizo_gui_hid_held(port);\n'
+            '\tif(maizo_gui_hid_held(0))gc_connected |= 1;',
+            "WiiSX 4.2.2 GUI frame HID polling")
+    patch_file(root, "Gamecube/libgui/InputManager.cpp", input_mgr)
+    def focus(t):
+        t=replace_once(t, '#include "FocusManager.h"',
+            '#include "FocusManager.h"\n'
+            'extern "C" unsigned int maizo_gui_hid_held(int port);',
+            "WiiSX 4.2.2 GUI focus HID bridge")
+        if t.count("PAD_ButtonsHeld(i)")!=2:
+            raise ValueError("WiiSX 4.2.2 FocusManager changed")
+        return t.replace("PAD_ButtonsHeld(i)",
+            "(PAD_ButtonsHeld(i) | maizo_gui_hid_held(i))")
+    patch_file(root, "Gamecube/libgui/FocusManager.cpp", focus)
+    def browser(t):
+        t=replace_once(t, '#include "FileBrowserFrame.h"',
+            '#include "FileBrowserFrame.h"\n'
+            'extern "C" unsigned int maizo_gui_hid_held(int port);',
+            "WiiSX 4.2.2 file picker HID bridge")
+        return replace_once(t, 'u16 currentButtonsGC = PAD_ButtonsHeld(i);',
+            'u16 currentButtonsGC = PAD_ButtonsHeld(i) | maizo_gui_hid_held(i);',
+            "WiiSX 4.2.2 file picker HID page controls")
+    patch_file(root,"Gamecube/menu/FileBrowserFrame.cpp",browser)
+
+
 MAP_GENERIC = '''
 static uint32_t MaizoHidToGeneric(uint32_t b) {
  uint32_t o = INPUT_BTN_NONE;
@@ -910,6 +976,7 @@ MODULES = {
   "WiiMC": patch_wiimc,
   "usbloader_gx": patch_usbloader,
   "WiiSXRX": patch_wiisx,
+  "WiiSX": patch_wiisx422,
   "snes9xgx": patch_snes,
   "fceugx": patch_gx,
   "vbagx": patch_gx,

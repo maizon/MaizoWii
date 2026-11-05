@@ -47,6 +47,10 @@ jobs:
             repo: niuus/WiiSXRX
             ref: 2244789a65fec2d2bf3e75bd2526e50dc6ee9845
             container: devkitpro/devkitppc:20261102
+          - module: WiiSX
+            repo: emukidid/pcsxgc
+            ref: 322d8db0bcc9ae09f6b776b5930452360ea02863
+            container: ghcr.io/extremscorner/libogc2:latest
           - module: WiiMC
             repo: SuperrSonic/WiiMC-SSLC
             ref: b1f212aeaa0638d654f949b9dc66d89df6d0be31
@@ -175,6 +179,14 @@ jobs:
             WiiSXRX)
               make -C Gamecube -f Makefile_Wii -j2
               ;;
+            WiiSX)
+              # Matches the upstream Beta_4.2.2 CMake build. The
+              # official archive is retained when this compilation fails.
+              cmake -S . -B build_wii -DCMAKE_BUILD_TYPE=None \
+                -DWIISX_TARGET=NintendoWii -DGPU_PLUGIN=Peops
+              cmake --build build_wii -j2
+              test -s build_wii/WiiSX.dol
+              ;;
             WiiMC)
               # Keep pinned WiiMC 3.0 original FFmpeg/MPlayer archives:
               # only the GUI and input integration are recompiled for HID.
@@ -223,6 +235,9 @@ jobs:
               ;;
             WiiSXRX)
               cp upstream/Gamecube/WiiSXRX.dol patched/apps/${{ matrix.module }}/boot.dol
+              ;;
+            WiiSX)
+              cp upstream/build_wii/WiiSX.dol patched/apps/${{ matrix.module }}/boot.dol
               ;;
             WiiMC)
               cp upstream/wiimc.dol patched/apps/${{ matrix.module }}/boot.dol

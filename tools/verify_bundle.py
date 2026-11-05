@@ -27,7 +27,7 @@ for name in EXPECTED:
     actual = hashlib.sha256((root / "apps" / name / "boot.dol").read_bytes()).hexdigest()
     assert hashes[name] == actual, "DOL SHA-256 mismatch: " + name
 # Prevent a successful bundle build from silently claiming HID coverage.
-ADAPTABLE = {"usbloader_gx", "WiiSXRX", "WiiMC", "snes9xgx", "fceugx", "vbagx"}
+ADAPTABLE = {"usbloader_gx", "WiiSXRX", "WiiSX", "WiiMC", "snes9xgx", "fceugx", "vbagx"}
 adapted = manifest.get("adapted_modules")
 fallback = manifest.get("fallback_modules")
 assert isinstance(adapted, list) and isinstance(fallback, list), "adapter inventory missing"

@@ -8,16 +8,39 @@
 #include <ogc/system.h>
 #include <stdint.h>
 #include <stddef.h>
+/* Own a writable mode snapshot: the shared preferred template must never
+ * be mutated because it is reused by libogc and other homebrew code. */
+static GXRModeObj video_mode;
 static GXRModeObj *mode;
+static unsigned original_vi_width=640,original_vi_x=40;
 static void *buffers[2];
 static int back=0, visible=0;
 static int cal_x=0,cal_y=0;
 static unsigned cal_w=100,cal_h=100;
+/* Geometry is not just a framebuffer crop: the video interface itself
+ * outputs a wider active region. This can remove overscan/black side bands
+ * that drawing wider inside an unchanged 640px VI window cannot touch.
+ * Other DOLs reconfigure VI themselves and are NOT affected. */
+static void apply_vi_geometry(void){
+ if(!mode)return;
+ unsigned width=original_vi_width*cal_w/100u;
+ if(width<512u)width=512u;
+ if(width>704u)width=704u; /* <= Wii VI 720 active-pixel ceiling */
+ int center=(int)original_vi_x+(int)original_vi_width/2;
+ int x=center-(int)width/2+cal_x;
+ if(x<0)x=0;
+ if(x>720-(int)width)x=720-(int)width;
+ mode->viWidth=(u16)width;
+ mode->viXOrigin=(u16)x;
+ VIDEO_Configure(mode);
+ VIDEO_Flush();
+}
 void maizo_video_set_calibration(int x,int y,unsigned w,unsigned h){
  cal_x=x<-50?-50:x>50?50:x;
  cal_y=y<-50?-50:y>50?50:y;
  cal_w=w<70?70:w>130?130:w;
  cal_h=h<70?70:h>130?130:h;
+ apply_vi_geometry();
 }
 void maizo_video_clear(void){
  if(!mode||!buffers[back])return;
@@ -48,8 +71,10 @@ static void rect_coords(float x,float y,float w,float h,
                         int *x0,int *y0,int *x1,int *y1){
  float sx=mode->fbWidth/640.0f;
  float sy=mode->xfbHeight/480.0f;
- *x0=(int)((320.0f+(x-320.0f)*cal_w/100.0f+cal_x)*sx+0.5f);
- *x1=(int)((320.0f+(x+w-320.0f)*cal_w/100.0f+cal_x)*sx+0.5f);
+ /* X width and offset are handled at the real VI output stage;
+  * applying them here as well would double-scale and clip the canvas. */
+ *x0=(int)(x*sx+0.5f);
+ *x1=(int)((x+w)*sx+0.5f);
  *y0=(int)((240.0f+(y-240.0f)*cal_h/100.0f+cal_y)*sy+0.5f);
  *y1=(int)((240.0f+(y+h-240.0f)*cal_h/100.0f+cal_y)*sy+0.5f);
  if(*x0<0)*x0=0;
@@ -61,13 +86,18 @@ static void rect_coords(float x,float y,float w,float h,
 }
 int maizo_video_init(void){
  VIDEO_Init();
- mode=VIDEO_GetPreferredMode(NULL);
- if(!mode||!mode->fbWidth||!mode->xfbHeight||(mode->fbWidth&1))return 0;
+ GXRModeObj *preferred=VIDEO_GetPreferredMode(NULL);
+ if(!preferred||!preferred->fbWidth||!preferred->xfbHeight||
+    (preferred->fbWidth&1))return 0;
+ video_mode=*preferred;
+ mode=&video_mode;
+ original_vi_width=mode->viWidth;
+ original_vi_x=mode->viXOrigin;
  buffers[0]=MEM_K0_TO_K1(SYS_AllocateFramebuffer(mode));
  buffers[1]=MEM_K0_TO_K1(SYS_AllocateFramebuffer(mode));
  if(!buffers[0]||!buffers[1])return 0;
  back=0;visible=0;
- VIDEO_Configure(mode);
+ apply_vi_geometry();
  VIDEO_SetBlack(TRUE);
  VIDEO_Flush();
  VIDEO_WaitVSync();

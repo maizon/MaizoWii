@@ -1,4 +1,5 @@
 #include "app.h"
+#include "wii_id.h"
 #include <stdio.h>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -56,8 +57,10 @@ static void insert(Library*l,System sys,const char*path,const char*filename,cons
    if(valid){memcpy(g->id,b+1,6);g->id[6]=0;}}
   if(!g->id[0]&&strlen(filename)>=10&&filename[6]=='.'){int valid=1;for(int j=0;j<6;j++)if(!isalnum((unsigned char)filename[j]))valid=0;
    if(valid){memcpy(g->id,filename,6);g->id[6]=0;}}
-  if(!g->id[0]&&ext(filename,".iso")){FILE*f=fopen(path,"rb");if(f){char id[6];if(fread(id,1,6,f)==6){int valid=1;for(int j=0;j<6;j++)if(!isalnum((unsigned char)id[j]))valid=0;
-   if(valid){memcpy(g->id,id,6);g->id[6]=0;}}fclose(f);}}
+  /* Wii backups often use pretty folder/file names without [ID6].
+   * WBFS embeds its real disc header at 0x200; ISO starts at zero.
+   * Do not confuse a friendly title with a valid USB Loader GX ID. */
+  if(!g->id[0])maizo_wii_id_from_file(path,g->id);
  }
  if(sys==SYSTEM_GC){FILE*f=fopen(path,"rb");if(f){char id[6];if(fread(id,1,6,f)==6){int ok=1;for(int j=0;j<6;j++)if(!isalnum((unsigned char)id[j]))ok=0;if(ok){memcpy(g->id,id,6);g->id[6]=0;}}fclose(f);}}
 }

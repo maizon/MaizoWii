@@ -25,29 +25,37 @@ static int storage_root(const char *path){
  closedir(d);
  return 1;
 }
-static int mount_storage(void){
+static int mount_storage(int initial){
+ /* A forwarder may have released a USB device milliseconds ago.
+  * First honor an already-mounted FAT devoptab (HBC-style launch), then
+  * probe each interface independently without requiring a physical SD. */
  int usb=storage_root("usb:/");
  int sd=storage_root("sd:/");
+ if(!usb&&!sd){
+  fatInitDefault();
+  usb=storage_root("usb:/");
+  sd=storage_root("sd:/");
+ }
  if(!usb){
-  for(int n=0;n<8&&!usb;n++){
+  for(int n=0;n<(initial?16:2)&&!usb;n++){
    if(__io_usbstorage.startup()){
     if(fatMountSimple("usb",&__io_usbstorage)){
      usb=storage_root("usb:/");
      if(!usb)fatUnmount("usb");
     }
    }
-   if(!usb)usleep(250000);
+   if(!usb&&initial)usleep(350000);
   }
  }
  if(!sd){
-  for(int n=0;n<3&&!sd;n++){
+  for(int n=0;n<(initial?3:1)&&!sd;n++){
    if(__io_wiisd.startup()){
     if(fatMountSimple("sd",&__io_wiisd)){
      sd=storage_root("sd:/");
      if(!sd)fatUnmount("sd");
     }
    }
-   if(!sd)usleep(100000);
+   if(!sd&&initial)usleep(100000);
   }
  }
  /* Last chance: use the libfat system default only when explicit access
@@ -60,12 +68,26 @@ static int mount_storage(void){
  storage_usb=usb;storage_sd=sd;media_ready=usb||sd;
  return media_ready;
 }
+/* Forwarder -> DOL handoff may reopen FAT after the initial mount window.
+ * Retry USB without requiring a Wiimote, a press of Z, or an SD card. */
+static void retry_missing_storage(void){
+ if(storage_usb||state.frame==0||(state.frame%900)!=0)return;
+ int old_ready=media_ready;
+ mount_storage(0);
+ state.storage_usb=storage_usb;state.storage_sd=storage_sd;
+ input_storage_ready(media_ready);
+ if(media_ready && (!old_ready||storage_usb)){
+  module_refresh_available();
+  library_begin(&library_state);
+  state.selected=state.scroll=0;
+ }
+}
 static int total(void){return library_total(&library_state,state.system,state.search,state.favorites);}
 static void clamp_selection(void){
  int count=total();if(state.selected>=count)state.selected=count?count-1:0;
  if(state.selected<0)state.selected=0;
  state.scroll=maizo_nav_scroll(state.selected,state.scroll,count,
-                                 config.layout?1:4,8);
+                                 config.layout==0?4:1,8);
 }
 static void change_system(int diff){state.system=(System)((state.system+SYSTEM_COUNT+diff)%SYSTEM_COUNT);
  state.selected=0;state.scroll=0;state.favorites=0;state.search[0]=0;
@@ -167,7 +189,7 @@ static void handle(const Input*i){
  }
  if(i->search && (state.page==PAGE_LIBRARY||state.page==PAGE_HOME)){state.page=PAGE_SEARCH;state.search_index=1;return;}
  if(i->refresh && state.page==PAGE_HOME){
-  mount_storage();
+  mount_storage(0);
   state.storage_usb=storage_usb;state.storage_sd=storage_sd;
   input_storage_ready(media_ready);
   module_refresh_available();
@@ -179,7 +201,8 @@ static void handle(const Input*i){
  if(i->refresh && state.page==PAGE_LIBRARY){state.favorites=!state.favorites;state.selected=state.scroll=0;return;}
  if(state.page==PAGE_HOME){
   if(i->left)change_system(-1);if(i->right)change_system(1);
-  if(i->up)change_system(-4);if(i->down)change_system(4);
+  if(i->up)change_system(config.layout==0?-4:-1);
+  if(i->down)change_system(config.layout==0?4:1);
   if(i->accept||i->favorite){state.page=PAGE_LIBRARY;state.favorites=!!i->favorite;state.selected=state.scroll=0;}
   return;
  }
@@ -210,11 +233,20 @@ static void handle(const Input*i){
  if(state.page==PAGE_LIBRARY){
   int n=total();
   if(n>0){
-   int columns=config.layout?1:4;
-   if(i->up)state.selected=maizo_nav_move(state.selected,n,columns,0,-1);
-   if(i->down)state.selected=maizo_nav_move(state.selected,n,columns,0,1);
-   if(i->left)state.selected=maizo_nav_move(state.selected,n,columns,1,-1);
-   if(i->right)state.selected=maizo_nav_move(state.selected,n,columns,1,1);
+   int columns=config.layout==0?4:1;
+   /* Carousel moves horizontally one cover at a time, while grid/list
+    * use their own navigation geometry. */
+   if(config.layout==2){
+    if(i->left)state.selected=(state.selected+n-1)%n;
+    if(i->right)state.selected=(state.selected+1)%n;
+    if(i->up)state.selected=(state.selected+n-1)%n;
+    if(i->down)state.selected=(state.selected+1)%n;
+   }else{
+    if(i->up)state.selected=maizo_nav_move(state.selected,n,columns,0,-1);
+    if(i->down)state.selected=maizo_nav_move(state.selected,n,columns,0,1);
+    if(i->left)state.selected=maizo_nav_move(state.selected,n,columns,1,-1);
+    if(i->right)state.selected=maizo_nav_move(state.selected,n,columns,1,1);
+   }
   }
   clamp_selection();
   if(i->favorite){int idx=library_visible(&library_state,state.system,state.search,state.favorites,state.selected);
@@ -250,7 +282,7 @@ int main(int argc,char**argv){
  ui_boot_message("VIDEO VI OK");
  VIDEO_WaitVSync();
  ui_boot_message("MONTANDO SD E USB");
- int storage_ready=mount_storage();
+ int storage_ready=mount_storage(1);
  ui_boot_message(storage_ready?
   (storage_usb?"USB MONTADO - CARREGANDO DADOS":"SD MONTADO - CARREGANDO DADOS"):
   "ERRO USB E SD - REINSIRA, START/SELECT REVER");
@@ -275,6 +307,7 @@ int main(int argc,char**argv){
   Input in;
   input_poll(&in);
   handle(&in);
+  retry_missing_storage();
   if(media_ready)library_step(&library_state,10);
   clamp_selection();
   ui_draw(&state,&library_state,&config,in.hid_present);

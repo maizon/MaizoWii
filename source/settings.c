@@ -54,7 +54,7 @@ void settings_value(const Config*c,System s,int row,char*dest,size_t cap){
  if(row==settings_count(s)-2){snprintf(dest,cap,"ABRIR");return;}
  unsigned v=get(c,s,row);
  if(row==0){const char*themes[]={"VIOLETA","TURQUESA","CORAL","GRAFITE"};snprintf(dest,cap,"%s",themes[v%4]);return;}
- if(row==1){snprintf(dest,cap,"%s",v?"LISTA":"GRADE");return;}
+ if(row==1){const char *layouts[]={"GRADE","LISTA","CARROSSEL"};snprintf(dest,cap,"%s",layouts[v%3]);return;}
  if(s==SYSTEM_WII){if(row==2)snprintf(dest,cap,"IOS %u",v);
   else snprintf(dest,cap,"USB %u",v);return;}
  if(s==SYSTEM_GC){
@@ -70,7 +70,7 @@ void settings_value(const Config*c,System s,int row,char*dest,size_t cap){
   if(row==10){const char*names[]={"NENHUM","AUTOMATICO","SEMPRE"};snprintf(dest,cap,"%s",names[v%3]);return;}
  }
  if(s==SYSTEM_MEDIA&&row==2){snprintf(dest,cap,"%u%%",v);return;}
- if(s==SYSTEM_MEDIA&&row==3){snprintf(dest,cap,"%s",v?"OFICIAL":"HID ADAPTADO");return;}
+ if(s==SYSTEM_MEDIA&&row==3){snprintf(dest,cap,"%s",v?"OFICIAL ESTAVEL":"HID EXPERIMENTAL");return;}
  if(s==SYSTEM_MEDIA&&row==4){snprintf(dest,cap,"%s",v?"DIRETO":"NAVEGADOR");return;}
  if(s!=SYSTEM_GC&&s!=SYSTEM_PS1){snprintf(dest,cap,"EXTERNO");return;}
  snprintf(dest,cap,"%s",v?"LIGADO":"DESLIGADO");
@@ -79,7 +79,7 @@ int settings_change(Config*c,System s,int row,int dir){
  if(row>=settings_count(s)-2||row<0)return 0;
  unsigned*v=NULL,lim=2;
  if(row==0){v=&c->theme;lim=4;}
- else if(row==1)v=&c->layout;
+ else if(row==1){v=&c->layout;lim=3;}
  else if(s==SYSTEM_WII&&row==2){
   const unsigned ios[]={58,249,250,251,252};int n=1;
   for(int i=0;i<5;i++)if(ios[i]==c->wii_ios){n=i;break;}

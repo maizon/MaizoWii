@@ -12,9 +12,9 @@ class WiiFrontendBootSafety(unittest.TestCase):
     def test_video_before_storage_or_usb(self):
         main = source("source/main.c")
         boot = main[main.index("int main(int argc,char**argv){"):]
-        self.assertLess(boot.index("ui_init()"), boot.index("mount_storage()"))
+        self.assertLess(boot.index("ui_init()"), boot.index("mount_storage(1)"))
         self.assertLess(boot.index('ui_boot_message("VIDEO VI OK")'),
-                        boot.index("mount_storage()"))
+                        boot.index("mount_storage(1)"))
         self.assertLess(boot.index("ui_draw(&state"), boot.index("input_poll(&in)"))
         self.assertIn('fatMountSimple("usb",&__io_usbstorage)',main)
         self.assertIn('input_storage_ready(media_ready)',main)

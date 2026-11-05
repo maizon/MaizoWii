@@ -32,7 +32,7 @@ int config_has_settings(void){
  struct stat st;
  return stat(p,&st)==0 || stat(backup,&st)==0;
 }
-void config_defaults(Config*c){memset(c,0,sizeof(*c));c->theme=3;c->wii_ios=249;c->wii_usb_port=0;c->gc_memcard=1;c->gc_skip_ipl=1;c->ps1_audio=1;c->media_volume=75;c->gc_offset=20;c->media_autoboot=1;c->video_x=50;c->video_y=50;c->video_w=100;c->video_h=100;}
+void config_defaults(Config*c){memset(c,0,sizeof(*c));c->theme=3;c->media_player=1;c->wii_ios=249;c->wii_usb_port=0;c->gc_memcard=1;c->gc_skip_ipl=1;c->ps1_audio=1;c->media_volume=75;c->gc_offset=20;c->media_autoboot=1;c->video_x=50;c->video_y=50;c->video_w=100;c->video_h=100;}
 void config_load(Config*c){config_defaults(c);char p[80];snprintf(p,sizeof(p),"%s/settings.ini",where());FILE*f=fopen(p,"rb");if(!f){
   char backup[100];snprintf(backup,sizeof(backup),"%s.bak",p);
   f=fopen(backup,"rb");
@@ -46,7 +46,7 @@ void config_load(Config*c){config_defaults(c);char p[80];snprintf(p,sizeof(p),"%
   else if(!strcmp(key,"gc_mc_multi"))c->gc_mc_multi=!!val;
   else if(!strcmp(key,"gc_native_si"))c->gc_native_si=!!val;
   else if(!strcmp(key,"gc_rem_limit"))c->gc_rem_limit=!!val;
-  else if(!strcmp(key,"layout"))c->layout=val%2;
+  else if(!strcmp(key,"layout"))c->layout=val%3;
   else if(!strcmp(key,"gc_memcard"))c->gc_memcard=!!val;
   else if(!strcmp(key,"gc_wide"))c->gc_wide=!!val;
   else if(!strcmp(key,"gc_cheats"))c->gc_cheats=!!val;
