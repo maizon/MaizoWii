@@ -170,7 +170,7 @@ jobs:
       - name: Install Dolphin and virtual display
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq dolphin-emu xvfb imagemagick python3-pil
+          sudo apt-get install -y -qq dolphin-emu xvfb imagemagick python3-pil x11-utils
       - name: Run built WiiMC in headless Dolphin and capture startup
         shell: bash
         run: |
@@ -180,9 +180,12 @@ jobs:
           xvfb-run -a -s "-screen 0 1280x800x24" bash -c '
             export LIBGL_ALWAYS_SOFTWARE=1
             export QT_X11_NO_MITSHM=1
-            timeout 35s dolphin-emu --user="$PWD/smoke/dolphin-user" --exec="$PWD/wiimc/apps/WiiMC/boot.dol" > smoke/dolphin.log 2>&1 &
+            export QT_QPA_PLATFORM=xcb
+            timeout 35s dolphin-emu --video_backend="Software Renderer" --user="$PWD/smoke/dolphin-user" --exec="$PWD/wiimc/apps/WiiMC/boot.dol" > smoke/dolphin.log 2>&1 &
             job=$!
             sleep 23
+            ps ax -o pid,stat,comm,args | grep -i dolphin > smoke/process.txt || true
+            xwininfo -root -tree > smoke/windows.txt 2>&1 || true
             import -display "$DISPLAY" -window root smoke/wiimc-startup.png || true
             kill "$job" 2>/dev/null || true
             wait "$job" 2>/dev/null || true
@@ -199,6 +202,8 @@ jobs:
           report=f"Dolphin startup screenshot center bright pixels: {bright}/16384; colors={len(colors) if colors else 'more than 16384'}\\n"
           Path("smoke/report.txt").write_text(report)
           print(report)
+          if bright < 100:
+              raise SystemExit("FAIL: Dolphin screenshot is black or no GUI window exists; WiiMC boot NOT validated")
           PY
       - uses: actions/upload-artifact@v4
         if: always()
