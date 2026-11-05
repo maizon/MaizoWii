@@ -42,10 +42,15 @@ class WiiRealBootRegressions(unittest.TestCase):
         self.assertIn("WiiMC do not reboot at video EOF", patch)
         self.assertIn('PAD_ControlMotor(0, i);', patch)
         self.assertIn("WiiMC libass aligned allocator prototype", patch)
-        self.assertIn("WiiMC propagate MPlayer build failures", patch)
+        self.assertIn("WiiMC ORIGINAL 3.0 media engine retained", patch)
+        self.assertIn("WiiMC 3.0 HID control during tiled video", patch)
+        self.assertIn("WiiMC fail-open autoboot UI", patch)
+        self.assertIn("WiiMC media path preflight after FAT mount", patch)
+        self.assertIn("WiiMC cap dead startup/unsupported codec", patch)
         workflow = (ROOT / ".github/workflows/build-adapted-modules.yml").read_text()
         self.assertIn("rm -f wiimc.dol wiimc.elf", workflow)
         self.assertIn("WiiMC source adaptation did not change the binary", workflow)
+        self.assertIn("verify_wiimc_engine.py", workflow)
 
 
 if __name__ == "__main__":

@@ -276,3 +276,24 @@ Caminho exigido em SD/USB: `apps/maizo/boot.dol` na **raiz FAT32**, nao em
 O WAD tem risco de brick em caso de defeito de banner/titulo. Valide no
 Dolphin com NAND emulada antes de instalar e disponha de backup de NAND.
 O resultado do CI **nao demonstra funcionamento no Wii real**.
+
+### WiiMC 3.0 — correção de tela preta (versão para validação no Wii real)
+A compilação modernizada do núcleo MPlayer/FFmpeg funcionou no CI, mas travou
+na tela preta no Wii real. Em vez de compilar novamente o codec histórico,
+o adaptador agora **preserva exatamente os cinco arquivos de bibliotecas
+`.a` originais** do WiiMC 3.0, conferidos por SHA-1 do Git antes e depois
+da compilação, e recompila apenas a integração GUI/HID, mantendo o decoder
+estabelecido pela versão original. Os patches de HID continuam no código de
+entrada e a interface de reprodução original é preservada.
+
+O adaptador também verifica o caminho do vídeo após montar o armazenamento
+(pesquisando até `usb5:` quando necessário), evita tela intencionalmente
+preta durante a transição, dá retorno à GUI quando a reprodução não começa,
+evita enumerar dispositivos HID repetidamente durante reprodução e adiciona
+limites às esperas do MPlayer que anteriormente poderiam travar para sempre.
+
+**Ainda não é garantia de execução no console:** A compatibilidade real
+de vídeo, reprodução com áudio, controle USB HID e comportamento ao sair
+dependem de confirmação no Wii. A versão oficial permanece guardada em
+`apps/WiiMC-official/boot.dol`. Não altere PS1, SNES nem os outros núcleos
+para investigar uma falha exclusiva do WiiMC.
