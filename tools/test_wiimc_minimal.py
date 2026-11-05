@@ -25,6 +25,7 @@ class WiiMCMinimalAdapter(unittest.TestCase):
   self.assertIn("WiiMC missing argv media falls back to stock browser",section)
   self.assertIn("snprintf(loadedFile, sizeof(loadedFile)",section)
   self.assertIn("WiiMC ORIGINAL 3.0 media engine retained",section)
+  self.assertIn("WiiMC argv-autoplay HID pre-attach",section)
   self.assertIn("maizo_hid_tick_attached();",section)
   self.assertIn("maizo_hid_tick();",section)
 if __name__=="__main__":unittest.main()

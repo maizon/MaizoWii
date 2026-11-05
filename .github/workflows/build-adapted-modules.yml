@@ -295,3 +295,9 @@ jobs:
           name: MAIZO-ADAPTED-${{ matrix.module }}
           path: patched/
           retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: matrix.module == 'WiiMC' && steps.result.outputs.publish == 'true'
+        with:
+          name: MAIZO-WIIMC-BOOT-DOL
+          path: patched/apps/WiiMC/boot.dol
+          retention-days: 14

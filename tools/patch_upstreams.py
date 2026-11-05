@@ -84,6 +84,16 @@ def patch_wiimc(root: Path):
     def input_patch(s):
         s = replace_once(s,'#include "input.h"', '#include "input.h"\n#include "maizo_hid.inc"', "WiiMC")
         s = fix_pad_update(s, "PAD_ScanPads();", True)
+        # On argv autoplay, the player may start before the GUI's
+        # 180-frame HID warmup expires. Discover controllers once in
+        # SetupPads AFTER the original WiiMC has initialized USB mass
+        # storage; video playback only reads an attached HID snapshot.
+        # Without this, autoplay could enter a permanent no-HID state.
+        s = replace_once(
+            s, "WPAD_SetVRes(WPAD_CHAN_ALL, screenwidth, screenheight);",
+            "WPAD_SetVRes(WPAD_CHAN_ALL, screenwidth, screenheight);\n"
+            "\tmaizo_hid_tick(); /* one-time discovery before autoplay */",
+            "WiiMC argv-autoplay HID pre-attach")
         # Never dereference a missing WPAD_Data() with no Wiimote paired.
         # The original GuiTrigger embeds a zero-initialized WPADData.
         s = replace_once(s,

@@ -159,7 +159,7 @@ jobs:
     # A screenshot/log is evidence, not a guarantee that HID devices work.
     # A headless runner may have no hardware GPU or no Dolphin package.
     needs: adapted
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 12
     continue-on-error: true
     steps:
