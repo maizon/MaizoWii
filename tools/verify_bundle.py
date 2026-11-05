@@ -7,7 +7,7 @@ import sys
 
 from package_all import valid_dol
 
-EXPECTED = ("maizo", "usbloader_gx", "Nintendont", "WiiSXRX",
+EXPECTED = ("maizo", "usbloader_gx", "Nintendont", "WiiSXRX", "WiiSX",
             "snes9xgx", "fceugx", "vbagx", "WiiMC")
 root = Path(sys.argv[1] if len(sys.argv) > 1 else "dist")
 assert root.is_dir(), root
@@ -79,4 +79,4 @@ if manager:
 
 files = list(root.rglob("*"))
 assert not any(f.is_symlink() for f in files)
-print("PASS: all eight application executables and controller profiles present")
+print("PASS: all nine application executables and controller profiles present")

@@ -213,6 +213,26 @@ def patch_wiimc(root: Path):
             "WiiMC fail-open autoboot UI")
         return t
     patch_file(root, "source/menu.cpp", gui_autoplay_recovery)
+    # The menu can wait forever for an MPlayer status transition even when
+    # the playback worker has already failed. A bounded error path is safer
+    # than silently leaving the Wii frozen on a black framebuffer.
+    def bound_video_gui_wait(t):
+        old = ("\t// wait until MPlayer is ready to take control (or return control)\n"
+               "\twhile(!guiShutdown && controlledbygui != 1)\n"
+               "\t\tusleep(THREAD_SLEEP);\n\n"
+               "\tif(guiShutdown)")
+        new = ("\t// MAIZO: bound a stalled player; restore the file browser.\n"
+               "\tu64 maizoGuiStart=gettime();\n"
+               "\twhile(!guiShutdown && controlledbygui != 1 && "
+               "diff_sec(maizoGuiStart,gettime())<25)\n"
+               "\t\tusleep(THREAD_SLEEP);\n"
+               "\tif(!guiShutdown && controlledbygui != 1){\n"
+               "\t\tprintf(\"MAIZO WIIMC: file open timed out; returning to GUI\\\\n\");\n"
+               "\t\tisLoadingFile=false;ResumeDeviceThread();return 0;\n"
+               "\t}\n\n"
+               "\tif(guiShutdown)")
+        return replace_once(t,old,new,"WiiMC menu file-open timeout")
+    patch_file(root, "source/menu.cpp", bound_video_gui_wait)
 
     # This legacy MPlayer subtitle tag attempted to call libogc pad motor
     # from the isolated MPlayer C build without its header. Discard only

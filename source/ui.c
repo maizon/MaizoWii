@@ -217,12 +217,35 @@ static void hid_page(void){
  }
  label(119,415,"B OU START: VOLTAR A CONFIGURACOES",0.90f,0xffb6b8d6u);
 }
+static void calibration_ui(const State*u,const Config*c){
+ label(119,76,"CALIBRACAO DA TELA",1.48f,0xffffffffu);
+ label(119,100,"VALE APENAS PARA A INTERFACE MAIZO",0.91f,0xffc9d0deu);
+ const char*items[]={"POSICAO HORIZONTAL","POSICAO VERTICAL","LARGURA","ALTURA","RESTAURAR PADRAO","SALVAR E VOLTAR"};
+ const int vals[]={((int)c->video_x-50),((int)c->video_y-50),(int)c->video_w,(int)c->video_h};
+ for(int i=0;i<6;i++){
+  int y=129+i*36;
+  roundrect(116,y,498,32,i==u->calibration_row?bright:0xff2a2d3cu);
+  label(128,y+10,items[i],1.02f,0xffffffffu);
+  char value[32]="";
+  if(i<2)snprintf(value,sizeof(value),"%+d",vals[i]);
+  else if(i<4)snprintf(value,sizeof(value),"%d%%",vals[i]);
+  if(i<4)label(533,y+10,value,0.98f,0xffffffffu);
+ }
+ /* Reference rectangle exposes clipping/overscan on CRT televisions. */
+ quad(125,367,476,2,0xfff5dd7bu,0xfff5dd7bu);
+ quad(125,411,476,2,0xfff5dd7bu,0xfff5dd7bu);
+ quad(125,367,2,46,0xfff5dd7bu,0xfff5dd7bu);
+ quad(599,367,2,46,0xfff5dd7bu,0xfff5dd7bu);
+ label(145,385,"SETAS: AJUSTAR  A: APLICAR  B: SALVAR",0.92f,0xffffffffu);
+}
 static void settings(const State*u,const Config*c){
  label(119,77,u->settings_for_game?"OPCOES DESTE JOGO":"CONFIGURACOES",1.53f,0xffffffffu);
  clipped(119,105,u->settings_for_game?"CONFIGURACAO INDIVIDUAL - TEMA/LAYOUT GLOBAIS":system_title(u->system),0.96f,0xffb4b8d6u,53);
  int n=settings_count(u->system);
- for(int i=0;i<n;i++){
-  int y=137+i*25;
+ int top=u->settings_row-8;if(top<0)top=0;
+ if(top>n-9)top=n>9?n-9:0;
+ for(int i=top;i<n&&i<top+9;i++){
+  int y=137+(i-top)*29;
   if(i==u->settings_row)roundrect(116,y,498,24,bright);
   clipped(124,y+8,settings_label(u->system,i),1.02f,0xffffffffu,31);
   char val[48];settings_value(c,u->system,i,val,sizeof(val));
@@ -230,8 +253,11 @@ static void settings(const State*u,const Config*c){
  }
  if(u->system==SYSTEM_WII)label(119,406,"WII: USB LOADER GX ENHANCED / CIOS",0.94f,0xffb2b7d1u);
  else if(u->system==SYSTEM_MEDIA)label(119,406,"VOLUME: NECESSITA ADAPTACAO DO WIIMC",0.85f,0xffb2b7d1u);
- else if(u->system!=SYSTEM_GC&&u->system!=SYSTEM_PS1)
-  label(119,406,"AJUSTES AVANCADOS NO MOTOR ORIGINAL",0.93f,0xffb2b7d1u);
+ else if(u->system==SYSTEM_PS1)
+  label(119,404,"WiiSX: VIDEO/240P; RX: OPCOES DO CORE",0.90f,0xffb2b7d1u);
+ else if(u->system==SYSTEM_GC)
+  label(119,404,"NINTENDONT: LARGURA E DESLOC. VERTICAL",0.82f,0xffb2b7d1u);
+ else label(119,406,"CALIBRACAO SOMENTE DA INTERFACE MAIZO",0.86f,0xffb2b7d1u);
  hid_diagnostics_line();
 }
 /* With the CPU backend the boot message can be displayed before the
@@ -239,6 +265,7 @@ static void settings(const State*u,const Config*c){
 static void present(void){maizo_video_present();}
 int ui_init(void){return maizo_video_init();}
 void ui_boot_message(const char*stage){
+ maizo_video_clear();
  graphite=0;
  bright=0xff7777e0u;
  panel=0xff202538u;
@@ -252,6 +279,7 @@ void ui_boot_message(const char*stage){
  present();
 }
 void ui_draw(const State*u,const Library*l,const Config*c,int hid){
+ maizo_video_clear();
  graphite=c->theme==3;
  bright=graphite?0xff8998a4u:c->theme==1?0xff1cbea8u:c->theme==2?0xffdd6689u:0xff6661eau;
  panel=graphite?0xff24282du:0xff202132u;
@@ -259,7 +287,7 @@ void ui_draw(const State*u,const Library*l,const Config*c,int hid){
  quad(0,0,640,480,background,0xff171b2eu);
  quad(0,0,640,7,bright,bright);
  sidebar(u);titlebar(u,l,hid);
- switch(u->page){case PAGE_HOME:home(u,l);break;case PAGE_LIBRARY:library(u,l,c);break;case PAGE_DETAIL:detail(u,l,c);break;case PAGE_SEARCH:search_ui(u,l);break;case PAGE_SETTINGS:settings(u,u->settings_for_game?&u->game_config:c);break;case PAGE_HID:hid_page();break;case PAGE_INFO:
+ switch(u->page){case PAGE_HOME:home(u,l);break;case PAGE_LIBRARY:library(u,l,c);break;case PAGE_DETAIL:detail(u,l,c);break;case PAGE_SEARCH:search_ui(u,l);break;case PAGE_SETTINGS:settings(u,u->settings_for_game?&u->game_config:c);break;case PAGE_HID:hid_page();break;case PAGE_CALIBRATION:calibration_ui(u,c);break;case PAGE_INFO:
  label(120,86,"AVISO MAIZO",1.8f,0xffffffffu);label(120,156,u->info,1.0f,0xffc9c9dfu);
  label(120,204,"APERTE B PARA VOLTAR",1.05f,0xffaeb1c8u);break;}
  footer(u,l);

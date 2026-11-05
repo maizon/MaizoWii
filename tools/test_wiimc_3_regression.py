@@ -25,6 +25,7 @@ class WiiMC3RegressionTests(unittest.TestCase):
         self.assertIn("WiiMC show GUI before autoplay",patch)
         self.assertIn("WiiMC cap dead startup/unsupported codec",patch)
         self.assertIn("WiiMC media path preflight after FAT mount",patch)
+        self.assertIn("WiiMC menu file-open timeout",patch)
     def test_legacy_mplayer_binary_ABI_is_bridged(self):
         patch=(ROOT/"tools/patch_upstreams.py").read_text()
         for symbol in ('gettime','DCFlushRange','DCStoreRangeNoSync',

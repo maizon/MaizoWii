@@ -111,7 +111,7 @@ def overlay(adapter_root: Path, dist: Path) -> dict[str,str]:
     # Record the final on-disk executable for every module, including fallbacks.
     # This is intentionally calculated AFTER overlays so the manifest cannot
     # describe a superseded upstream binary.
-    all_modules=("maizo", "usbloader_gx", "Nintendont", "WiiSXRX",
+    all_modules=("maizo", "usbloader_gx", "Nintendont", "WiiSXRX", "WiiSX",
                  "snes9xgx", "fceugx", "vbagx", "WiiMC")
     manifest["final_dol_sha256"]={name: hashlib.sha256(
         (dist/"apps"/name/"boot.dol").read_bytes()).hexdigest()

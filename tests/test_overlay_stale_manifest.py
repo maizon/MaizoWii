@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "overlay_adapted.py"
-MODULES = ("maizo", "usbloader_gx", "Nintendont", "WiiSXRX",
+MODULES = ("maizo", "usbloader_gx", "Nintendont", "WiiSXRX", "WiiSX",
            "snes9xgx", "fceugx", "vbagx", "WiiMC")
 
 class OverlayProvenanceTest(unittest.TestCase):

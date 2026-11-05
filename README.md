@@ -11,7 +11,7 @@ binários de emuladores.
 |---|---|---|
 | Wii | `wbfs/*.wbfs`, `wbfs/*.iso` | USB Loader GX Enhanced |
 | GameCube | `games/*/game.iso`, ISO/GCM/CISO | Nintendont |
-| PlayStation 1 | ISO/BIN/CUE/IMG/PBP (+ CHD/M3U sinalizados) | WiiSXRX |
+| PlayStation 1 | ISO/BIN/CUE/IMG/PBP (+ CHD/M3U sinalizados) | WiiSXRX ou WiiSX 4.2.2 |
 | Super Nintendo | SFC/SMC/FIG/ZIP | Snes9x GX |
 | NES | NES/FDS/UNF/ZIP | FCE Ultra GX |
 | Game Boy Advance | GBA | VBA GX |
@@ -30,13 +30,43 @@ WiiMC-SSLC recebe caminho em argv[1] e tenta reproduzir diretamente; o arquivo `
 contrato para versões adaptadas, **não é consumido** por binários originais. O WiiMC usa `usb1:/`/`sd1:/` e rejeitamos nomes com `%` por segurança na versão original.
 Não há compatibilidade HID universal entre os módulos.
 
+## Correcoes de integracao: USB WAD, video e WiiSX 4.2.2
+
+**Estado:** alteracoes de codigo, CI e contrato; teste com Wii real segue necessario.
+Uma compilacao bem-sucedida nao comprova a reproducao de videos ou a
+montagem de armazenamento no console.
+
+- **WAD/USB:** forwarder v5 tenta IOS58 antes de montar; o frontend remonta
+  SD e USB independentemente, inclusive com repeticoes de montagem. Se o
+  IOS58 nao estiver instalado ou o dispositivo nao responder, o problema
+  continua sendo diagnosticavel e nao se afirma suporte universal.
+- **Tela MAIZO:** em Configuracoes > Calibrar tela MAIZO, ajuste posicao X/Y,
+  largura e altura (70-130%). Os valores sao persistidos no settings.ini.
+  Sao transformacoes apenas da UI deste frontend, nao alteram jogos externos.
+- **GameCube:** Nintendont usa as opcoes reais VideoScale 40-120 (ou AUTO)
+  e VideoOffset -20 a +20, aplicadas ao nincfg.bin, globalmente ou por jogo.
+  O VideoOffset altera posicao vertical; nao e um esticamento vertical.
+- **PS1:** selecione WiiSXRX ou WiiSX Beta 4.2.2 globalmente ou por jogo.
+  WiiSX 4.2.2 recebe no argv: Core, Audio, SkipFrames, NativeOutput
+  (240p/264p), VideoMode, ScreenMode, Deflicker, Dithering, FPS e LimitFrames.
+  O pacote inclui o modulo oficial separado, sem substituir WiiSXRX.
+  Resolucao nao significa aumentar renderizacao interna do PS1.
+- **WiiMC:** escolha versao adaptada ou copia oficial (quando disponivel)
+  e modo direto ou navegador original. A adaptacao inclui limite de
+  espera ao carregar um arquivo. Nenhuma dessas mudancas comprova que o
+  codec funcione no Wii real; o modo navegador permite diagnostico.
+
+Para testar, comece com WiiMC oficial em modo navegador e um AVI pequeno;
+depois compare o adaptado e o modo direto. Preserve sua instalacao estavel
+de PS1/SNES ate verificar a nova compilacao em hardware.
+
 ## Instalar
 
 1. Compile com devkitPro/devkitPPC e libogc ou baixe o artefato gerado pelo CI
    se a compilação passar. Copie `apps/maizo/boot.dol`, `meta.xml` e os
    perfis distribuídos no pacote para USB/SD FAT32.
 2. Em `apps/`, coloque os módulos que possuir: `usbloader_gx`,
-   `Nintendont`, `WiiSXRX`, `snes9xgx`, `fceugx`, `vbagx`, `WiiMC`,
+   `Nintendont`, `WiiSXRX`, `WiiSX`, `snes9xgx`, `fceugx`, `vbagx`, `WiiMC`,
    cada qual com `boot.dol`. São reconhecidas instalações em SD e USB.
 3. ROMs em `wbfs`, `games`, `ps1`, `snes9xgx/roms`, `fceugx/roms`,
    `vbagx/roms`, `videos`, `music` ou caminhos alternativos indicados

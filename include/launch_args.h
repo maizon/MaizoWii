@@ -15,6 +15,8 @@ typedef struct {
  const char *executable, *path, *id;
  unsigned wii_ios, wii_usb_port;
  unsigned ps1_interpreter, ps1_frameskip, ps1_audio;
+ unsigned ps1_engine,ps1_native,ps1_video,ps1_aspect,ps1_deflicker,ps1_dither,ps1_fps,ps1_limit;
+ unsigned media_autoboot;
 } MaizoLaunchSpec;
 typedef struct {
  char data[MAIZO_COMMAND_CAP];

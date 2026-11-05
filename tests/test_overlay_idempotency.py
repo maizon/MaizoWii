@@ -18,7 +18,7 @@ class OverlayProvenanceTests(unittest.TestCase):
             patched = root / "patched"
             patched.mkdir()
             (dist / "maizo").mkdir(parents=True)
-            for name in ("maizo", "usbloader_gx", "Nintendont", "WiiSXRX",
+            for name in ("maizo", "usbloader_gx", "Nintendont", "WiiSXRX", "WiiSX",
                          "snes9xgx", "fceugx", "vbagx", "WiiMC"):
                 app = dist / "apps" / name
                 app.mkdir(parents=True)

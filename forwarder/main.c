@@ -54,7 +54,7 @@
 #define ARGS_ADDR   ((u8 *)0x93200000u)
 #define MAX_DOL (12u*1024u*1024u)
 #define MIN_ADDRESS (0x80003f00u)
-#define VERSION "MAIZO OSC/FIX94 FORWARDER v4"
+#define VERSION "MAIZO OSC/FIX94 FORWARDER v5"
 
 extern const unsigned char osc_app_booter[];
 extern const unsigned int osc_app_booter_len;
@@ -202,7 +202,12 @@ int main(void){
  printf("Base: Open Shop Channel / FIX94 - IOS=%u\n",
         (unsigned)IOS_GetVersion());
  printf("Sem instalacao ou gravacao NAND.\n\n");
-
+ /* Some channel WADs start under an IOS without USB2. Mount only after
+  * attempting to switch to the same IOS58 used by Homebrew Channel. */
+ if(IOS_GetVersion()!=58){
+  s32 result=IOS_ReloadIOS(58);
+  printf("IOS58 reload: %ld; ativo IOS %u\n",(long)result,(unsigned)IOS_GetVersion());
+ }
  sd_ready=mount_one("sd",&__io_wiisd);
  if(sd_ready){
   if(launch_from("sd:/apps/maizo/boot.dol"))return 0;

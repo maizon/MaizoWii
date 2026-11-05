@@ -1,11 +1,36 @@
 #include "app.h"
 #include <gccore.h>
 #include <fat.h>
+#include <ogc/disc_io.h>
+#include <ogc/usbstorage.h>
+#include <sdcard/wiisd_io.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <string.h>
 static Library library_state;
 static Config config;
 static State state;
+/* Forwarder and HBC enter through different IOS/device states. Mount both
+ * independently; fatInitDefault may report SD success while USB fails. */
+static int storage_root(const char *path){
+ struct stat st;return stat(path,&st)==0 && S_ISDIR(st.st_mode);
+}
+static int mount_storage(void){
+ fatInitDefault();
+ if(!storage_root("sd:/")){
+  for(int n=0;n<2 && !storage_root("sd:/");n++){
+   if(__io_wiisd.startup())fatMountSimple("sd",&__io_wiisd);
+  }
+ }
+ if(!storage_root("usb:/")){
+  for(int n=0;n<8 && !storage_root("usb:/");n++){
+   if(__io_usbstorage.startup())fatMountSimple("usb",&__io_usbstorage);
+   if(!storage_root("usb:/"))usleep(250000);
+  }
+ }
+ return storage_root("sd:/") || storage_root("usb:/");
+}
 static int total(void){return library_total(&library_state,state.system,state.search,state.favorites);}
 static void clamp_selection(void){
  int count=total();if(state.selected>=count)state.selected=count?count-1:0;
@@ -50,7 +75,36 @@ static void option_change(int dir){
  if(settings_change(active,state.system,state.settings_row,dir) &&
     !state.settings_for_game)config_save(&config);
 }
+static void adjust_calibration(int dir){
+ unsigned *p=NULL,low=0,high=100,step=1;
+ switch(state.calibration_row){
+ case 0:p=&config.video_x;break;
+ case 1:p=&config.video_y;break;
+ case 2:p=&config.video_w;low=70;high=130;break;
+ case 3:p=&config.video_h;low=70;high=130;break;
+ case 4:config.video_x=config.video_y=50;config.video_w=config.video_h=100;break;
+ default:return;
+ }
+ if(p){
+  if(dir<0)*p=*p<=low+step?low:*p-step;
+  else *p=*p>=high-step?high:*p+step;
+ }
+ maizo_video_set_calibration((int)config.video_x-50,(int)config.video_y-50,
+                             config.video_w,config.video_h);
+ config_save(&config);
+}
 static void handle(const Input*i){
+ if(state.page==PAGE_CALIBRATION){
+  if(i->up&&state.calibration_row>0)state.calibration_row--;
+  if(i->down&&state.calibration_row<5)state.calibration_row++;
+  if(i->left)adjust_calibration(-1);
+  if(i->right||i->accept){
+   if(state.calibration_row==5){config_save(&config);state.page=PAGE_SETTINGS;}
+   else adjust_calibration(1);
+  }
+  if(i->back){config_save(&config);state.page=PAGE_SETTINGS;}
+  return;
+ }
  if(state.page==PAGE_HID){
   if(i->back||i->settings||i->accept)state.page=PAGE_SETTINGS;
   return;
@@ -88,6 +142,9 @@ static void handle(const Input*i){
   return;
  }
  if(state.page==PAGE_SETTINGS){
+  if(state.settings_row==settings_count(state.system)-2 && (i->accept||i->right)){
+   state.calibration_row=0;state.page=PAGE_CALIBRATION;return;
+  }
   if(i->refresh){state.page=PAGE_HID;return;}
   if(i->up&&state.settings_row>0)state.settings_row--;
   if(i->down&&state.settings_row<settings_count(state.system)-1)state.settings_row++;
@@ -145,9 +202,10 @@ int main(int argc,char**argv){
  ui_boot_message("VIDEO VI OK");
  VIDEO_WaitVSync();
  ui_boot_message("MONTANDO SD E USB");
- int storage_ready=fatInitDefault();
+ int storage_ready=mount_storage();
  ui_boot_message(storage_ready?"CARREGANDO CONFIGURACOES":"SEM SD/USB - VERIFIQUE O DISPOSITIVO");
  config_load(&config);
+ maizo_video_set_calibration((int)config.video_x-50,(int)config.video_y-50,config.video_w,config.video_h);
  memset(&state,0,sizeof(state));
  state.system=SYSTEM_GC;
  state.page=PAGE_HOME;

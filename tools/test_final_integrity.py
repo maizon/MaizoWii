@@ -20,7 +20,7 @@ class FinalDolIntegrityTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.dist = self.root / "dist"
         self.patched = self.root / "patched"
-        self.modules = ("maizo", "usbloader_gx", "Nintendont", "WiiSXRX",
+        self.modules = ("maizo", "usbloader_gx", "Nintendont", "WiiSXRX", "WiiSX",
                         "snes9xgx", "fceugx", "vbagx", "WiiMC")
         for name in self.modules:
             dest = self.dist / "apps" / name

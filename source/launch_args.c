@@ -81,8 +81,29 @@ int maizo_build_args(const MaizoLaunchSpec *s,MaizoLaunchArgs *out,char*error,si
  }else if(s->system==MAIZO_ARG_PS1){
   if(ext_is(s->path,".chd") || ext_is(s->path,".m3u"))
    return fail(error,cap,"WiiSXRX original nao suporta CHD/M3U");
-  if(s->ps1_interpreter>1 || s->ps1_frameskip>1 || s->ps1_audio>1)
+  if(s->ps1_interpreter>1 || s->ps1_frameskip>1 || s->ps1_audio>1 ||
+     s->ps1_engine>1 || s->ps1_native>1 || s->ps1_video>3 ||
+     s->ps1_aspect>2 || s->ps1_deflicker>1 || s->ps1_dither>2 ||
+     s->ps1_fps>1 || s->ps1_limit>1)
    return fail(error,cap,"Opcoes PS1 invalidas");
+  if(s->ps1_engine){
+   /* WiiSX Beta 4.2.2 accepts the full image as argv[1].
+    * GamecubeMain.cpp reads named config pairs from argv[2..].
+    * No invented geometry flags: only exact upstream OPTIONS keys. */
+   if(!append(out,s->path))return fail(error,cap,"Caminho WiiSX excede limite");
+   const struct {const char*key;unsigned value;} options[]={
+    {"Core",s->ps1_interpreter},{"Audio",s->ps1_audio},
+    {"SkipFrames",s->ps1_frameskip},{"NativeOutput",s->ps1_native},
+    {"VideoMode",s->ps1_video},{"ScreenMode",s->ps1_aspect},
+    {"Deflicker",s->ps1_deflicker},{"Dithering",s->ps1_dither},
+    {"FPS",s->ps1_fps},{"LimitFrames",s->ps1_limit}
+   };
+   for(unsigned i=0;i<sizeof(options)/sizeof(options[0]);i++){
+    snprintf(option,sizeof(option),"%s=%u",options[i].key,options[i].value);
+    if(!append(out,option))return fail(error,cap,"Argumentos WiiSX excedem limite");
+   }
+   return 1;
+  }
   char dir[512];const char*base=NULL;
   if(!split_path(s->path,dir,sizeof(dir),&base))return fail(error,cap,"Caminho PS1 invalido");
   if(!append(out,dir)||!append(out,base))return fail(error,cap,"Caminho PS1 excede limite");
@@ -97,6 +118,8 @@ int maizo_build_args(const MaizoLaunchSpec *s,MaizoLaunchArgs *out,char*error,si
   if(!split_path(s->path,dir,sizeof(dir),&base))return fail(error,cap,"Caminho ROM invalido");
   if(!append(out,dir)||!append(out,base))return fail(error,cap,"ROM excede limite");
  }else if(s->system==MAIZO_ARG_MEDIA){
+  if(s->media_autoboot>1)return fail(error,cap,"Modo multimidia invalido");
+  if(!s->media_autoboot)return 1; /* GUI original; no autoplay */
   /* WiiMC-SSLC upstream treats argv[1] unsafely as printf format string. */
   if(strchr(s->path,'%'))return fail(error,cap,"Nome com % inseguro no WiiMC original");
   char media[514];int written=-1;

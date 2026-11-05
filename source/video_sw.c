@@ -11,6 +11,20 @@
 static GXRModeObj *mode;
 static void *buffers[2];
 static int back=0, visible=0;
+static int cal_x=0,cal_y=0;
+static unsigned cal_w=100,cal_h=100;
+void maizo_video_set_calibration(int x,int y,unsigned w,unsigned h){
+ cal_x=x<-50?-50:x>50?50:x;
+ cal_y=y<-50?-50:y>50?50:y;
+ cal_w=w<70?70:w>130?130:w;
+ cal_h=h<70?70:h>130?130:h;
+}
+void maizo_video_clear(void){
+ if(!mode||!buffers[back])return;
+ uint32_t *dst=(uint32_t *)buffers[back];
+ size_t count=((size_t)mode->fbWidth*mode->xfbHeight)/2u;
+ for(size_t i=0;i<count;i++)dst[i]=0x10801080u;
+}
 static int limit8(int value){return value<0?0:value>255?255:value;}
 static uint32_t yuyv_pair(int r0,int g0,int b0,int r1,int g1,int b1){
  int y0=16+((66*r0+129*g0+25*b0+128)>>8);
@@ -34,12 +48,14 @@ static void rect_coords(float x,float y,float w,float h,
                         int *x0,int *y0,int *x1,int *y1){
  float sx=mode->fbWidth/640.0f;
  float sy=mode->xfbHeight/480.0f;
- *x0=(int)(x*sx+0.5f);
- *x1=(int)((x+w)*sx+0.5f);
- *y0=(int)(y*sy+0.5f);
- *y1=(int)((y+h)*sy+0.5f);
+ *x0=(int)((320.0f+(x-320.0f)*cal_w/100.0f+cal_x)*sx+0.5f);
+ *x1=(int)((320.0f+(x+w-320.0f)*cal_w/100.0f+cal_x)*sx+0.5f);
+ *y0=(int)((240.0f+(y-240.0f)*cal_h/100.0f+cal_y)*sy+0.5f);
+ *y1=(int)((240.0f+(y+h-240.0f)*cal_h/100.0f+cal_y)*sy+0.5f);
  if(*x0<0)*x0=0;
  if(*y0<0)*y0=0;
+ if(*x1<0)*x1=0;
+ if(*y1<0)*y1=0;
  if(*x1>(int)mode->fbWidth)*x1=mode->fbWidth;
  if(*y1>(int)mode->xfbHeight)*y1=mode->xfbHeight;
 }

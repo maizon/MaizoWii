@@ -21,6 +21,7 @@ MAX_DL = 45 * 1024 * 1024
 RELEASES = {
     "usbloader_gx": ("wiidev/usbloadergx", "v4.0-r1283", "usbloadergx_r1283.zip"),
     "WiiSXRX": ("niuus/WiiSXRX", "v3.3", "WiiSXRX-3.3-FS.zip"),
+    "WiiSX": ("emukidid/pcsxgc", "Beta_4.2.2", "WiiSX-4.2.2.zip"),
     "snes9xgx": ("dborth/snes9xgx", "5.0.5", "Snes9xGX-5.0.5-Wii.zip"),
     "fceugx": ("dborth/fceugx", "4.0.4", "FCEUltraGX-4.0.4-Wii.zip"),
     "vbagx": ("dborth/vbagx", "3.0.5", "VisualBoyAdvanceGX-3.0.5-Wii.zip"),
@@ -351,7 +352,7 @@ def main():
         if not valid_dol((out / "apps/Nintendont/boot.dol").read_bytes()):
             raise ValueError("Nintendont DOL failed validation")
         # Make launcher module paths an explicit invariant.
-        expected = {"usbloader_gx", "Nintendont", "WiiSXRX", "snes9xgx", "fceugx", "vbagx", "WiiMC"}
+        expected = {"usbloader_gx", "Nintendont", "WiiSXRX", "WiiSX", "snes9xgx", "fceugx", "vbagx", "WiiMC"}
         for name in expected:
             assert valid_dol((out / "apps" / name / "boot.dol").read_bytes()), name
         (out / "maizo").mkdir(exist_ok=True)

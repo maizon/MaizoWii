@@ -48,6 +48,22 @@ static const char*paths[SYSTEM_COUNT][4]={
  {"usb:/apps/vbagx/boot.dol","sd:/apps/vbagx/boot.dol","usb:/maizo/modules/vbagx/boot.dol","sd:/maizo/modules/vbagx/boot.dol"},
  {"usb:/apps/WiiMC/boot.dol","sd:/apps/WiiMC/boot.dol","usb:/maizo/modules/wiimc/boot.dol","sd:/maizo/modules/wiimc/boot.dol"}
 };
+static const char*ps1_wiisx_paths[]={
+ "usb:/apps/WiiSX/boot.dol","sd:/apps/WiiSX/boot.dol",
+ "usb:/apps/wiiSX/boot.dol","sd:/apps/wiiSX/boot.dol",
+ "usb:/maizo/modules/wiisx/boot.dol","sd:/maizo/modules/wiisx/boot.dol"
+};
+static const char*resolve_media_official(void){
+ static const char*paths[]={"usb:/apps/WiiMC-official/boot.dol","sd:/apps/WiiMC-official/boot.dol"};
+ for(unsigned i=0;i<sizeof(paths)/sizeof(paths[0]);i++)
+  if(file_exists(paths[i]))return paths[i];
+ return NULL;
+}
+static const char*resolve_ps1_wiisx(void){
+ for(unsigned i=0;i<sizeof(ps1_wiisx_paths)/sizeof(ps1_wiisx_paths[0]);i++)
+  if(file_exists(ps1_wiisx_paths[i]))return ps1_wiisx_paths[i];
+ return NULL;
+}
 static const char*resolve(System sys){if(sys<0||sys>=SYSTEM_COUNT)return NULL;
  for(int i=0;i<4;i++)if(file_exists(paths[sys][i]))return paths[sys][i];return NULL;}
 /* Availability is an explicit snapshot, NOT repeated fopen() operations
@@ -76,7 +92,7 @@ const char*system_title(System sys){
 const char*module_name(System sys){
  switch(sys){
  case SYSTEM_WII:return "USB LOADER GX";case SYSTEM_GC:return "NINTENDONT";
- case SYSTEM_PS1:return "WIISXRX";case SYSTEM_SNES:return "SNES9X GX";
+ case SYSTEM_PS1:return "WIISXRX / WIISX 4.2.2";case SYSTEM_SNES:return "SNES9X GX";
  case SYSTEM_NES:return "FCE ULTRA GX";case SYSTEM_GBA:case SYSTEM_GB:return "VBA GX";
  case SYSTEM_MEDIA:return "WIIMC-SSLC";default:return "SEM MODULO";
  }
@@ -92,6 +108,8 @@ static int save_nincfg(const Game*g,const Config*c) {
  if(c->gc_video==2)n.VideoMode=0x00010000u|4u; /* force NTSC */
  if(c->gc_video==3)n.VideoMode=0x00010000u|1u; /* force PAL50 */
  n.Language=0xFFFFFFFFu;n.MaxPads=4;n.MemCardBlocks=2;
+ n.VideoScale=(s8)(c->gc_scale>=40&&c->gc_scale<=120?c->gc_scale:0);
+ n.VideoOffset=(s8)((int)(c->gc_offset<=40?c->gc_offset:20)-20);
  /* Nintendont expects a path relative to the selected root device. */
  const char *relative=strchr(g->path,':');relative=relative?relative+1:g->path;
  snprintf(n.GamePath,sizeof(n.GamePath),"%s",relative);
@@ -112,8 +130,8 @@ static void save_launch_record(const Game*g,const Config*c) {
  char dest[96];snprintf(dest,sizeof(dest),"%s/maizo",(g->path[0]=='s')?"sd:":"usb:");
  mkdir(dest,0777);strncat(dest,"/maizo-launch.txt",sizeof(dest)-strlen(dest)-1);
  FILE*f=fopen(dest,"wb");if(!f)return;
- fprintf(f,"MAIZO-LAUNCH/2\nsystem=%d\nfile=%s\nmodule=%s\nmedia_volume=%u\nps1_interpreter=%u\nps1_frameskip=%u\nps1_audio=%u\n",
- g->system,g->path,module_name(g->system),c->media_volume,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio);
+ fprintf(f,"MAIZO-LAUNCH/2\nsystem=%d\nfile=%s\nmodule=%s\nmedia_volume=%u\nps1_interpreter=%u\nps1_frameskip=%u\nps1_audio=%u\nps1_engine=%u\n",
+ g->system,g->path,module_name(g->system),c->media_volume,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio,c->ps1_engine);
  fclose(f);
 }
 /* MEM2 bootstrap: do not copy target DOL sections over the running frontend.
@@ -157,11 +175,12 @@ static int valid_dol(const unsigned char*image,size_t len){
 int module_launch(const Game*g,const Config*c,char*error,size_t cap){
  if(!g||!c||!error||!cap)return 0;
  error[0]=0;
- const char*exe=resolve(g->system);if(!exe){snprintf(error,cap,"DOL do %s nao encontrado",module_name(g->system));return 0;}
+ const char*exe=(g->system==SYSTEM_PS1&&c->ps1_engine)?resolve_ps1_wiisx():
+                (g->system==SYSTEM_MEDIA&&c->media_player)?resolve_media_official():resolve(g->system);if(!exe){snprintf(error,cap,"DOL do %s nao encontrado",module_name(g->system));return 0;}
  if(g->system==SYSTEM_PS1){
   const char*e=strrchr(g->path,'.');
   if(e&&(!strcasecmp(e,".chd")||!strcasecmp(e,".m3u"))){
-   snprintf(error,cap,"WiiSXRX original nao suporta este formato diretamente");return 0;
+   snprintf(error,cap,"Formato PS1 nao validado para autoboot. Use BIN/CUE ou ISO");return 0;
   }
  }
  /* Fail before reboot when CUE tracks/PS1 image are missing or malformed. */
@@ -173,6 +192,11 @@ int module_launch(const Game*g,const Config*c,char*error,size_t cap){
  spec.wii_ios=c->wii_ios;spec.wii_usb_port=c->wii_usb_port;
  spec.ps1_interpreter=c->ps1_interpreter;spec.ps1_frameskip=c->ps1_frameskip;
  spec.ps1_audio=c->ps1_audio;
+ spec.ps1_engine=c->ps1_engine;spec.ps1_native=c->ps1_native;
+ spec.ps1_video=c->ps1_video;spec.ps1_aspect=c->ps1_aspect;
+ spec.ps1_deflicker=c->ps1_deflicker;spec.ps1_dither=c->ps1_dither;
+ spec.ps1_fps=c->ps1_fps;spec.ps1_limit=c->ps1_limit;
+ spec.media_autoboot=c->media_autoboot;
  MaizoLaunchArgs command;
  if(!maizo_build_args(&spec,&command,error,cap))return 0;
  FILE*f=fopen(exe,"rb");if(!f){snprintf(error,cap,"Nao abre o modulo");return 0;}

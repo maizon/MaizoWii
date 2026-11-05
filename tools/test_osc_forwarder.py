@@ -14,7 +14,7 @@ class OSCForwarderTests(unittest.TestCase):
         self.assertEqual(h,PINNED)
     def test_channel_and_hbc_share_osc_booter(self):
         source=(FORWARDER/"main.c").read_text()
-        self.assertIn("MAIZO OSC/FIX94 FORWARDER v4",source)
+        self.assertIn("MAIZO OSC/FIX94 FORWARDER v5",source)
         self.assertIn("osc_app_booter",source)
         self.assertNotIn("maizo_bootstub",source)
         self.assertIn("SYS_ResetSystem(SYS_SHUTDOWN",source)
@@ -27,10 +27,10 @@ class OSCForwarderTests(unittest.TestCase):
             "/* Unlike fatInitDefault(),","/* Unlike default init"))
     def test_wad_uses_explicit_replacement_name(self):
         w=(ROOT/".github/workflows/forwarder-wad.yml").read_text()
-        self.assertIn("MAIZOWII-FORWARDER-OSC-FIX94-v4-MZIO-EXPERIMENTAL.wad",w)
+        self.assertIn("MAIZOWII-FORWARDER-OSC-FIX94-v5-MZIO-EXPERIMENTAL.wad",w)
         self.assertIn("-id MZIO",w)
         self.assertIn("-ios 58",w)
-        self.assertIn("MAIZO OSC/FIX94 FORWARDER v4",w)
+        self.assertIn("MAIZO OSC/FIX94 FORWARDER v5",w)
 
 if __name__=="__main__":
     unittest.main()

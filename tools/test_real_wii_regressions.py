@@ -7,6 +7,23 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class WiiRealBootRegressions(unittest.TestCase):
+    def test_422_integration_and_nintendont_native_geometry(self):
+        package = (ROOT / "tools/package_all.py").read_text()
+        launch = (ROOT / "source/launch.c").read_text()
+        settings = (ROOT / "source/settings.c").read_text()
+        self.assertIn("Beta_4.2.2", package)
+        self.assertIn("resolve_ps1_wiisx", launch)
+        self.assertIn("n.VideoScale=", launch)
+        self.assertIn("n.VideoOffset=", launch)
+        self.assertIn("CALIBRAR TELA MAIZO", settings)
+
+    def test_wad_mounts_usb_independently(self):
+        fw = (ROOT / "forwarder/main.c").read_text()
+        front = (ROOT / "source/main.c").read_text()
+        self.assertIn("IOS_ReloadIOS(58)", fw)
+        self.assertIn('fatMountSimple("usb",&__io_usbstorage)', front)
+        self.assertIn('storage_root("usb:/")', front)
+
     def test_devkitpro_3f00_entry_supported_in_both_loaders(self):
         launch = (ROOT / "source/launch.c").read_text()
         forwarder = (ROOT / "forwarder/main.c").read_text()

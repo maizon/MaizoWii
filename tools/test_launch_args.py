@@ -13,7 +13,12 @@ class Spec(ctypes.Structure):
                 ("path", ctypes.c_char_p), ("id", ctypes.c_char_p),
                 ("wii_ios", ctypes.c_uint), ("wii_usb_port", ctypes.c_uint),
                 ("ps1_interpreter", ctypes.c_uint), ("ps1_frameskip", ctypes.c_uint),
-                ("ps1_audio", ctypes.c_uint)]
+                ("ps1_audio", ctypes.c_uint),
+                ("ps1_engine", ctypes.c_uint), ("ps1_native", ctypes.c_uint),
+                ("ps1_video", ctypes.c_uint), ("ps1_aspect", ctypes.c_uint),
+                ("ps1_deflicker", ctypes.c_uint), ("ps1_dither", ctypes.c_uint),
+                ("ps1_fps", ctypes.c_uint), ("ps1_limit", ctypes.c_uint),
+                ("media_autoboot", ctypes.c_uint)]
 
 class Args(ctypes.Structure):
     _fields_ = [("data", ctypes.c_char * 2048),
@@ -43,7 +48,9 @@ class LaunchArgsTests(unittest.TestCase):
     def build(self, system, path, ident=b"RMCE01", **values):
         fields = dict(system=system, executable=b"usb:/apps/module/boot.dol", path=path,
                       id=ident, wii_ios=249, wii_usb_port=0, ps1_interpreter=1,
-                      ps1_frameskip=0, ps1_audio=1)
+                      ps1_frameskip=0, ps1_audio=1, ps1_engine=0, ps1_native=0,
+                      ps1_video=0, ps1_aspect=0, ps1_deflicker=0,
+                      ps1_dither=0, ps1_fps=0, ps1_limit=0, media_autoboot=1)
         fields.update(values)
         spec = Spec(**fields)
         out = Args()
@@ -76,6 +83,17 @@ class LaunchArgsTests(unittest.TestCase):
         self.assertIsNone(self.build(2, b"usb:/ps1/test.chd"))
         self.assertIsNone(self.build(2, b"sd:/ps1/test.M3U"))
 
+    def test_wiisx_422_autoboot_and_real_video_options(self):
+        self.assertEqual(self.build(2,b"usb:/ps1/Crash.cue",ps1_engine=1,
+                        ps1_native=1,ps1_video=2,ps1_aspect=2,
+                        ps1_deflicker=1,ps1_dither=2,ps1_fps=1,ps1_limit=1),
+                         [b"usb:/apps/module/boot.dol",b"usb:/ps1/Crash.cue",
+                          b"Core=1",b"Audio=1",b"SkipFrames=0",b"NativeOutput=1",
+                          b"VideoMode=2",b"ScreenMode=2",b"Deflicker=1",
+                          b"Dithering=2",b"FPS=1",b"LimitFrames=1"])
+        self.assertIsNone(self.build(2,b"usb:/ps1/Crash.cue",ps1_engine=2))
+        self.assertIsNone(self.build(2,b"usb:/ps1/Crash.cue",ps1_engine=1,ps1_video=4))
+
     def test_gx_emulators_snes_nes_gba_gb(self):
         for system, ext in ((3,b"sfc"),(4,b"nes"),(5,b"gba"),(6,b"gbc")):
             with self.subTest(system=system):
@@ -88,6 +106,9 @@ class LaunchArgsTests(unittest.TestCase):
         self.assertEqual(self.build(7, b"sd:/music/track.mp3"),
                          [b"usb:/apps/module/boot.dol", b"sd1:/music/track.mp3"])
         self.assertIsNone(self.build(7, b"usb:/videos/movie%p.mp4"))
+        self.assertEqual(self.build(7, b"usb:/videos/movie.mp4",media_autoboot=0),
+                         [b"usb:/apps/module/boot.dol"])
+        self.assertIsNone(self.build(7, b"usb:/videos/movie.mp4",media_autoboot=2))
 
     def test_bad_paths_and_system(self):
         self.assertIsNone(self.build(8, b"sd:/games/test.iso"))

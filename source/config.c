@@ -16,7 +16,7 @@ static int commit_file(const char*tmp,const char*dest){
  if(rename(tmp,dest)==0){remove(backup);return 1;}
  rename(backup,dest);remove(tmp);return 0;
 }
-void config_defaults(Config*c){memset(c,0,sizeof(*c));c->wii_ios=249;c->wii_usb_port=0;c->gc_memcard=1;c->gc_skip_ipl=1;c->ps1_audio=1;c->media_volume=75;}
+void config_defaults(Config*c){memset(c,0,sizeof(*c));c->wii_ios=249;c->wii_usb_port=0;c->gc_memcard=1;c->gc_skip_ipl=1;c->ps1_audio=1;c->media_volume=75;c->gc_offset=20;c->media_autoboot=1;c->video_x=50;c->video_y=50;c->video_w=100;c->video_h=100;}
 void config_load(Config*c){config_defaults(c);char p[80];snprintf(p,sizeof(p),"%s/settings.ini",where());FILE*f=fopen(p,"rb");if(!f){
   char backup[100];snprintf(backup,sizeof(backup),"%s.bak",p);
   f=fopen(backup,"rb");
@@ -40,11 +40,27 @@ void config_load(Config*c){config_defaults(c);char p[80];snprintf(p,sizeof(p),"%
   else if(!strcmp(key,"ps1_frameskip"))c->ps1_frameskip=!!val;
   else if(!strcmp(key,"ps1_audio"))c->ps1_audio=!!val;
   else if(!strcmp(key,"media_volume"))c->media_volume=val>100?100:val;
+  else if(!strcmp(key,"media_player"))c->media_player=val%2;
+  else if(!strcmp(key,"media_autoboot"))c->media_autoboot=val%2;
+  else if(!strcmp(key,"ps1_engine"))c->ps1_engine=val%2;
+  else if(!strcmp(key,"ps1_native"))c->ps1_native=val%2;
+  else if(!strcmp(key,"ps1_video"))c->ps1_video=val%4;
+  else if(!strcmp(key,"ps1_aspect"))c->ps1_aspect=val%3;
+  else if(!strcmp(key,"ps1_deflicker"))c->ps1_deflicker=val%2;
+  else if(!strcmp(key,"ps1_dither"))c->ps1_dither=val%3;
+  else if(!strcmp(key,"ps1_fps"))c->ps1_fps=val%2;
+  else if(!strcmp(key,"ps1_limit"))c->ps1_limit=val%2;
+  else if(!strcmp(key,"gc_scale"))c->gc_scale=(val>=40&&val<=120&&!(val%2))?val:0;
+  else if(!strcmp(key,"gc_offset"))c->gc_offset=val<=40?val:20;
+  else if(!strcmp(key,"video_x"))c->video_x=val<=100?val:50;
+  else if(!strcmp(key,"video_y"))c->video_y=val<=100?val:50;
+  else if(!strcmp(key,"video_w"))c->video_w=(val>=70&&val<=130)?val:100;
+  else if(!strcmp(key,"video_h"))c->video_h=(val>=70&&val<=130)?val:100;
  }fclose(f);}
 int config_save(const Config*c){const char*root=where();mkdir(root,0777);
  char p[80],tmp[80];snprintf(p,sizeof(p),"%s/settings.ini",root);snprintf(tmp,sizeof(tmp),"%s/settings.tmp",root);FILE*f=fopen(tmp,"wb");if(!f)return 0;
- fprintf(f,"theme=%u\nlayout=%u\nwii_ios=%u\nwii_usb_port=%u\ngc_mc_multi=%u\ngc_native_si=%u\ngc_rem_limit=%u\ngc_memcard=%u\ngc_wide=%u\ngc_cheats=%u\ngc_skip_ipl=%u\ngc_video=%u\nps1_interpreter=%u\nps1_frameskip=%u\nps1_audio=%u\nmedia_volume=%u\n",
- c->theme,c->layout,c->wii_ios,c->wii_usb_port,c->gc_mc_multi,c->gc_native_si,c->gc_rem_limit,c->gc_memcard,c->gc_wide,c->gc_cheats,c->gc_skip_ipl,c->gc_video,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio,c->media_volume);
+ fprintf(f,"theme=%u\nlayout=%u\nwii_ios=%u\nwii_usb_port=%u\ngc_mc_multi=%u\ngc_native_si=%u\ngc_rem_limit=%u\ngc_memcard=%u\ngc_wide=%u\ngc_cheats=%u\ngc_skip_ipl=%u\ngc_video=%u\nps1_interpreter=%u\nps1_frameskip=%u\nps1_audio=%u\nmedia_volume=%u\nps1_engine=%u\nps1_native=%u\nps1_video=%u\nps1_aspect=%u\nps1_deflicker=%u\nps1_dither=%u\nps1_fps=%u\nps1_limit=%u\ngc_scale=%u\ngc_offset=%u\nvideo_x=%u\nvideo_y=%u\nvideo_w=%u\nvideo_h=%u\nmedia_player=%u\nmedia_autoboot=%u\n",
+ c->theme,c->layout,c->wii_ios,c->wii_usb_port,c->gc_mc_multi,c->gc_native_si,c->gc_rem_limit,c->gc_memcard,c->gc_wide,c->gc_cheats,c->gc_skip_ipl,c->gc_video,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio,c->media_volume,c->ps1_engine,c->ps1_native,c->ps1_video,c->ps1_aspect,c->ps1_deflicker,c->ps1_dither,c->ps1_fps,c->ps1_limit,c->gc_scale,c->gc_offset,c->video_x,c->video_y,c->video_w,c->video_h,c->media_player,c->media_autoboot);
  if(fclose(f)){remove(tmp);return 0;}
  return commit_file(tmp,p);
 }
@@ -100,12 +116,24 @@ void config_game_load(Config*out,const Config*defaults,const Game*g){
    else if(!strcmp(key,"gc_mc_multi"))out->gc_mc_multi=!!value;
    else if(!strcmp(key,"gc_native_si"))out->gc_native_si=!!value;
    else if(!strcmp(key,"gc_rem_limit"))out->gc_rem_limit=!!value;
+   else if(!strcmp(key,"gc_scale"))out->gc_scale=(value>=40&&value<=120&&!(value%2))?value:0;
+   else if(!strcmp(key,"gc_offset"))out->gc_offset=value<=40?value:20;
   } else if(g->system==SYSTEM_PS1){
    if(!strcmp(key,"ps1_interpreter"))out->ps1_interpreter=!!value;
    else if(!strcmp(key,"ps1_frameskip"))out->ps1_frameskip=!!value;
    else if(!strcmp(key,"ps1_audio"))out->ps1_audio=!!value;
+   else if(!strcmp(key,"ps1_engine"))out->ps1_engine=value%2;
+   else if(!strcmp(key,"ps1_native"))out->ps1_native=value%2;
+   else if(!strcmp(key,"ps1_video"))out->ps1_video=value%4;
+   else if(!strcmp(key,"ps1_aspect"))out->ps1_aspect=value%3;
+   else if(!strcmp(key,"ps1_deflicker"))out->ps1_deflicker=value%2;
+   else if(!strcmp(key,"ps1_dither"))out->ps1_dither=value%3;
+   else if(!strcmp(key,"ps1_fps"))out->ps1_fps=value%2;
+   else if(!strcmp(key,"ps1_limit"))out->ps1_limit=value%2;
   } else if(g->system==SYSTEM_MEDIA){
    if(!strcmp(key,"media_volume")&&value<=100)out->media_volume=value;
+   else if(!strcmp(key,"media_player"))out->media_player=value%2;
+   else if(!strcmp(key,"media_autoboot"))out->media_autoboot=value%2;
   }
  }
  fclose(f);
@@ -131,16 +159,16 @@ int config_game_save(const Config*c,const Game*g){
   case SYSTEM_GC:
    ok &= fprintf(f,"gc_memcard=%u\ngc_wide=%u\ngc_cheats=%u\n"
     "gc_skip_ipl=%u\ngc_video=%u\ngc_mc_multi=%u\n"
-    "gc_native_si=%u\ngc_rem_limit=%u\n",
+    "gc_native_si=%u\ngc_rem_limit=%u\ngc_scale=%u\ngc_offset=%u\n",
     c->gc_memcard,c->gc_wide,c->gc_cheats,c->gc_skip_ipl,
-    c->gc_video,c->gc_mc_multi,c->gc_native_si,c->gc_rem_limit)>0;
+    c->gc_video,c->gc_mc_multi,c->gc_native_si,c->gc_rem_limit,c->gc_scale,c->gc_offset)>0;
    break;
   case SYSTEM_PS1:
-   ok &= fprintf(f,"ps1_interpreter=%u\nps1_frameskip=%u\nps1_audio=%u\n",
-    c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio)>0;
+   ok &= fprintf(f,"ps1_interpreter=%u\nps1_frameskip=%u\nps1_audio=%u\nps1_engine=%u\nps1_native=%u\nps1_video=%u\nps1_aspect=%u\nps1_deflicker=%u\nps1_dither=%u\nps1_fps=%u\nps1_limit=%u\n",
+    c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio,c->ps1_engine,c->ps1_native,c->ps1_video,c->ps1_aspect,c->ps1_deflicker,c->ps1_dither,c->ps1_fps,c->ps1_limit)>0;
    break;
   case SYSTEM_MEDIA:
-   ok &= fprintf(f,"media_volume=%u\n",c->media_volume)>0;
+   ok &= fprintf(f,"media_volume=%u\nmedia_player=%u\nmedia_autoboot=%u\n",c->media_volume,c->media_player,c->media_autoboot)>0;
    break;
   default:break;
  }
