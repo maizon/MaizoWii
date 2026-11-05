@@ -23,7 +23,9 @@ def require_strong_libogc_sbrk(elf: pathlib.Path, nm: str) -> None:
         words = line.split()
         if len(words) == 3 and len(words[1]) == 1:
             symbols[words[2]] = words[1]
-    # The wrapper __syscall_sbrk_r may be inlined into the strong _sbrk_r\n    # under -O2 and then garbage-collected, which is expected.\n    needed = {
+    # The wrapper __syscall_sbrk_r may be inlined into the strong _sbrk_r
+    # under -O2 and then garbage-collected, which is expected.
+    needed = {
         "_sbrk_r": "T",
         "__libogc_sbrk_r": "T",
         "SYS_AllocateFramebuffer": "T",

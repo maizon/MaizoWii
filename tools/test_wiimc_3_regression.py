@@ -39,6 +39,7 @@ class WiiMC3RegressionTests(unittest.TestCase):
         self.assertIn("void *_sbrk_r(struct _reent *r, ptrdiff_t incr)", bridge)
         self.assertIn("return __syscall_sbrk_r(r, incr);", bridge)
         check=(ROOT/"tools/verify_wiimc_heap.py").read_text()
+        ast.parse(check)
         self.assertIn('"_sbrk_r": "T"', check)
         workflow=(ROOT/".github/workflows/build-adapted-modules.yml").read_text()
         self.assertIn("python3 tools/verify_wiimc_heap.py upstream/wiimc.elf", workflow)
