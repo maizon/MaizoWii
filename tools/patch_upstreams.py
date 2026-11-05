@@ -66,6 +66,17 @@ def fix_pad_update(text: str, key: str, is_wiimc: bool):
 
 def patch_wiimc(root: Path):
     install_inc(root, "source")
+    # WiiMC plays movies from USB mass storage. Do not enumerate, close or
+    # initialize USB devices during playback. Copy HID input reports from
+    # the existing async interrupt endpoint only; no USB IOCTL calls here.
+    wiimc_hid = root / "source/maizo_hid.inc"
+    wiimc_hid.write_text(wiimc_hid.read_text(encoding="utf-8") +
+        "\nstatic void maizo_hid_tick_attached(void){\n"
+        "  for(int i=0;i<4;i++){\n"
+        "    mh_previous[i]=mh_buttons[i];\n"
+        "    mh_buttons[i]=mh_live[i]?mh_report_buttons[i]:0;\n"
+        "  }\n"
+        "}\n",encoding="utf-8")
     # Libretro's old libogc/newlib runtime bridge; needed for the matched
     # precompiled WiiMC player to use memory, threads and FAT on GCC 2026.
     shutil.copyfile(SOURCE.parent / "wiimc_syscalls_compat.c",
@@ -73,21 +84,23 @@ def patch_wiimc(root: Path):
     def input_patch(s):
         s = replace_once(s,'#include "input.h"', '#include "input.h"\n#include "maizo_hid.inc"', "WiiMC")
         s = fix_pad_update(s, "PAD_ScanPads();", True)
-        # A USB bus rescan during video decode can collide with the USB
-        # mass-storage player under IOS58. Only poll an already-attached HID
-        # during playback; discover new controllers in the normal WiiMC GUI.
+        # Avoid USB device enumeration while MPlayer reads USB storage.
+        # An attached controller is asynchronously updated by the HID driver;
+        # playback only snapshots its already-open input report.
         s = replace_once(s, "\tmaizo_hid_tick();",
-            "\t/* Allow USB storage and MPlayer initialization to settle " +
-            "before probing HID devices. */\n"
             "\tstatic unsigned maizoHidWarmup=0;\n"
-            "\tif(maizoHidWarmup < 180)maizoHidWarmup++;\n"
-            "\tif(maizoHidWarmup >= 180 && " +
-            "(!wiiIsPlaying() || maizo_hid_connected(0) || " +
-            "maizo_hid_connected(1))) maizo_hid_tick();",
-            "WiiMC USB HID non-invasive playback polling")
+            "\tif(maizoHidWarmup<180)maizoHidWarmup++;\n"
+            "\tif(maizoHidWarmup>=180){\n"
+            "\t\tif(wiiIsPlaying())maizo_hid_tick_attached();\n"
+            "\t\telse maizo_hid_tick();\n"
+            "\t}",
+            "WiiMC GUI-only HID USB enumeration")
         # DrawMPlayerGui calls UpdatePads immediately before MPlayerInput.
         # Read the same snapshot: calling PAD_ButtonsDown a second time can
         # lose HID edges and mismatch GUI/video controls.
+        # Keep native WiiMC player input semantics. Only replace GC PAD
+        # reads with the already-combined WiiMC userInput snapshots.
+        # This preserves pause, seeking, OSD and volume commands unchanged.
         s = replace_once(s, "u16 down = PAD_ButtonsDown(cur_chan);",
                          "u16 down = userInput[cur_chan].pad.btns_d;", "MPlayerInput snapshot down")
         s = replace_once(s, "u16 held = PAD_ButtonsHeld(cur_chan);",
@@ -102,147 +115,9 @@ def patch_wiimc(root: Path):
                       "down = userInput[cur_chan].pad.btns_d;")
         return s
     patch_file(root, "source/input.cpp", input_patch)
-    def wiimc_autoplay(s):
-        s = replace_once(s, "sprintf(loadedFile, argv[1]);",
-                         'snprintf(loadedFile, sizeof(loadedFile), "%s", argv[1]);',
-                         "WiiMC argv format")
-        # Validate argv media AFTER WiiMC has mounted usb1:/sd1:/. A
-        # frontend DOL boot can succeed while the player uses a different
-        # FAT partition alias, and upstream immediately blacks the screen.
-        # Preserve the original engine; simply reject unreadable files and
-        # search mounted USB partitions rather than hanging on a bad path.
-        s = replace_once(s,
-            "FindAppPath(); // Initialize SD and USB devices and look for apps/wiimc",
-            """FindAppPath(); // Initialize SD and USB devices and look for apps/wiimc
-    if(loadedFile[0] != 0 &&
-       (!strncmp(loadedFile, "usb", 3) || !strncmp(loadedFile, "sd", 2))) {
-        FILE *mediaCheck = fopen(loadedFile, "rb");
-        if(!mediaCheck && !strncmp(loadedFile, "usb1:/", 6)) {
-            char original[sizeof(loadedFile)];
-            snprintf(original,sizeof(original),"%s",loadedFile);
-            for(int volume=2;volume<=5 && !mediaCheck;volume++) {
-                snprintf(loadedFile,sizeof(loadedFile),
-                         "usb%d:/%s",volume,original+6);
-                mediaCheck = fopen(loadedFile,"rb");
-            }
-            if(!mediaCheck)
-                snprintf(loadedFile,sizeof(loadedFile),"%s",original);
-        }
-        if(mediaCheck) {
-            fclose(mediaCheck);
-            printf("MAIZO WIIMC 3.0: media OK: %s\\n",loadedFile);
-        } else {
-            printf("MAIZO WIIMC 3.0: media nao montada: %s\\n",loadedFile);
-            loadedFile[0] = 0; // show native GUI; never silently black out
-        }
-    }""",
-            "WiiMC media path preflight after FAT mount")
-        # WiiMC deliberately sets AutobootExit on argv playback and then
-        # reboots when the movie ends. Keep the working player but return
-        # to its normal browser / playback GUI instead of resetting Wii.
-        return replace_once(
-            s, 'snprintf(loadedFile, sizeof(loadedFile), "%s", argv[1]);\n\t\tAutobootExit = true;',
-            'snprintf(loadedFile, sizeof(loadedFile), "%s", argv[1]);\n\t\tAutobootExit = false;',
-            "WiiMC do not reboot at video EOF")
-    patch_file(root, "source/wiimc.cpp", wiimc_autoplay)
-    # Original 3.0 playback worker can remain in status 2/1 indefinitely if
-    # it fails to enter the codec engine. Bound these waits and make the
-    # existing GUI recover. This is a defensive timeout, not codec support.
-    def player_deadlock_guards(t):
-        t = replace_once(t,
-            "\tmplayerstack=(u8*)(memalign(32,MPLAYER_STACKSIZE*sizeof(u8)));\n"
-            "\tmemset(mplayerstack,0,MPLAYER_STACKSIZE*sizeof(u8));\n"
-            "\tLWP_CreateThread (&mthread, mplayerthread, NULL, mplayerstack, MPLAYER_STACKSIZE, 68);",
-            "\tmplayerstack=(u8*)(memalign(32,MPLAYER_STACKSIZE*sizeof(u8)));\n"
-            "\tif(!mplayerstack){printf(\"MAIZO WIIMC: no MPlayer stack\\n\");return false;}\n"
-            "\tmemset(mplayerstack,0,MPLAYER_STACKSIZE*sizeof(u8));\n"
-            "\tif(LWP_CreateThread(&mthread,mplayerthread,NULL,mplayerstack,MPLAYER_STACKSIZE,68)<0){\n"
-            "\t\tprintf(\"MAIZO WIIMC: thread creation failed\\n\");\n"
-            "\t\tfree(mplayerstack);return false;\n"
-            "\t}",
-            "WiiMC handle failed MPlayer thread init")
-        t = replace_once(t,
-            "\twhile(controlledbygui == 2)\n\t\tusleep(100);",
-            "\tu64 maizoOldPlayerWait=gettime();\n"
-            "\twhile(controlledbygui==2 && diff_sec(maizoOldPlayerWait,gettime())<20)\n"
-            "\t\tusleep(1000);\n"
-            "\tif(controlledbygui==2){\n"
-            "\t\tprintf(\"MAIZO WIIMC: previous player never released control\\n\");\n"
-            "\t\tcontrolledbygui=1;ResumeDeviceThread();return;\n"
-            "\t}",
-            "WiiMC cap dead previous decoder")
-        t = replace_once(t,
-            "\twhile(controlledbygui != 0)\n\t\tusleep(100);",
-            "\tu64 maizoStartWait=gettime();\n"
-            "\twhile(controlledbygui!=0 && diff_sec(maizoStartWait,gettime())<25)\n"
-            "\t\tusleep(1000);\n"
-            "\tif(controlledbygui!=0){\n"
-            "\t\tprintf(\"MAIZO WIIMC: player did not start within 25s\\n\");\n"
-            "\t\tcontrolledbygui=1;ResumeDeviceThread();\n"
-            "\t}",
-            "WiiMC cap dead startup/unsupported codec")
-        return t
-    patch_file(root, "source/wiimc.cpp", player_deadlock_guards)
-    # In 3.0 tiled-video mode, MPlayerInput is skipped without a valid
-    # Wiimote IR pointer, even with gamepad buttons pressed. Keep the old
-    # video renderer and explicitly honor PAD/HID snapshots while tiled.
-    def video_hid(t):
-        old = ("else if (!wiiTiledRender)\n"
-               "\t\tMPlayerInput();\n"
-               "\telse if(point_on)\n"
-               "\t\tMPlayerInput();")
-        new = ("else if (!wiiTiledRender || point_on ||\n"
-               "\t         userInput[0].pad.btns_d || userInput[0].pad.btns_h ||\n"
-               "\t         userInput[1].pad.btns_d || userInput[1].pad.btns_h)\n"
-               "\t\tMPlayerInput();")
-        return replace_once(t,old,new,"WiiMC 3.0 HID control during tiled video")
-    patch_file(root, "source/video.cpp", video_hid)
-
-    # Preserve the original 3.0 interface, but do not black out the TV
-    # before first-frame success. On a missing/stalled MPlayer, the menu is
-    # still visible and can report a failure rather than appearing bricked.
-    def gui_autoplay_recovery(t):
-        t = replace_once(t,
-            "if(loadedFile[0] != 0)\n\t\t{\n\t\t\tVIDEO_SetBlack(TRUE);\n\t\t}",
-            "if(loadedFile[0] != 0)\n\t\t{\n\t\t\tVIDEO_SetBlack(FALSE);\n\t\t}",
-            "WiiMC show GUI before autoplay")
-        t = replace_once(t,
-            "\t\t\tguiShutdown = true;\n\t\t\tsleep(2); // USB mount delay\n\n"
-            "\t\t\tLoadNewFile();\n\n"
-            "\t\t\tSuspendParseThread();\n\t\t\tSuspendGui();",
-            "\t\t\tguiShutdown = true;\n\t\t\tsleep(2); // USB mount delay\n\n"
-            "\t\t\tint launched = LoadNewFile();\n"
-            "\t\t\tif(launched == 1 && controlledbygui == 0) {\n"
-            "\t\t\t\tSuspendParseThread();\n\t\t\t\tSuspendGui();\n"
-            "\t\t\t} else {\n"
-            "\t\t\t\tguiShutdown = false;\n"
-            "\t\t\t\tloadedFile[0] = 0;\n"
-            "\t\t\t\tprintf(\"MAIZO WIIMC: playback aborted, showing GUI.\\\\n\");\n"
-            "\t\t\t}",
-            "WiiMC fail-open autoboot UI")
-        return t
-    patch_file(root, "source/menu.cpp", gui_autoplay_recovery)
-    # The menu can wait forever for an MPlayer status transition even when
-    # the playback worker has already failed. A bounded error path is safer
-    # than silently leaving the Wii frozen on a black framebuffer.
-    def bound_video_gui_wait(t):
-        old = ("\t// wait until MPlayer is ready to take control (or return control)\n"
-               "\twhile(!guiShutdown && controlledbygui != 1)\n"
-               "\t\tusleep(THREAD_SLEEP);\n\n"
-               "\tif(guiShutdown)")
-        new = ("\t// MAIZO: bound a stalled player; restore the file browser.\n"
-               "\tu64 maizoGuiStart=gettime();\n"
-               "\twhile(!guiShutdown && controlledbygui != 1 && "
-               "diff_sec(maizoGuiStart,gettime())<25)\n"
-               "\t\tusleep(THREAD_SLEEP);\n"
-               "\tif(!guiShutdown && controlledbygui != 1){\n"
-               "\t\tprintf(\"MAIZO WIIMC: file open timed out; returning to GUI\\\\n\");\n"
-               "\t\tisLoadingFile=false;ResumeDeviceThread();return 0;\n"
-               "\t}\n\n"
-               "\tif(guiShutdown)")
-        return replace_once(t,old,new,"WiiMC menu file-open timeout")
-    patch_file(root, "source/menu.cpp", bound_video_gui_wait)
-
+    # Keep stock WiiMC playback, video, GUI, autoplay and MPlayer threads
+    # byte-for-byte original. Only controller translation is changed.
+    # Earlier versions altered these paths and crashed with DSI on real Wii.
     # This legacy MPlayer subtitle tag attempted to call libogc pad motor
     # from the isolated MPlayer C build without its header. Discard only
     # this nonessential subtitle-triggered rumble, preserving playback.

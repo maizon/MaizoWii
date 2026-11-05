@@ -58,6 +58,9 @@ jobs:
     container: ${{ matrix.container }}
     steps:
       - uses: actions/checkout@v4
+      - name: Verify WiiMC player remains original (HID-only source changes)
+        if: matrix.module == 'WiiMC'
+        run: python3 tools/test_wiimc_minimal.py
       - name: Fingerprint ONLY this module's patch code and shared HID dependencies
         id: signature
         run: |
