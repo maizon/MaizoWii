@@ -45,10 +45,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: forwarder/boot.dol
-          key: maizo-forwarder-v2-${{ hashFiles('forwarder/main.c', 'forwarder/Makefile', 'include/**', 'bootstub/**', 'tools/embed_bootstub.py') }}-devkitppc-20261102-${{ inputs.full_rebuild && github.run_id || 'regular' }}
+          key: maizo-forwarder-v4-osc-${{ hashFiles('forwarder/main.c', 'forwarder/Makefile', 'forwarder/data/**', 'tools/embed_osc_booter.py') }}-devkitppc-20261102-${{ inputs.full_rebuild && github.run_id || 'regular' }}
       - name: Compile forwarder on cache miss only
         if: steps.cached-forwarder.outputs.cache-hit != 'true'
         run: make -C forwarder -j2
+      - name: Verify OSC/FIX94 forwarder selected (not old MEM2 bootstub)
+        run: |
+          strings forwarder/boot.dol | grep -F 'MAIZO OSC/FIX94 FORWARDER v4'
+          python3 tools/test_osc_forwarder.py
       - name: Stage frontend
         run: |
           test -s boot.dol

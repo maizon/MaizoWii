@@ -7,7 +7,8 @@ on:
       - 'tools/render_wad_titles.py'
       - 'tools/inspect_forwarder_wad.py'
       - 'forwarder/**'
-      - 'bootstub/**'
+      - 'tools/embed_osc_booter.py'
+      - 'tools/test_osc_forwarder.py'
 
 permissions:
   contents: read
@@ -19,10 +20,12 @@ jobs:
       image: devkitpro/devkitppc:20261102
     steps:
       - uses: actions/checkout@v4
-      - name: Compile tested SD/USB forwarder DOL
+      - name: Compile OSC/FIX94 SD+USB forwarder DOL
         run: |
+          python3 tools/test_osc_forwarder.py
           make -C forwarder -j2
           test -s forwarder/boot.dol
+          strings forwarder/boot.dol | grep -F 'MAIZO OSC/FIX94 FORWARDER v4'
       - uses: actions/upload-artifact@v4
         with:
           name: maizo-forwarder-dol-for-wad
@@ -68,10 +71,10 @@ jobs:
             -icon channel-base/channel/banner/build/icon.arc \
             -dol wad-input/boot.dol \
             -id MZIO -name "Maizo Wii" -ios 58 -loader comex \
-            -o wad-output/MAIZOWII-Forwarder-MZIO-EXPERIMENTAL.wad
-          python3 tools/inspect_forwarder_wad.py wad-output/MAIZOWII-Forwarder-MZIO-EXPERIMENTAL.wad
-          sha256sum wad-output/MAIZOWII-Forwarder-MZIO-EXPERIMENTAL.wad > wad-output/SHA256SUMS
-          echo "DO NOT INSTALL UNTIL VERIFIED IN DOLPHIN Wii Menu AND NAND BACKUP AVAILABLE" > wad-output/LEIA-ANTES-DE-INSTALAR.txt
+            -o wad-output/MAIZOWII-FORWARDER-OSC-FIX94-v4-MZIO-EXPERIMENTAL.wad
+          python3 tools/inspect_forwarder_wad.py wad-output/MAIZOWII-FORWARDER-OSC-FIX94-v4-MZIO-EXPERIMENTAL.wad
+          sha256sum wad-output/MAIZOWII-FORWARDER-OSC-FIX94-v4-MZIO-EXPERIMENTAL.wad > wad-output/SHA256SUMS
+          printf '%s\n' 'MAIZO OSC/FIX94 FORWARDER v4 — SUBSTITUI O WAD ANTIGO MZIO' 'NAO INSTALAR SEM TESTAR NO DOLPHIN E TER BACKUP DA NAND' 'Ao iniciar, verifique que a tela exibe OSC/FIX94 FORWARDER v4' 'Executavel externo exigido em sd:/apps/maizo/boot.dol ou usb:/apps/maizo/boot.dol' > wad-output/LEIA-ANTES-DE-INSTALAR.txt
       - uses: actions/upload-artifact@v4
         with:
           name: MAIZOWII-WAD-EXPERIMENTAL-NOT-HARDWARE-VERIFIED

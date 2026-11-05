@@ -1,141 +1,194 @@
 /*
- * MAIZO Wii minimal SD/USB forwarder, GPL-3.0-or-later.
- * This DOL is for HBC/forwarder testing, not itself a NAND-installable WAD.
- * No title or IOS installation; only launches apps/maizo/boot.dol.
- * Reuses the tested MAIZO MEM2 bootstub. Hardware verification pending.
+ * Copyright 2009 The Lemon Man and thanks to luccax, Wiipower, Aurelio and crediar
+ * Copyright 2010 Dimok
+ * Copyright 2011 FIX94, oggzee
+ *
+ * Original forwarder source by
+ *
+ * This software is provided 'as-is', without any express or implied
+ * warranty. In no event will the authors be held liable for any
+ * damages arising from the use of this software.
+ *
+ * Permission is granted to anyone to use this software for any
+ * purpose, including commercial applications, and to alter it and
+ * redistribute it freely, subject to the following restrictions:
+ *
+ * 1. The origin of this software must not be misrepresented; you
+ * must not claim that you wrote the original software. If you use
+ * this software in a product, an acknowledgment in the product
+ * documentation would be appreciated but is not required.
+ *
+ * 2. Altered source versions must be plainly marked as such, and
+ * must not be misrepresented as being the original software.
+ *
+ * 3. This notice may not be removed or altered from any source
+ * distribution.
+ *
+ * Based on OpenShopChannel/osc-forwarder (ramblecube, 2021, MIT):
+ * https://github.com/OpenShopChannel/osc-forwarder
+ *
+ * MAIZO adaptation 2026:
+ * - replaced the original SD-only path with explicit SD and USB FAT mounting;
+ * - changed the executable target to apps/maizo/boot.dol;
+ * - added bounded USB retries, DOL limits, diagnostics and no-NAND logging;
+ * - retained the proven Open Shop Channel / FIX94 872-byte app_booter.
+ * This is NOT a claim of successful real-Wii boot testing.
  */
 #include <gccore.h>
 #include <ogcsys.h>
 #include <ogc/machine/processor.h>
 #include <fat.h>
+#include <ogc/disc_io.h>
 #include <ogc/usbstorage.h>
 #include <sdcard/wiisd_io.h>
-#include <errno.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <unistd.h>
 #include <sys/stat.h>
 
-#define DOL_IMAGE 0x92000000u
-#define BOOT_ADDR 0x93000000u
-#define ARG_ADDR 0x93200000u
+#define EXECUTE_ADDR ((u8 *)0x92000000u)
+#define BOOTER_ADDR ((u8 *)0x93000000u)
+#define ARGS_ADDR   ((u8 *)0x93200000u)
 #define MAX_DOL (12u*1024u*1024u)
-#define MIN_DOL_ADDR 0x80003F00u
-static char dol_reason[112],last_problem[160];
-static void remember_problem(const char*path,const char*reason){
- snprintf(last_problem,sizeof(last_problem),"%s: %s",path,reason);
-}
-/* Store only a final diagnostic on SD/USB (never NAND). */
-static void save_forwarder_failure(void){
- const char*logs[]={"sd:/maizo/forwarder.log","usb:/maizo/forwarder.log"};
- for(unsigned i=0;i<2;i++){
-  mkdir(i?"usb:/maizo":"sd:/maizo",0777);
-  FILE*f=fopen(logs[i],"ab");if(!f)continue;
-  fprintf(f,"MAIZO-FORWARDER/3 %s\n",last_problem[0]?last_problem:"SD/USB indisponivel");
-  fclose(f);
-  printf("Log: %s\n",logs[i]);return;
- }
-}
+#define MIN_ADDRESS (0x80003f00u)
+#define VERSION "MAIZO OSC/FIX94 FORWARDER v4"
+
+extern const unsigned char osc_app_booter[];
+extern const unsigned int osc_app_booter_len;
+extern void __exception_setreload(int t);
+/* Modern libogc removed __exception_closeall; SYS_SHUTDOWN is retained. */
+
 typedef struct {
- u32 text_pos[7], data_pos[11], text_start[7], data_start[11];
- u32 text_size[7], data_size[11], bss_start, bss_size, entry_point;
+ u32 off[18];
+ u32 addr[18];
+ u32 length[18];
+ u32 bss;
+ u32 bss_size;
+ u32 entry;
 } DolHeader;
-extern const unsigned char maizo_bootstub[];
-extern const unsigned maizo_bootstub_len;
-static int overlap(u32 a,u32 n,u32 b,u32 l){
- return n&&l&&(uint64_t)a < (uint64_t)b+l && (uint64_t)b < (uint64_t)a+n;
+
+static char last_error[180];
+static int sd_ready = 0, usb_ready = 0;
+
+static void error_path(const char *path, const char *reason) {
+ snprintf(last_error,sizeof(last_error),"%s: %s",path,reason);
+ printf("  %s\n",last_error);
 }
-static int validate(const u8 *data, size_t size) {
- if(size<sizeof(DolHeader) || size>MAX_DOL){
-  snprintf(dol_reason,sizeof(dol_reason),"tamanho do DOL invalido");
-  return 0;
- }
- const DolHeader*h=(const DolHeader*)data;
- if(h->entry_point<MIN_DOL_ADDR || h->entry_point>=0x94000000u){
-  snprintf(dol_reason,sizeof(dol_reason),"entry 0x%08lX fora da RAM",
-           (unsigned long)h->entry_point);
-  return 0;
- }
- int sections=0, entry_in_text=0;
+static int overlap(u32 a,u32 n,u32 b,u32 l){
+ return n && l && (uint64_t)a < (uint64_t)b+l &&
+                    (uint64_t)b < (uint64_t)a+n;
+}
+static int valid_dol(const u8 *data, unsigned size) {
+ if(size<0x100 || size>MAX_DOL)return 0;
+ const DolHeader*h=(const DolHeader *)data;
+ if(h->entry<MIN_ADDRESS || h->entry>=0x94000000u)return 0;
+ int text=0,sections=0;
  for(int i=0;i<18;i++){
-  u32 pos=i<7?h->text_pos[i]:h->data_pos[i-7];
-  u32 addr=i<7?h->text_start[i]:h->data_start[i-7];
-  u32 n=i<7?h->text_size[i]:h->data_size[i-7];
+  u32 off=h->off[i],addr=h->addr[i],n=h->length[i];
   if(!n)continue;
+  if(off<0x100 || off>=size || n>size-off ||
+     addr<MIN_ADDRESS || addr>=0x94000000u || n>0x94000000u-addr ||
+     overlap(addr,n,0x92000000u,MAX_DOL) ||
+     overlap(addr,n,0x93000000u,0x20000u) ||
+     overlap(addr,n,0x93200000u,0x10000u))return 0;
   sections++;
-  if(pos<0x100 || pos>=size || n>size-pos ||
-     addr<MIN_DOL_ADDR || addr>=0x94000000u || n>0x94000000u-addr ||
-     overlap(addr,n,DOL_IMAGE,MAX_DOL) ||
-     overlap(addr,n,BOOT_ADDR,0x20000) ||
-     overlap(addr,n,ARG_ADDR,0x10000)){
-   snprintf(dol_reason,sizeof(dol_reason),"secao %d invalida: offset=%08lX addr=%08lX len=%08lX",
-            i,(unsigned long)pos,(unsigned long)addr,(unsigned long)n);
-   return 0;
-  }
-  if(i<7 && h->entry_point>=addr && h->entry_point<addr+n)
-   entry_in_text=1;
+  if(i<7 && h->entry>=addr && h->entry<addr+n)text=1;
  }
- if(h->bss_size && (h->bss_start<MIN_DOL_ADDR ||
-      h->bss_start>=0x94000000u ||
-      h->bss_size>0x94000000u-h->bss_start ||
-      overlap(h->bss_start,h->bss_size,DOL_IMAGE,MAX_DOL) ||
-      overlap(h->bss_start,h->bss_size,BOOT_ADDR,0x20000u) ||
-      overlap(h->bss_start,h->bss_size,ARG_ADDR,0x10000u))){
-  snprintf(dol_reason,sizeof(dol_reason),"BSS invadindo regiao reservada/invalida");
-  return 0;
- }
- if(!sections || !entry_in_text){
-  snprintf(dol_reason,sizeof(dol_reason),"sem secoes de codigo ou entry fora do texto");
-  return 0;
- }
+ if(!sections || !text)return 0;
+ if(h->bss_size && (h->bss<MIN_ADDRESS ||
+     h->bss>=0x94000000u || h->bss_size>0x94000000u-h->bss ||
+     overlap(h->bss,h->bss_size,0x92000000u,MAX_DOL) ||
+     overlap(h->bss,h->bss_size,0x93000000u,0x20000u) ||
+     overlap(h->bss,h->bss_size,0x93200000u,0x10000u)))return 0;
  return 1;
 }
-static int try_file(const char*path) {
- printf("Abrindo %s ...\n",path);
- FILE *f=fopen(path,"rb");
+
+/* Unlike fatInitDefault(), device mounts are explicit and independent.
+ * This avoids aborting a USB-only boot when the SD slot is empty. */
+static int mount_one(const char*name, const DISC_INTERFACE *disk){
+ int started=disk->startup();
+ int mounted=started && fatMountSimple(name,disk);
+ printf("%s: startup=%d FAT=%d\n",name,started,mounted);
+ return mounted;
+}
+static void save_failure(void){
+ const char *folder=sd_ready?"sd:/maizo":(usb_ready?"usb:/maizo":NULL);
+ if(!folder)return;
+ mkdir(folder,0777);
+ char name[48];
+ snprintf(name,sizeof(name),"%s/forwarder.log",folder);
+ FILE*f=fopen(name,"ab");
+ if(!f)return;
+ fprintf(f,"%s IOS=%u; %s\n",VERSION,(unsigned)IOS_GetVersion(),
+         last_error[0]?last_error:"DOL nao encontrado");
+ fclose(f);
+ printf("Log salvo: %s\n",name);
+}
+static int launch_from(const char*path){
+ printf("Procurando %s\n",path);
+ FILE*f=fopen(path,"rb");
  if(!f){
-  snprintf(dol_reason,sizeof(dol_reason),"ausente/inacessivel errno=%d",errno);
-  remember_problem(path,dol_reason);
-  printf("  %s\n",dol_reason);return 0;
+  char msg[60];snprintf(msg,sizeof(msg),"fopen errno=%d",errno);
+  error_path(path,msg);return 0;
  }
- if(fseek(f,0,SEEK_END)){printf("  seek falhou\n");fclose(f);return 0;}
- long len=ftell(f);
- rewind(f);
- if(len<256 || len>(long)MAX_DOL){
-  printf("  tamanho invalido: %ld bytes\n",len);
+ if(fseek(f,0,SEEK_END)){
+  error_path(path,"fseek falhou");fclose(f);return 0;
+ }
+ long n=ftell(f);
+ if(n<0x100 || n>(long)MAX_DOL){
+  error_path(path,"tamanho DOL fora do limite");
   fclose(f);return 0;
  }
- printf("  encontrado: %ld bytes\n",len);
- u8*image=(u8*)(uintptr_t)DOL_IMAGE;
- size_t got=fread(image,1,(size_t)len,f);
+ rewind(f);
+ unsigned size=(unsigned)n;
+ size_t read=fread(EXECUTE_ADDR,1,size,f);
  fclose(f);
- if(got!=(size_t)len){printf("  leitura incompleta: %lu bytes\n",(unsigned long)got);return 0;}
- if(!validate(image,(size_t)len)){
-  remember_problem(path,dol_reason);
-  printf("  DOL rejeitado: %s\n",dol_reason);return 0;
+ if(read!=size){
+  error_path(path,"leitura incompleta");return 0;
  }
- if(maizo_bootstub_len<16 || maizo_bootstub_len>65536){
-  printf("  bootstub ausente ou invalido\n");return 0;
+ if(!valid_dol(EXECUTE_ADDR,size)){
+  error_path(path,"DOL invalido/entrada sobreposta");return 0;
  }
- printf("  DOL validado. Executando frontend...\n");
- memset((void*)(uintptr_t)ARG_ADDR,0,0x10000u);
- DCFlushRange((void*)(uintptr_t)ARG_ADDR,0x10000u);
- memcpy((void*)(uintptr_t)BOOT_ADDR,maizo_bootstub,maizo_bootstub_len);
- DCFlushRange((void*)(uintptr_t)BOOT_ADDR,(maizo_bootstub_len+31u)&~31u);
- ICInvalidateRange((void*)(uintptr_t)BOOT_ADDR,(maizo_bootstub_len+31u)&~31u);
- DCFlushRange(image,(u32)((len+31L)&~31L));
+ if(osc_app_booter_len<100 || osc_app_booter_len>8192){
+  error_path(path,"OSC app_booter invalido");return 0;
+ }
+
+ printf("DOL validado: %u bytes. Transferindo para OSC booter.\n",size);
+ fflush(stdout);
  VIDEO_WaitVSync();
- fatUnmount("sd");fatUnmount("usb");
+
+ /* OpenShopChannel/FIX94 handoff: the exact upstream app_booter blob.
+  * Do not modify its executable instructions; only supply its buffers. */
+ memset(ARGS_ADDR,0,0x10000);
+ memcpy(BOOTER_ADDR,osc_app_booter,osc_app_booter_len);
+ DCFlushRange(ARGS_ADDR,0x10000);
+ DCFlushRange(BOOTER_ADDR,(osc_app_booter_len+31u)&~31u);
+ ICInvalidateRange(BOOTER_ADDR,(osc_app_booter_len+31u)&~31u);
+ DCFlushRange(EXECUTE_ADDR,(size+31u)&~31u);
+
+ /* All FAT handles are closed before running child boot code. */
+ if(sd_ready){fatUnmount("sd");sd_ready=0;}
+ if(usb_ready){fatUnmount("usb");usb_ready=0;}
+
+ VIDEO_SetBlack(TRUE);
+ VIDEO_Flush();
+ VIDEO_WaitVSync();
  SYS_ResetSystem(SYS_SHUTDOWN,0,0);
- u32 level;_CPU_ISR_Disable(level);
- ((void(*)(void))(uintptr_t)BOOT_ADDR)();
+ u32 level;
+ _CPU_ISR_Disable(level);
+ /* SYS_SHUTDOWN already tears down libogc before OSC's booter handoff. */
+ ((void (*)(void))BOOTER_ADDR)();
  _CPU_ISR_Restore(level);
- return -1;
+ return 1; /* Returning indicates a boot failure in the embedded loader. */
 }
-int main(void) {
+
+int main(void){
+ __exception_setreload(0);
  VIDEO_Init();
- GXRModeObj *mode=VIDEO_GetPreferredMode(NULL);
+ GXRModeObj*mode=VIDEO_GetPreferredMode(NULL);
  if(!mode)return 1;
  void*fb=MEM_K0_TO_K1(SYS_AllocateFramebuffer(mode));
  if(!fb)return 1;
@@ -144,30 +197,35 @@ int main(void) {
  VIDEO_SetBlack(FALSE);
  VIDEO_Flush();
  VIDEO_WaitVSync();
- CON_Init(fb,20,20,mode->fbWidth,mode->xfbHeight,mode->fbWidth*2);
- printf("\nMAIZO WII FORWARDER (sem instalacao NAND)\n");
- printf("Buscando apps/maizo/boot.dol em SD e USB...\n");
- int mounted=fatInitDefault();
- printf("FAT inicial: %s\n",mounted?"OK":"nenhum volume automatico");
- /* A default FAT failure is not proof that no usable USB volume exists. */
- const char *paths[]={"sd:/apps/maizo/boot.dol","usb:/apps/maizo/boot.dol"};
- for(unsigned i=0;i<2;i++){
-  int result=try_file(paths[i]);
-  if(result<0)break;
+ CON_Init(fb,18,18,mode->fbWidth,mode->xfbHeight,mode->fbWidth*2);
+ printf("\n%s\n",VERSION);
+ printf("Base: Open Shop Channel / FIX94 - IOS=%u\n",
+        (unsigned)IOS_GetVersion());
+ printf("Sem instalacao ou gravacao NAND.\n\n");
+
+ sd_ready=mount_one("sd",&__io_wiisd);
+ if(sd_ready){
+  if(launch_from("sd:/apps/maizo/boot.dol"))return 0;
+  if(launch_from("sd:/apps/MaizoWii/boot.dol"))return 0;
  }
- /* Fallback only: explicit libfat block-device mounts for older IOS/HBC
-  * combinations where the automatic mount skipped one medium. */
- printf("Tentando montagem explicita SD/USB...\n");
- if(fatMountSimple("sd",&__io_wiisd))printf("SD montado.\n");
- if(fatMountSimple("usb",&__io_usbstorage))printf("USB montado.\n");
- for(unsigned i=0;i<2;i++){
-  int result=try_file(paths[i]);
-  if(result<0)break;
+
+ /* Initialize USB ONLY after SD failed. USB needs time after IOS startup,
+  * especially from a WAD channel rather than the Homebrew Channel. */
+ for(int attempt=1;attempt<=4&&!usb_ready;attempt++){
+  printf("USB tentativa %d/4\n",attempt);
+  usb_ready=mount_one("usb",&__io_usbstorage);
+  if(!usb_ready)usleep(300000);
  }
- save_forwarder_failure();
- printf("\nNAO FOI POSSIVEL INICIAR O FRONTEND.\n");
- printf("Confirme apps/maizo/boot.dol (DOL valido) no FAT32.\n");
- printf("O forwarder NAO instala um canal nem grava na NAND.\n");
- for(unsigned i=0;i<180;i++)VIDEO_WaitVSync();
+ if(usb_ready){
+  if(launch_from("usb:/apps/maizo/boot.dol"))return 0;
+  if(launch_from("usb:/apps/MaizoWii/boot.dol"))return 0;
+ }
+ save_failure();
+ printf("\nERRO: nenhum frontend valido em SD ou USB.\n");
+ printf("Coloque apps/maizo/boot.dol na raiz do FAT32.\n");
+ printf("Se a tela nao mostrar 'OSC/FIX94 FORWARDER v4',\n");
+ printf("o WAD instalado e a versao ANTIGA.\n");
+ fflush(stdout);
+ for(int i=0;i<300;i++)VIDEO_WaitVSync();
  return 1;
 }

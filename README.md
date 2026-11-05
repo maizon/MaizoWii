@@ -255,3 +255,24 @@ O novo executavel passou por compilacao no CI, mas **compatibilidade
 HID, reproducao em CRT PAL-M e retorno ao Maizo exigem teste fisico**.
 O WiiMC original que ja reproduzia videos continua recuperavel.
 O frontend tambem procura PS1 em `roms/ps1` e `PSXISOS` e midia em `media/`.
+
+### Canal Wii — forwarder OSC/FIX94 v4 (substitui o teste anterior)
+A imagem antiga que exibe **MAIZO WII FORWARDER (sem instalacao NAND)** sem a
+linha de versao OSC/FIX94 pertence a um forwarder anterior, mesmo quando o
+executavel do frontend no USB ja foi atualizado. O codigo novo e baseado no
+forwarder de Open Shop Channel/FIX94, com bootloader original de 872 bytes,
+montagem independente SD/USB e tentativas USB.
+
+O novo WAD experimental usa o **mesmo Title ID MZIO** (nao instala outro
+titulo), mas **o WAD novo precisa substituir o instalado** para que seu codigo
+tenha efeito. Atualizar `apps/maizo/boot.dol` sozinho nao atualiza o WAD.
+Teste primeiro `apps/maizo-forwarder/boot.dol` pelo Homebrew Channel sem
+instalar nada na NAND; se ele abrir o Maizo, a falha anterior estava no
+forwarder/canal e nao no caminho do arquivo. No canal novo, verifique a linha
+**MAIZO OSC/FIX94 FORWARDER v4** e os resultados `startup`/`FAT` na tela.
+Caminho exigido em SD/USB: `apps/maizo/boot.dol` na **raiz FAT32**, nao em
+`apps/maizo-forwarder/`. Logs em `maizo/forwarder.log`.
+
+O WAD tem risco de brick em caso de defeito de banner/titulo. Valide no
+Dolphin com NAND emulada antes de instalar e disponha de backup de NAND.
+O resultado do CI **nao demonstra funcionamento no Wii real**.

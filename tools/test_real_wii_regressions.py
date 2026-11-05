@@ -11,14 +11,14 @@ class WiiRealBootRegressions(unittest.TestCase):
         launch = (ROOT / "source/launch.c").read_text()
         forwarder = (ROOT / "forwarder/main.c").read_text()
         self.assertIn("0x80003F00u", launch)
-        self.assertIn("0x80003F00u", forwarder)
+        self.assertIn("0x80003f00u", forwarder.lower())
         self.assertNotIn("addr<0x80004000", launch)
         self.assertIn("entry_in_text", launch)
 
     def test_forwarder_diagnostics_and_usb_mount_recovery(self):
         fw = (ROOT / "forwarder/main.c").read_text()
-        for marker in ("DOL rejeitado:", "leitura incompleta",
-                       "fatMountSimple(\"usb\"",
+        for marker in ("DOL invalido/entrada sobreposta", "leitura incompleta",
+                       'fatMountSimple(name,disk)', 'mount_one("usb",&__io_usbstorage)',
                        "sd:/apps/maizo/boot.dol", "usb:/apps/maizo/boot.dol"):
             self.assertIn(marker, fw)
 
@@ -32,8 +32,8 @@ class WiiRealBootRegressions(unittest.TestCase):
         stub=(ROOT/"bootstub/stub.c").read_text()
         fw=(ROOT/"forwarder/main.c").read_text()
         self.assertIn('asm volatile("dcbst',stub)
-        self.assertIn('sd:/maizo/forwarder.log',fw)
-        self.assertIn('save_forwarder_failure();',fw)
+        self.assertIn('"%s/forwarder.log"',fw)
+        self.assertIn('save_failure();',fw)
 
     def test_ps1_fail_closed_and_wiimc_avoids_autoboot_exit(self):
         patch = (ROOT / "tools/patch_upstreams.py").read_text()
