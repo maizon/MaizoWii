@@ -115,6 +115,14 @@ def patch_wiimc(root: Path):
                       "down = userInput[cur_chan].pad.btns_d;")
         return s
     patch_file(root, "source/input.cpp", input_patch)
+    # Launch contract: support an explicit file from Maizo's argv[1] without
+    # format-string interpretation. Preserve the upstream auto-play flow.
+    def wiimc_argv(t):
+        return replace_once(
+            t, "sprintf(loadedFile, argv[1]);",
+            'snprintf(loadedFile, sizeof(loadedFile), "%s", argv[1]);',
+            "WiiMC bounded Maizo file argument")
+    patch_file(root, "source/wiimc.cpp", wiimc_argv)
     # Keep stock WiiMC playback, video, GUI, autoplay and MPlayer threads
     # byte-for-byte original. Only controller translation is changed.
     # Earlier versions altered these paths and crashed with DSI on real Wii.
