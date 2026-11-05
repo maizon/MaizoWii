@@ -66,6 +66,10 @@ def fix_pad_update(text: str, key: str, is_wiimc: bool):
 
 def patch_wiimc(root: Path):
     install_inc(root, "source")
+    # Libretro's old libogc/newlib runtime bridge; needed for the matched
+    # precompiled WiiMC player to use memory, threads and FAT on GCC 2026.
+    shutil.copyfile(SOURCE.parent / "wiimc_syscalls_compat.c",
+                    root / "source/utils/maizo_syscalls_compat.c")
     def input_patch(s):
         s = replace_once(s,'#include "input.h"', '#include "input.h"\n#include "maizo_hid.inc"', "WiiMC")
         s = fix_pad_update(s, "PAD_ScanPads();", True)
@@ -73,8 +77,13 @@ def patch_wiimc(root: Path):
         # mass-storage player under IOS58. Only poll an already-attached HID
         # during playback; discover new controllers in the normal WiiMC GUI.
         s = replace_once(s, "\tmaizo_hid_tick();",
-            "\tif(!wiiIsPlaying() || maizo_hid_connected(0) || "
-            "maizo_hid_connected(1)) maizo_hid_tick();",
+            "\t/* Allow USB storage and MPlayer initialization to settle " +
+            "before probing HID devices. */\n"
+            "\tstatic unsigned maizoHidWarmup=0;\n"
+            "\tif(maizoHidWarmup < 180)maizoHidWarmup++;\n"
+            "\tif(maizoHidWarmup >= 180 && " +
+            "(!wiiIsPlaying() || maizo_hid_connected(0) || " +
+            "maizo_hid_connected(1))) maizo_hid_tick();",
             "WiiMC USB HID non-invasive playback polling")
         # DrawMPlayerGui calls UpdatePads immediately before MPlayerInput.
         # Read the same snapshot: calling PAD_ButtonsDown a second time can
@@ -322,14 +331,23 @@ def patch_wiimc(root: Path):
     # Modern devkitPPC exports __app_start, whereas this legacy linker
     # script expects _start. Keep WiiMC's USB stub without dropping CRT0.
     def modern_wiimc_linker(s):
-        s = replace_once(s, "EXTERN(_start);", "EXTERN(__app_start);",
-                         "WiiMC modern entry symbol")
-        s = replace_once(s, "ENTRY(_start);", "ENTRY(__app_start);",
-                         "WiiMC modern ENTRY directive")
-        return replace_once(
+        # Preserve original _start with the matching 2010 WiiMC CRT0.
+        s = replace_once(
             s, "KEEP (*crt0.o(*.init))",
             "KEEP (*(.crt0 .crt0.*))\n\t\tKEEP (*crt0.o(*.init))",
             "WiiMC modern crt0 section")
+        # The bundled 2010 gu_psasm.o uses Unit01@sdarel(r13) as
+        # paired-single load (offset requires 16-byte alignment).
+        # Recent binutils no longer tolerate a misaligned SDA base.
+        return replace_once(s, "\t.sdata     :\n\t{",
+           "\t.sdata     :\n\t{\n"
+           "\t\t. = ALIGN(16);\n"
+           "\t\t_SDA_BASE_ = ADDR(.sdata) + 0x8000;\n"
+           "\t\t/* This old gu_psasm.o has local Unit01 at section +4. */\n"
+           "\t\t. = . + 12;\n"
+           "\t\t*libogc.a:gu_psasm.o(.sdata)\n"
+           "\t\t. = ALIGN(16);",
+           "WiiMC bundled libogc paired-single SDA alignment")
     patch_file(root, "build/wiimc.ld", modern_wiimc_linker)
     # Old header defined four globals in every C file; GCC -fno-common
     # rejects the resulting duplicates. Provide one definition in mplayer.c.
@@ -405,26 +423,14 @@ def patch_wiimc(root: Path):
         flags.append(bits)
     table=",".join(str(v) for v in [0]+flags)
     (root/"source/utils/maizo_legacy_ctype.c").write_text(
-        "/* Legacy newlib ABI for original mxml binary; ASCII classification. */\n"
+        "/* Compatibility symbol for the old libmxml/newlib ABI. */\n"
         "static unsigned char maizo_ctype_table[257]={"+table+"};\n"
-        "char *__ctype_ptr__=(char *)maizo_ctype_table;\n"
-        "/* Deprecated external udelay ABI used by pinned MPlayer archive. */\n"
-        "#include <ogc/lwp_watchdog.h>\n"
-        "#include <ogc/cache.h>\n"
-        "/* Pinned 3.0 MPlayer archive references pre-modern libogc C symbols.\n"
-        " * Resolve their old names through supported modern libogc APIs. */\n"
-        "u64 maizo_compat_gettime(void) __asm__(\"gettime\");\n"
-        "u64 maizo_compat_gettime(void){return gettime();}\n"
-        "void maizo_compat_dcflush(void *p,u32 n) __asm__(\"DCFlushRange\");\n"
-        "void maizo_compat_dcflush(void *p,u32 n){DCFlushRange(p,n);}\n"
-        "void maizo_compat_dcstore(void *p,u32 n) __asm__(\"DCStoreRangeNoSync\");\n"
-        "void maizo_compat_dcstore(void *p,u32 n){DCStoreRangeNoSync(p,n);}\n"
-        "void maizo_compat_udelay(unsigned us) __asm__(\"udelay\");\n"
-        "void maizo_compat_udelay(unsigned us){\n"
-        " u64 start=gettime();\n"
-        " while(diff_usec(start,gettime())<us){}\n"
-        "}\n",
+        "char *__ctype_ptr__=(char *)maizo_ctype_table;\n",
         encoding="utf-8")
+    # The matching original WiiMC libogc already provides gettime,
+    # DCFlushRange, DCStoreRangeNoSync and udelay. Never synthesize
+    # aliases for these symbols: that gives multiple definitions and
+    # can corrupt MPlayer/USB runtime boundaries.
 
     # Pinned historical MPlayer has version.sh without its executable bit.
     # Run through /bin/sh rather than trusting a checkout's file mode.
@@ -489,6 +495,14 @@ def patch_wiimc(root: Path):
             "test -s source/mplayer/ffmpeg/libavutil/libavutil.a",
             "WiiMC ORIGINAL 3.0 media engine retained")
     patch_file(root, "Makefile", retain_original_mplayer)
+    # Capture precise relocation/SDA placement from the final linker,
+    # including failures; the link map is retained only inside CI.
+    patch_file(root, "Makefile",
+               lambda t: replace_once(
+                 t, "-specs=wiimc.spec -Wl,-wrap,memcpy",
+                 "-specs=wiimc.spec -Wl,-wrap,memcpy -Wl,-Map,/tmp/maizo_wiimc.map",
+                 "WiiMC GNU ld link map diagnostic"))
+
 
     def fileop_compat(t):
         t = replace_once(t, "#include <string.h>",
@@ -522,14 +536,14 @@ def patch_wiimc(root: Path):
                    "sws_scale(ctx,(const uint8_t * const *)&s2,",
                    "WiiMC subtitle swscale second call"))
     def wiimc_callbacks(t):
-        t = replace_once(t,
+        # Keep the 2010 resetcallback() signature: the original WiiMC
+        # libogc (restored by the WiiMC CI job) expects void(*)(void).
+        # The modern variant changed it to void(*)(u32,void*), which
+        # prevents compilation against the matching old SDK.
+        return replace_once(t,
                          "static ssize_t __out_write(struct _reent *r, int fd,",
                          "static ssize_t __out_write(struct _reent *r, void *fd,",
                          "WiiMC newlib devoptab output callback")
-        t = replace_once(t, "static void ResetCB()",
-                         "static void ResetCB(u32 irq, void *userdata)",
-                         "WiiMC libogc reset callback signature")
-        return t
     patch_file(root, "source/wiimc.cpp", wiimc_callbacks)
     def wii_subtitles_compat(t):
         t = replace_once(t, 'c = utf8_get_char(&t);',
@@ -614,9 +628,8 @@ def patch_wiimc(root: Path):
         for name in ("st_spare1","st_spare2","st_spare3"):
             t = replace_once(t, "st->"+name+" = 0;", "/* legacy field removed: "+name+" */",
                              "WiiMC FTP struct stat compatibility")
-        t = replace_once(t, "if_config(myIP, NULL, NULL, true)",
-                         "if_config(myIP, NULL, NULL, true, 20)",
-                         "WiiMC FTP network retry parameter")
+        # Pinned WiiMC/libogc expects the original four-argument if_config.
+        # Do not apply the five-argument modern libogc2 compatibility change.
         # newlib changed private devoptab callbacks from int fd to void*.
         # Avoid C function pointer casts: adapt the boundary explicitly.
         wrappers = '''
@@ -665,6 +678,7 @@ static int maizo_ftp_fstat(struct _reent*r,void*fd,struct stat*st){
                    t, "__isIPL = 0;",
                    "PROVIDE_HIDDEN(__ppc_excpt_buf = 0x800000d0);\n"
                    "PROVIDE_HIDDEN(__ppc_excpt_table = 0x80003000);\n"
+                   "PROVIDE(__end__ = _end);\n"
                    "__isIPL = 0;",
                    "WiiMC modern libogc exception symbols"))
     patch_file(root, "source/mplayer/osdep/ave-rvl.c",

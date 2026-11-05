@@ -108,7 +108,7 @@ static void home(const State*u,const Library*l){
   label(x+7,y+117,module_available((System)i)?"PRONTO":"SEM MODULO",
         0.93f,module_available((System)i)?0xff92e2c4u:0xffffb5bdu);
  }
- label(117,424,"L/R SISTEMA    A ABRIR    START AJUSTES",1.00f,0xffc0c5dau);
+ label(117,424,"L/R SISTEMA  A ABRIR  Z REINDEXAR USB/SD",0.92f,0xffc0c5dau);
 }
 static void library(const State*u,const Library*l,const Config*c){
  label(117,77,system_title(u->system),1.54f,0xffffffffu);

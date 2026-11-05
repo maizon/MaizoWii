@@ -14,12 +14,17 @@ class OSCForwarderTests(unittest.TestCase):
         self.assertEqual(h,PINNED)
     def test_channel_and_hbc_share_osc_booter(self):
         source=(FORWARDER/"main.c").read_text()
-        self.assertIn("MAIZO OSC/FIX94 FORWARDER v5",source)
+        self.assertIn("MAIZO FIX94-COMPAT FORWARDER v6",source)
         self.assertIn("osc_app_booter",source)
         self.assertNotIn("maizo_bootstub",source)
         self.assertIn("SYS_ResetSystem(SYS_SHUTDOWN",source)
         self.assertNotIn("__exception_closeall();",source)
-        self.assertIn("SYS_SHUTDOWN already tears down libogc",source)
+        self.assertIn("__lwp_thread_stopmultitasking",source)
+        self.assertIn("__io_usbstorage.shutdown()",source)
+        self.assertIn("a->argvMagic=ARGV_MAGIC",source)
+        self.assertIn("memcpy(a->commandLine,path,path_bytes)",source)
+        self.assertLess(source.index('launch_from("usb:/apps/maizo/boot.dol")'),
+                        source.index('launch_from("sd:/apps/maizo/boot.dol")'))
         self.assertIn('usb:/apps/maizo/boot.dol',source)
         self.assertIn('sd:/apps/maizo/boot.dol',source)
         self.assertIn('fatMountSimple(name,disk)',source)
@@ -27,10 +32,10 @@ class OSCForwarderTests(unittest.TestCase):
             "/* Unlike fatInitDefault(),","/* Unlike default init"))
     def test_wad_uses_explicit_replacement_name(self):
         w=(ROOT/".github/workflows/forwarder-wad.yml").read_text()
-        self.assertIn("MAIZOWII-FORWARDER-OSC-FIX94-v5-MZIO-EXPERIMENTAL.wad",w)
+        self.assertIn("MAIZOWII-FORWARDER-OSC-FIX94-v6-MZIO-EXPERIMENTAL.wad",w)
         self.assertIn("-id MZIO",w)
         self.assertIn("-ios 58",w)
-        self.assertIn("MAIZO OSC/FIX94 FORWARDER v5",w)
+        self.assertIn("MAIZO FIX94-COMPAT FORWARDER v6",w)
 
 if __name__=="__main__":
     unittest.main()

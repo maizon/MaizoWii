@@ -5,31 +5,59 @@
 #include <ogc/usbstorage.h>
 #include <sdcard/wiisd_io.h>
 #include <sys/stat.h>
+#include <dirent.h>
+#include <errno.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
 static Library library_state;
 static Config config;
 static State state;
-/* Forwarder and HBC enter through different IOS/device states. Mount both
- * independently; fatInitDefault may report SD success while USB fails. */
+/* Mount both devices like a standalone homebrew, not by relying on the
+ * previous channel's libfat state. In particular, fatInitDefault() may report
+ * overall success after SD mount while USB is absent. The previously used
+ * stat("usb:/") test can also reject a valid FAT root on some devoptabs. */
+static int media_ready=0,storage_usb=0,storage_sd=0;
 static int storage_root(const char *path){
- struct stat st;return stat(path,&st)==0 && S_ISDIR(st.st_mode);
+ DIR *d=opendir(path);
+ if(!d)return 0;
+ closedir(d);
+ return 1;
 }
 static int mount_storage(void){
- fatInitDefault();
- if(!storage_root("sd:/")){
-  for(int n=0;n<2 && !storage_root("sd:/");n++){
-   if(__io_wiisd.startup())fatMountSimple("sd",&__io_wiisd);
+ int usb=storage_root("usb:/");
+ int sd=storage_root("sd:/");
+ if(!usb){
+  for(int n=0;n<8&&!usb;n++){
+   if(__io_usbstorage.startup()){
+    if(fatMountSimple("usb",&__io_usbstorage)){
+     usb=storage_root("usb:/");
+     if(!usb)fatUnmount("usb");
+    }
+   }
+   if(!usb)usleep(250000);
   }
  }
- if(!storage_root("usb:/")){
-  for(int n=0;n<8 && !storage_root("usb:/");n++){
-   if(__io_usbstorage.startup())fatMountSimple("usb",&__io_usbstorage);
-   if(!storage_root("usb:/"))usleep(250000);
+ if(!sd){
+  for(int n=0;n<3&&!sd;n++){
+   if(__io_wiisd.startup()){
+    if(fatMountSimple("sd",&__io_wiisd)){
+     sd=storage_root("sd:/");
+     if(!sd)fatUnmount("sd");
+    }
+   }
+   if(!sd)usleep(100000);
   }
  }
- return storage_root("sd:/") || storage_root("usb:/");
+ /* Last chance: use the libfat system default only when explicit access
+  * failed. Never overwrite a volume that has already been mounted. */
+ if(!usb&&!sd){
+  fatInitDefault();
+  usb=storage_root("usb:/");
+  sd=storage_root("sd:/");
+ }
+ storage_usb=usb;storage_sd=sd;media_ready=usb||sd;
+ return media_ready;
 }
 static int total(void){return library_total(&library_state,state.system,state.search,state.favorites);}
 static void clamp_selection(void){
@@ -129,8 +157,11 @@ static void handle(const Input*i){
  }
  if(i->search && (state.page==PAGE_LIBRARY||state.page==PAGE_HOME)){state.page=PAGE_SEARCH;state.search_index=1;return;}
  if(i->refresh && state.page==PAGE_HOME){
+  if(!media_ready)mount_storage();
+  input_storage_ready(media_ready);
   module_refresh_available();
-  library_begin(&library_state);
+  if(media_ready)library_begin(&library_state);
+  else library_end(&library_state);
   state.selected=state.scroll=0;
   return;
  }
@@ -203,7 +234,9 @@ int main(int argc,char**argv){
  VIDEO_WaitVSync();
  ui_boot_message("MONTANDO SD E USB");
  int storage_ready=mount_storage();
- ui_boot_message(storage_ready?"CARREGANDO CONFIGURACOES":"SEM SD/USB - VERIFIQUE O DISPOSITIVO");
+ ui_boot_message(storage_ready?
+  (storage_usb?"USB MONTADO - CARREGANDO DADOS":"SD MONTADO - CARREGANDO DADOS"):
+  "ERRO USB E SD - REINSIRA, START/SELECT REVER");
  config_load(&config);
  maizo_video_set_calibration((int)config.video_x-50,(int)config.video_y-50,config.video_w,config.video_h);
  memset(&state,0,sizeof(state));
@@ -212,16 +245,18 @@ int main(int argc,char**argv){
  ui_boot_message("VERIFICANDO MODULOS");
  module_refresh_available();
  ui_boot_message("INDEXANDO BIBLIOTECA");
- library_begin(&library_state);
+ if(media_ready)library_begin(&library_state);
+ else memset(&library_state,0,sizeof(library_state));
  ui_boot_message("INICIALIZANDO CONTROLES");
  input_init();
+ input_storage_ready(media_ready);
  /* Show a complete home frame before the first USB HID probe. */
  ui_draw(&state,&library_state,&config,0);
  for(;;){
   Input in;
   input_poll(&in);
   handle(&in);
-  library_step(&library_state,10);
+  if(media_ready)library_step(&library_state,10);
   clamp_selection();
   ui_draw(&state,&library_state,&config,in.hid_present);
   state.frame++;

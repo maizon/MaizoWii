@@ -3,7 +3,16 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
-static const char*where(void){struct stat s;if(!stat("sd:/",&s))return "sd:/maizo";return "usb:/maizo";}
+/* Follow the default executable search order (USB first) to avoid reading
+ * stale settings from an unused SD card after a USB channel launch. */
+static const char*where(void){struct stat s;
+ if(!stat("usb:/apps/maizo/boot.dol",&s) ||
+    !stat("usb:/apps/MaizoWii/boot.dol",&s))return "usb:/maizo";
+ if(!stat("sd:/apps/maizo/boot.dol",&s) ||
+    !stat("sd:/apps/MaizoWii/boot.dol",&s))return "sd:/maizo";
+ if(!stat("usb:/",&s))return "usb:/maizo";
+ return "sd:/maizo";
+}
 /* Two-stage commit: preserve a working FAT file until the new one exists. */
 static int commit_file(const char*tmp,const char*dest){
  if(rename(tmp,dest)==0)return 1;

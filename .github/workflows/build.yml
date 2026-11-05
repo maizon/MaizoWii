@@ -51,7 +51,7 @@ jobs:
         run: make -C forwarder -j2
       - name: Verify OSC/FIX94 forwarder selected (not old MEM2 bootstub)
         run: |
-          strings forwarder/boot.dol | grep -F 'MAIZO OSC/FIX94 FORWARDER v5'
+          strings forwarder/boot.dol | grep -F 'MAIZO FIX94-COMPAT FORWARDER v6'
           python3 tools/test_osc_forwarder.py
       - name: Stage frontend
         run: |

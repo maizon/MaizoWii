@@ -37,6 +37,8 @@ void input_hid_diagnostics(HidDiagnostics*out){
 static unsigned input_frames=0;
 static int skip_hid=0;
 static int hid_started=0;
+static int storage_permits_hid=1;
+void input_storage_ready(int ready){storage_permits_hid=!!ready;}
 static int has_file(const char*name){
  FILE*f=fopen(name,"rb");
  if(!f)return 0;
@@ -92,7 +94,7 @@ void input_poll(Input*out){
  /* Let GX finish displaying the first screens before any IOS USB query.
   * This also prevents exposing an uninitialised XFB when USB stalls. */
  if(input_frames<0xffffffffu)input_frames++;
- if(!skip_hid && input_frames>90){
+ if(!skip_hid && storage_permits_hid && input_frames>90){
   hid_started=1;
   maizo_hid_tick();
  }

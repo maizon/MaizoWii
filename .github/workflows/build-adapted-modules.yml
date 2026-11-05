@@ -111,9 +111,33 @@ jobs:
           import io,zipfile
           from pathlib import Path
           outer=zipfile.ZipFile('upstream/other/WiiMC_portlibs_libogc.zip')
-          for name in ('portlibs.zip',):
+          print("WIIMC_PINNED_DEPENDENCIES:",outer.namelist())
+          # WiiMC's stock MPlayer/FFmpeg archives are precompiled against its
+          # paired libogc ABI. A modern libogc plus old MPlayer archives linked
+          # successfully but produced a black screen on actual hardware.
+          # Install BOTH matching upstream bundled dependencies, in isolation
+          # inside the WiiMC job container, before recompiling the GUI/HID.
+          for name in ('portlibs.zip','libogc.zip'):
+              if name not in outer.namelist():
+                  raise RuntimeError("Missing WiiMC historical ABI archive "+name)
               with zipfile.ZipFile(io.BytesIO(outer.read(name))) as nested:
+                  paths=nested.namelist()
+                  if not paths:
+                      raise RuntimeError("Empty WiiMC dependency "+name)
+                  print("WIIMC_DEPENDENCY",name,"HEAD",paths[:20])
                   nested.extractall('/opt/devkitpro')
+          # The bundled 2010 libogc header declares a one-argument
+          # nanosleep() that conflicts with devkitPPC 2026's POSIX two-
+          # argument declaration. Keep newlib's standard declaration;
+          # source calling the legacy form is not part of the GUI binary.
+          old_system = Path('/opt/devkitpro/libogc/include/ogcsys.h')
+          original = old_system.read_text(encoding='latin-1')
+          obsolete = 'int nanosleep(struct timespec *tb);'
+          if original.count(obsolete) != 1:
+              raise RuntimeError('Unexpected bundled libogc nanosleep ABI')
+          old_system.write_text(original.replace(obsolete,
+                              '/* libc provides POSIX nanosleep() */'),
+                              encoding='latin-1')
           for path in (Path('upstream/source/mplayer/config.mak'),
                        Path('upstream/source/mplayer/Makefile')):
               if path.is_file():
@@ -173,6 +197,17 @@ jobs:
               fi
               ;;
           esac
+      - name: Inspect WiiMC exact SDA relocation and entrypoint
+        if: steps.cached.outputs.cache-hit != 'true' && matrix.module == 'WiiMC'
+        run: |
+          if test -f /tmp/maizo_wiimc.map; then
+            grep -n -E 'Unit01|_SDA_BASE_|\\.sdata|\\.sbss' /tmp/maizo_wiimc.map | tail -95 || true
+          fi
+          echo "PPC symbols: local ps_gu assembler and small-data pointers"
+          if test -x /opt/devkitpro/devkitPPC/powerpc-eabi/bin/nm; then
+            /opt/devkitpro/devkitPPC/powerpc-eabi/bin/nm -A /opt/devkitpro/libogc/lib/wii/libogc.a |
+              grep -E 'Unit01|ps_guMtxConcat|_SDA_BASE_' | head -30 || true
+          fi
       - name: Stage patched DOL
         if: steps.cached.outputs.cache-hit != 'true' && steps.compilation.outcome == 'success'
         id: staging

@@ -28,13 +28,23 @@ class WiiMC3RegressionTests(unittest.TestCase):
         self.assertIn("WiiMC menu file-open timeout",patch)
     def test_legacy_mplayer_binary_ABI_is_bridged(self):
         patch=(ROOT/"tools/patch_upstreams.py").read_text()
-        for symbol in ('gettime','DCFlushRange','DCStoreRangeNoSync',
-                       '__ctype_ptr__','udelay'):
-            self.assertIn(symbol,patch)
+        self.assertIn("__ctype_ptr__", patch)
+        self.assertIn("matching original WiiMC libogc", patch)
+        self.assertNotIn("maizo_compat_gettime", patch)
+        self.assertNotIn("maizo_compat_dcflush", patch)
         self.assertIn("WiiMC ORIGINAL 3.0 media engine retained",patch)
     def test_ci_refuses_recompiled_audio_video_libraries(self):
         w=(ROOT/".github/workflows/build-adapted-modules.yml").read_text()
         self.assertGreaterEqual(w.count("verify_wiimc_engine.py"),2)
         self.assertIn("rm -f wiimc.dol wiimc.elf",w)
+        self.assertIn("('portlibs.zip','libogc.zip')",w)
+        self.assertIn("WiiMC's stock MPlayer/FFmpeg",w)
+        bridge=(ROOT/"integrations/wiimc_syscalls_compat.c").read_text()
+        self.assertIn("__syscalls",bridge)
+        self.assertIn("__syscall_sbrk_r",bridge)
+        self.assertIn("__syscall_malloc_lock",bridge)
+        self.assertIn("ce8f93cc1c3785f1c8d3d05491d7a899cdcb5479",bridge)
+        patch=(ROOT/"tools/patch_upstreams.py").read_text()
+        self.assertIn("maizo_syscalls_compat.c",patch)
 if __name__=="__main__":
     unittest.main()

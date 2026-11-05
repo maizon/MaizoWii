@@ -29,6 +29,7 @@ void config_defaults(Config*);void config_load(Config*);int config_save(const Co
 void config_game_load(Config*,const Config*,const Game*);int config_game_save(const Config*,const Game*);
 void favorites_load(Library*);int favorites_save(const Library*);
 void input_init(void);void input_poll(Input*);void input_shutdown(void);
+void input_storage_ready(int);
 void input_hid_diagnostics(HidDiagnostics*);
 void module_refresh_available(void);
 int cover_draw(const Game*,float,float,float,float);

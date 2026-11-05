@@ -92,6 +92,12 @@ def fingerprint(module: str, root: Path = ROOT) -> str:
                ast.dump(functions[name], include_attributes=False).encode())
     for name in HID_FILES:
         update(name, (root / name).read_bytes())
+    if module == "WiiMC":
+        # Only this adapter is sensitive to a different linked libogc ABI.
+        # Isolated cache invalidation forces one genuine rebuild when the
+        # WiiMC original codec dependencies are restored.
+        update("wiimc-toolchain-abi", b"original-pinned-libogc-and-portlibs-v9-retroarch-syscalls")
+        update("wiimc-syscall-bridge", (root / "integrations/wiimc_syscalls_compat.c").read_bytes())
     return digest.hexdigest()
 
 

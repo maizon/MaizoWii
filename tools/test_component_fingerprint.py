@@ -14,7 +14,7 @@ class ComponentFingerprintTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        for path in ("tools/patch_upstreams.py", *HID_FILES):
+        for path in ("tools/patch_upstreams.py", "integrations/wiimc_syscalls_compat.c", *HID_FILES):
             (self.root / path).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / path, self.root / path)
 
@@ -34,6 +34,15 @@ class ComponentFingerprintTest(unittest.TestCase):
         for name in modules:
             if name != "WiiMC":
                 self.assertEqual(original[name], updated[name], name)
+
+    def test_wiimc_bridge_invalidates_only_wiimc(self):
+        names=("WiiMC","WiiSXRX","snes9xgx","fceugx","vbagx","usbloader_gx")
+        old={name:fingerprint(name,self.root) for name in names}
+        src=self.root/"integrations/wiimc_syscalls_compat.c"
+        src.write_bytes(src.read_bytes()+b"\\n/* bridge-change */\\n")
+        for name in names:
+            self.assertEqual(old[name] != fingerprint(name,self.root),
+                             name=="WiiMC",name)
 
     def test_common_header_invalidates_every_consumer(self):
         modules = ("WiiMC", "WiiSXRX", "snes9xgx", "fceugx", "vbagx", "usbloader_gx")

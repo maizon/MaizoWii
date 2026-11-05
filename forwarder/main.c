@@ -54,7 +54,7 @@
 #define ARGS_ADDR   ((u8 *)0x93200000u)
 #define MAX_DOL (12u*1024u*1024u)
 #define MIN_ADDRESS (0x80003f00u)
-#define VERSION "MAIZO OSC/FIX94 FORWARDER v5"
+#define VERSION "MAIZO FIX94-COMPAT FORWARDER v6"
 
 extern const unsigned char osc_app_booter[];
 extern const unsigned int osc_app_booter_len;
@@ -72,6 +72,12 @@ typedef struct {
 
 static char last_error[180];
 static int sd_ready = 0, usb_ready = 0;
+static char booted_path[96];
+/* FIX94/nintendont-autoboot-forwarder calls this after SYS_SHUTDOWN.
+ * Modern libogc may no longer export the LWP legacy symbol, so use
+ * a weak runtime check. Never invoke the old LWP entry if absent. */
+extern void __lwp_thread_stopmultitasking(void (*entry)(void))
+ __attribute__((weak));
 
 static void error_path(const char *path, const char *reason) {
  snprintf(last_error,sizeof(last_error),"%s: %s",path,reason);
@@ -160,26 +166,50 @@ static int launch_from(const char*path){
  fflush(stdout);
  VIDEO_WaitVSync();
 
- /* OpenShopChannel/FIX94 handoff: the exact upstream app_booter blob.
-  * Do not modify its executable instructions; only supply its buffers. */
+ /* The working FIX94 Nintendont channel passes a valid argc/argv block
+  * containing the target DOL path. OSC's original forwarder supplied ZERO
+  * argv; preserve the standard HBC-like startup contract for child DOLs.
+  * This memory region is outside the validated DOL sections. */
+ const size_t path_bytes=strlen(path)+1;
+ if(sizeof(struct __argv)+path_bytes>=0x10000u){
+  error_path(path,"argv path too long");return 0;
+ }
+ struct __argv *a=(struct __argv *)ARGS_ADDR;
  memset(ARGS_ADDR,0,0x10000);
+ a->argvMagic=ARGV_MAGIC;
+ a->commandLine=(char *)ARGS_ADDR+sizeof(struct __argv);
+ a->length=(int)path_bytes;
+ a->argc=1;
+ /* The NUL-separated string is consumed by CRT0 and may be copied by
+  * the FIX94 app_booter into the child entrypoint's argv slot. */
+ memcpy(a->commandLine,path,path_bytes);
+ snprintf(booted_path,sizeof(booted_path),"%s",path);
  memcpy(BOOTER_ADDR,osc_app_booter,osc_app_booter_len);
  DCFlushRange(ARGS_ADDR,0x10000);
  DCFlushRange(BOOTER_ADDR,(osc_app_booter_len+31u)&~31u);
  ICInvalidateRange(BOOTER_ADDR,(osc_app_booter_len+31u)&~31u);
  DCFlushRange(EXECUTE_ADDR,(size+31u)&~31u);
 
- /* All FAT handles are closed before running child boot code. */
+ /* The FIX94 forwarder closes both filesystem AND disc interface before
+  * switching execution. Omitting shutdown leaves an IOS USB handle open
+  * across the exec; the next DOL then sees an apparently absent drive. */
  if(sd_ready){fatUnmount("sd");sd_ready=0;}
  if(usb_ready){fatUnmount("usb");usb_ready=0;}
+ __io_wiisd.shutdown();
+ __io_usbstorage.shutdown();
 
  VIDEO_SetBlack(TRUE);
  VIDEO_Flush();
  VIDEO_WaitVSync();
  SYS_ResetSystem(SYS_SHUTDOWN,0,0);
+ /* FIX94's real forwarder uses the LWP stop/jump handoff.
+  * Try its legacy entry only when actually linked; the modern fallback
+  * uses the OSC code image and no longer touches storage after shutdown. */
+ if(__lwp_thread_stopmultitasking){
+  __lwp_thread_stopmultitasking((void (*)(void))BOOTER_ADDR);
+ }
  u32 level;
  _CPU_ISR_Disable(level);
- /* SYS_SHUTDOWN already tears down libogc before OSC's booter handoff. */
  ((void (*)(void))BOOTER_ADDR)();
  _CPU_ISR_Restore(level);
  return 1; /* Returning indicates a boot failure in the embedded loader. */
@@ -208,28 +238,28 @@ int main(void){
   s32 result=IOS_ReloadIOS(58);
   printf("IOS58 reload: %ld; ativo IOS %u\n",(long)result,(unsigned)IOS_GetVersion());
  }
- sd_ready=mount_one("sd",&__io_wiisd);
- if(sd_ready){
-  if(launch_from("sd:/apps/maizo/boot.dol"))return 0;
-  if(launch_from("sd:/apps/MaizoWii/boot.dol"))return 0;
- }
-
- /* Initialize USB ONLY after SD failed. USB needs time after IOS startup,
-  * especially from a WAD channel rather than the Homebrew Channel. */
- for(int attempt=1;attempt<=4&&!usb_ready;attempt++){
-  printf("USB tentativa %d/4\n",attempt);
+ /* The reported working Nintendont forwarder boots this same Maizo from
+  * USB, not a stale SD copy. Prefer the USB application when both exist.
+  * Probe the USB device first; never silently execute outdated SD binaries. */
+ for(int attempt=1;attempt<=8&&!usb_ready;attempt++){
+  printf("USB tentativa %d/8\n",attempt);
   usb_ready=mount_one("usb",&__io_usbstorage);
   if(!usb_ready)usleep(300000);
  }
+ sd_ready=mount_one("sd",&__io_wiisd);
  if(usb_ready){
   if(launch_from("usb:/apps/maizo/boot.dol"))return 0;
   if(launch_from("usb:/apps/MaizoWii/boot.dol"))return 0;
  }
+ if(sd_ready){
+  if(launch_from("sd:/apps/maizo/boot.dol"))return 0;
+  if(launch_from("sd:/apps/MaizoWii/boot.dol"))return 0;
+ }
  save_failure();
  printf("\nERRO: nenhum frontend valido em SD ou USB.\n");
  printf("Coloque apps/maizo/boot.dol na raiz do FAT32.\n");
- printf("Se a tela nao mostrar 'OSC/FIX94 FORWARDER v4',\n");
- printf("o WAD instalado e a versao ANTIGA.\n");
+ printf("Se a tela nao mostrar FIX94-COMPAT v6,\n");
+ printf("o canal WAD instalado e antigo.\n");
  fflush(stdout);
  for(int i=0;i<300;i++)VIDEO_WaitVSync();
  return 1;

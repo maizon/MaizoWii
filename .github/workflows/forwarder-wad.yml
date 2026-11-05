@@ -25,7 +25,7 @@ jobs:
           python3 tools/test_osc_forwarder.py
           make -C forwarder -j2
           test -s forwarder/boot.dol
-          strings forwarder/boot.dol | grep -F 'MAIZO OSC/FIX94 FORWARDER v5'
+          strings forwarder/boot.dol | grep -F 'MAIZO FIX94-COMPAT FORWARDER v6'
       - uses: actions/upload-artifact@v4
         with:
           name: maizo-forwarder-dol-for-wad
@@ -71,10 +71,10 @@ jobs:
             -icon channel-base/channel/banner/build/icon.arc \
             -dol wad-input/boot.dol \
             -id MZIO -name "Maizo Wii" -ios 58 -loader comex \
-            -o wad-output/MAIZOWII-FORWARDER-OSC-FIX94-v5-MZIO-EXPERIMENTAL.wad
-          python3 tools/inspect_forwarder_wad.py wad-output/MAIZOWII-FORWARDER-OSC-FIX94-v5-MZIO-EXPERIMENTAL.wad
-          sha256sum wad-output/MAIZOWII-FORWARDER-OSC-FIX94-v5-MZIO-EXPERIMENTAL.wad > wad-output/SHA256SUMS
-          printf '%s\n' 'MAIZO OSC/FIX94 FORWARDER v5 — SUBSTITUI O WAD ANTIGO MZIO' 'NAO INSTALAR SEM TESTAR NO DOLPHIN E TER BACKUP DA NAND' 'Ao iniciar, verifique que a tela exibe OSC/FIX94 FORWARDER v5' 'Executavel externo exigido em sd:/apps/maizo/boot.dol ou usb:/apps/maizo/boot.dol' > wad-output/LEIA-ANTES-DE-INSTALAR.txt
+            -o wad-output/MAIZOWII-FORWARDER-OSC-FIX94-v6-MZIO-EXPERIMENTAL.wad
+          python3 tools/inspect_forwarder_wad.py wad-output/MAIZOWII-FORWARDER-OSC-FIX94-v6-MZIO-EXPERIMENTAL.wad
+          sha256sum wad-output/MAIZOWII-FORWARDER-OSC-FIX94-v6-MZIO-EXPERIMENTAL.wad > wad-output/SHA256SUMS
+          printf '%s\n' 'MAIZO FIX94-COMPAT FORWARDER v6 — SUBSTITUI O WAD ANTIGO MZIO' 'NAO INSTALAR SEM TESTAR NO DOLPHIN E TER BACKUP DA NAND' 'Ao iniciar, verifique que a tela exibe OSC/FIX94 FORWARDER v5' 'Executavel externo exigido em sd:/apps/maizo/boot.dol ou usb:/apps/maizo/boot.dol' > wad-output/LEIA-ANTES-DE-INSTALAR.txt
       - uses: actions/upload-artifact@v4
         with:
           name: MAIZOWII-WAD-EXPERIMENTAL-NOT-HARDWARE-VERIFIED

@@ -17,6 +17,7 @@ class WiiFrontendBootSafety(unittest.TestCase):
                         boot.index("mount_storage()"))
         self.assertLess(boot.index("ui_draw(&state"), boot.index("input_poll(&in)"))
         self.assertIn('fatMountSimple("usb",&__io_usbstorage)',main)
+        self.assertIn('input_storage_ready(media_ready)',main)
         self.assertIn('fatMountSimple("sd",&__io_wiisd)',main)
 
     def test_software_framebuffer_rendering(self):

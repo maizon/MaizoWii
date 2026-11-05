@@ -32,11 +32,29 @@ Não há compatibilidade HID universal entre os módulos.
 
 ## Correcoes de integracao: USB WAD, video e WiiSX 4.2.2
 
+### Diagnose USB e WiiMC: hotfix v6
+
+O forwarder v6 usa a sequencia de passagem do FIX94: transmite um bloco
+argv com o caminho real, libera FAT **e** o dispositivo USB, e tenta o
+handoff LWP original quando essa funcao existe na libogc instalada.
+O executavel USB tem prioridade sobre uma copia potencialmente antiga
+no SD. O frontend tenta montagens independentes e nao procura arquivos
+quando nenhum dispositivo estiver montado. Na home, Z reindexa a biblioteca.
+
+A compilacao WiiMC foi alterada para utilizar as bibliotecas libogc e
+portlibs empacotadas pelo proprio projeto WiiMC-SSLC, pois os codecs
+originais foram compilados contra essa ABI. Esta e uma tentativa de
+corrigir incompatibilidades da recompilacao do GUI no ambiente 2026;
+a execucao no Wii real precisa de verificacao. O WiiMC oficial intacto
+continua sendo a referencia de reproduçao funcional, sem HID adaptado.
+O funcionamento HID **nao esta confirmado em hardware**.
+
+
 **Estado:** alteracoes de codigo, CI e contrato; teste com Wii real segue necessario.
 Uma compilacao bem-sucedida nao comprova a reproducao de videos ou a
 montagem de armazenamento no console.
 
-- **WAD/USB:** forwarder v5 tenta IOS58 antes de montar; o frontend remonta
+- **WAD/USB:** forwarder v6 passa argv, prioriza USB, fecha a interface USB antes do handoff e tenta IOS58 antes de montar; o frontend remonta
   SD e USB independentemente, inclusive com repeticoes de montagem. Se o
   IOS58 nao estiver instalado ou o dispositivo nao responder, o problema
   continua sendo diagnosticavel e nao se afirma suporte universal.

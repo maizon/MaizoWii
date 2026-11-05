@@ -1,4 +1,4 @@
-# MAIZO OSC/FIX94 forwarder v4
+# MAIZO FIX94-COMPAT forwarder v4
 
 This component **replaces** the previous experimental MAIZO MEM2 forwarder.
 It ports the **working Wii forwarder implementation** distributed as
@@ -16,7 +16,7 @@ with additional credit to WiiPower, luccax, Aurelio and crediar.
   `apps/MaizoWii/boot.dol`, DOL sanity checks, diagnostics on screen,
   USB/SD `maizo/forwarder.log` on failure. No writes to NAND.
 - Boot-stage text uniquely identifies the version:
-  **MAIZO OSC/FIX94 FORWARDER v5**. If the user's channel does not show
+  **MAIZO FIX94-COMPAT FORWARDER v6**. If the user's channel does not show
   that marker, the **old WAD** is still installed.
 - The front end itself must be placed at `usb:/apps/maizo/boot.dol`
   or `sd:/apps/maizo/boot.dol`; a WAD alone does NOT install the app.

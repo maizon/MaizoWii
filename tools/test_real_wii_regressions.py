@@ -22,6 +22,8 @@ class WiiRealBootRegressions(unittest.TestCase):
         front = (ROOT / "source/main.c").read_text()
         self.assertIn("IOS_ReloadIOS(58)", fw)
         self.assertIn('fatMountSimple("usb",&__io_usbstorage)', front)
+        self.assertIn("__io_usbstorage.shutdown()",fw)
+        self.assertIn("a->argvMagic=ARGV_MAGIC",fw)
         self.assertIn('storage_root("usb:/")', front)
 
     def test_devkitpro_3f00_entry_supported_in_both_loaders(self):
