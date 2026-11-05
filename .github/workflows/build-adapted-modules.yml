@@ -7,13 +7,6 @@ on:
         default: false
   workflow_dispatch:
     inputs:
-      only_module:
-        description: Module to compile; default all
-        type: choice
-        options:
-          - WiiMC
-          - all
-        default: WiiMC
       full_rebuild:
         description: Force adapter rebuilds (ignore existing caches)
         type: boolean
@@ -62,7 +55,6 @@ jobs:
             repo: SuperrSonic/WiiMC-SSLC
             ref: b1f212aeaa0638d654f949b9dc66d89df6d0be31
             container: devkitpro/devkitppc:20261102
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.only_module == 'all' || matrix.module == inputs.only_module }}
     container: ${{ matrix.container }}
     steps:
       - uses: actions/checkout@v4
