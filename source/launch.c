@@ -70,14 +70,28 @@ static const char*resolve(System sys){if(sys<0||sys>=SYSTEM_COUNT)return NULL;
  * from every home card on every video frame (FAT/USB can block for ms). */
 static unsigned char modules_present[SYSTEM_COUNT];
 static int modules_scanned=0;
+static int alternate_ps1=0,alternate_media=0;
 void module_refresh_available(void){
  for(int i=0;i<SYSTEM_COUNT;i++)
   modules_present[i]=resolve((System)i)!=NULL;
+ alternate_ps1=resolve_ps1_wiisx()!=NULL;
+ alternate_media=resolve_media_official()!=NULL;
  modules_scanned=1;
+}
+/* Cache the actual selected engine, not just the default. The UI is drawn
+ * every video frame: never fopen() modules from a detail panel or home tile. */
+int module_variant_available(System sys,const Config*c){
+ if(sys<0||sys>=SYSTEM_COUNT)return 0;
+ if(!modules_scanned)module_refresh_available();
+ if(sys==SYSTEM_PS1&&c&&c->ps1_engine)return alternate_ps1;
+ if(sys==SYSTEM_MEDIA&&c&&c->media_player)return alternate_media;
+ return modules_present[sys];
 }
 int module_available(System sys){
  if(sys<0||sys>=SYSTEM_COUNT)return 0;
  if(!modules_scanned)module_refresh_available();
+ if(sys==SYSTEM_PS1)return modules_present[sys]||alternate_ps1;
+ if(sys==SYSTEM_MEDIA)return modules_present[sys]||alternate_media;
  return modules_present[sys];
 }
 const char*system_title(System sys){

@@ -10,6 +10,7 @@
 #include <ctype.h>
 static unsigned background=0xff11111du,panel=0xff1e2030u,bright=0xff6366f1u;
 static int graphite=0;
+static unsigned muted=0xff9fa9c0u,card=0xff242d38u;
 static void quad(float x,float y,float w,float h,unsigned a,unsigned b){
  maizo_video_rect(x,y,w,h,a,b);
 }
@@ -55,98 +56,135 @@ static void text(float x,float y,const char *s,float scale,
 }
 static void label(float x,float y,const char*s,float z,unsigned color){text(x,y,s,z,color,70);}
 static void clipped(float x,float y,const char*s,float z,unsigned color,int max){text(x,y,s,z,color,max);}
+static void button(float x,float y,float w,const char*s,unsigned color){
+ roundrect(x,y,w,25,color);
+ clipped(x+10,y+8,s,0.92f,0xffffffffu,24);
+}
+static void status_chips(const State*u){
+ button(444,27,69,u->storage_usb?"USB OK":"USB --",u->storage_usb?0xff305a50u:0xff3e4048u);
+ button(521,27,68,u->storage_sd?"SD OK":"SD --",u->storage_sd?0xff305a50u:0xff3e4048u);
+}
 static void titlebar(const State*u,const Library*l,int hid){
- roundrect(104,10,526,56,panel);
- quad(104,10,526,3,bright,bright);
- label(124,28,"MAIZO",2.35f,0xffffffffu);
- roundrect(269,24,124,26,bright);label(283,32,"WII EDITION",1.05f,0xffffffffu);
- label(445,29,hid?"CONTROLE USB":"SD / USB",1.08f,0xffb9bbd6);
+ roundrect(103,11,528,54,panel);
+ quad(104,11,526,3,bright,bright);
+ label(121,27,"MAIZO",2.27f,0xffffffffu);
+ quad(223,22,2,34,bright,bright);
+ label(236,29,"WII HUB",1.16f,0xffd3d9e6u);
+ status_chips(u);
+ if(hid)quad(606,27,8,25,0xff53e0b6u,0xff53e0b6u);
 }
 static void sidebar(const State*u){
- roundrect(10,10,84,460,panel);roundrect(22,22,60,60,bright);label(39,45,"M",2.0f,0xffffffffu);
- const char*items[]={"HOME","JOGOS","BUSCA","AJUSTES"};
- int active=u->page==PAGE_HOME?0:(u->page==PAGE_LIBRARY||u->page==PAGE_DETAIL)?1:u->page==PAGE_SEARCH?2:3;
- for(int i=0;i<4;i++){int y=112+i*70;
-  if(i==active)roundrect(17,y,70,56,graphite?0xff3c444au:0xff35335fu);
-  label(27,y+20,items[i],i==3?0.96f:1.00f,i==active?0xffffffffu:0xffabb0c9u);}
- label(28,437,"v0.1",1.0f,0xff8589a5u);
+ roundrect(10,10,83,460,panel);
+ roundrect(20,23,63,65,bright);
+ label(42,43,"M",2.42f,0xffffffffu);
+ quad(24,97,55,2,0xff48515fu,0xff48515fu);
+ const char*items[]={"HOME","JOGOS","BUSCA","AJUSTE"};
+ int active=u->page==PAGE_HOME||u->page==PAGE_WELCOME?0:
+   (u->page==PAGE_LIBRARY||u->page==PAGE_DETAIL)?1:
+   u->page==PAGE_SEARCH?2:3;
+ for(int i=0;i<4;i++){
+  int y=114+i*67;
+  if(active==i){
+   roundrect(15,y,72,51,graphite?0xff3e4b50u:0xff35375bu);
+   quad(16,y+9,3,33,bright,bright);
+  }
+  clipped(23,y+20,items[i],0.92f,
+   active==i?0xffffffffu:0xffa1acc1u,7);
+ }
+ label(30,430,"V6.1",0.96f,0xff8394a8u);
 }
 static void footer(const State*u,const Library*l){
  roundrect(104,440,526,30,panel);
- label(118,451,u->page==PAGE_HID?
-  "B/START VOLTAR":
-  u->page==PAGE_SETTINGS?
-  "SELECT: DIAGNOSTICOS HID  A ALTERAR  B SALVAR":
-  u->settings_for_game?
-  "ESQUERDA/DIREITA AJUSTAR  A SALVAR  B VOLTAR":
-  "A ABRIR  B VOLTAR  L/R SISTEMA  X BUSCA  Y FAVORITO",
-  0.96f,0xffb3b8d2u);
+ const char*hint="A ABRIR   B VOLTAR   L/R SISTEMA   X BUSCA   Y FAVORITO";
+ if(u->page==PAGE_HOME)hint="A SISTEMA   L/R TROCAR   Z ATUALIZAR   START AJUSTES";
+ else if(u->page==PAGE_WELCOME)hint="A INICIAR   ESQUERDA/DIREITA TEMA   B PULAR";
+ else if(u->page==PAGE_HID)hint="B/START VOLTAR  |  VID/PID, PACOTES E MULTIIN";
+ else if(u->page==PAGE_SETTINGS)hint="SETA AJUSTA   A CONFIRMA   B SALVA   Z DIAGNOSTICO";
+ else if(u->page==PAGE_SEARCH)hint="A DIGITAR   B APAGAR   START RESULTADOS";
+ else if(u->page==PAGE_DETAIL)hint="A INICIAR   START AJUSTES DO JOGO   B VOLTAR";
+ else if(u->page==PAGE_INFO)hint="A/B VOLTAR";
+ clipped(115,451,hint,0.93f,0xffbfc7d6u,62);
 }
 static void home(const State*u,const Library*l){
- label(116,80,"SELECIONE UM SISTEMA",1.55f,0xfff8f9ffu);
- label(116,105,"JOGOS, EMULADORES E MULTIMIDIA",1.02f,0xffc4c8dbu);
- const unsigned colors[]={0xff13a4b8u,0xff7664d4u,0xffce5c91u,0xff697bd4u,
-                          0xffc58f36u,0xff369a7au,0xff579ed3u,0xff119c9bu};
- const unsigned gray[]={0xff545d67u,0xff525c66u,0xff62666du,0xff525a65u,
-                        0xff656b70u,0xff48565bu,0xff53616au,0xff4a5a5fu};
+ label(115,79,"MINHA CENTRAL",1.61f,0xfff6f8ffu);
+ char summary[100];
+ snprintf(summary,sizeof(summary),"%d TITULOS  |  %s",l->count,
+          l->scanning?"ATUALIZANDO BIBLIOTECA":"WII / GC / EMULADORES / MEDIA");
+ clipped(116,105,summary,0.96f,muted,61);
+ const unsigned colors[]={0xff3e8895u,0xff776baau,0xffb16b86u,0xff6b86a3u,
+                          0xffb59153u,0xff4f927bu,0xff718ca3u,0xff3b8d91u};
  const char*symbols[]={"WII","GC","PS1","SNES","NES","GBA","GB","TV"};
- const char*names[]={"NINTENDO WII","GAMECUBE","PLAYSTATION","SUPER NINT.",
-                     "NINTENDO NES","GAME BOY ADV","GAME BOY","MULTIMIDIA"};
+ const char*names[]={"NINTENDO WII","GAMECUBE","PLAYSTATION 1","SUPER NINTENDO",
+                     "NINTENDO NES","GAME BOY ADV.","GAME BOY","VIDEOS / AUDIO"};
  for(int i=0;i<SYSTEM_COUNT;i++){
-  float x=114+(i%4)*128.0f,y=132+(i/4)*145.0f;
-  int focus=(int)u->system==i;
-  if(focus)roundrect(x-3,y-3,126,139,bright);
-  roundrect(x,y,120,133,focus?0xff35364au:0xff242838u);
-  quad(x+5,y+5,110,66,graphite?gray[i]:colors[i],
-       graphite?0xff303840u:0xff1b2337u);
+  float x=114+(i%4)*128.0f,y=130+(i/4)*143.0f;
+  int focused=(int)u->system==i,ready=module_available((System)i);
+  if(focused)roundrect(x-3,y-3,126,141,bright);
+  roundrect(x,y,120,135,focused?0xff33404cu:card);
+  quad(x+5,y+5,110,69,graphite?0xff56646au:colors[i],
+       graphite?0xff303c41u:0xff253144u);
   int idx=library_visible(l,(System)i,"",0,0);
-  if(idx<0||!cover_draw(&l->games[idx],x+38,y+10,43,55))
-   clipped(x+29,y+28,symbols[i],1.75f,0xffffffffu,5);
-  clipped(x+7,y+81,names[i],1.04f,0xfff7f8ffu,13);
-  char buf[28];snprintf(buf,sizeof(buf),"%d JOGOS",library_total(l,(System)i,"",0));
-  label(x+7,y+100,buf,1.00f,0xffc8cde0u);
-  label(x+7,y+117,module_available((System)i)?"PRONTO":"SEM MODULO",
-        0.93f,module_available((System)i)?0xff92e2c4u:0xffffb5bdu);
+  if(idx<0||!cover_draw(&l->games[idx],x+38,y+8,44,64))
+   clipped(x+21,y+27,symbols[i],1.86f,0xffffffffu,5);
+  quad(x+6,y+78,108,1,0xff485663u,0xff485663u);
+  clipped(x+9,y+86,names[i],0.92f,0xffffffffu,14);
+  char count[28];snprintf(count,sizeof(count),"%d ARQUIVOS",library_total(l,(System)i,"",0));
+  clipped(x+9,y+103,count,0.91f,0xffbdc9d8u,17);
+  quad(x+9,y+122,6,6,ready?0xff70d9a6u:0xffe49e8cu,ready?0xff70d9a6u:0xffe49e8cu);
+  clipped(x+20,y+120,ready?"MODULO PRONTO":"SEM MODULO",0.77f,0xffc0cadbu,16);
  }
- label(117,424,"L/R SISTEMA  A ABRIR  Z REINDEXAR USB/SD",0.92f,0xffc0c5dau);
+ if(l->scanning)clipped(117,418,l->status,0.85f,0xff80d7b6u,55);
+ else label(117,417,"ESCOLHA UMA PLATAFORMA PARA EXPLORAR",0.92f,muted);
 }
 static void library(const State*u,const Library*l,const Config*c){
- label(117,77,system_title(u->system),1.54f,0xffffffffu);
- char count[76];snprintf(count,sizeof(count),"%d ITENS  %s  %s",
- library_total(l,u->system,u->search,u->favorites),u->favorites?"FAVORITOS":"",
- c->layout?"LISTA":"GRADE");
- label(119,106,count,1.03f,0xffc1c5d8u);
- if(library_total(l,u->system,u->search,u->favorites)==0){
-  roundrect(123,157,483,202,0xff292e43u);
-  label(151,187,l->scanning?"PROCURANDO ARQUIVOS...":"BIBLIOTECA VAZIA",1.72f,0xffffffffu);
-  label(151,235,l->scanning?"LENDO USB / SD":"COLOQUE JOGOS NA PASTA DO SISTEMA",1.06f,0xffccd1e0u);
-  label(151,277,"Z ATUALIZAR FAVORITOS    B VOLTAR",0.97f,0xffafb7d1u);
-  if(l->scanning)clipped(151,320,l->status,0.95f,0xff9bdccdu,46);
+ label(117,79,system_title(u->system),1.55f,0xfff6f9ffu);
+ const int n=library_total(l,u->system,u->search,u->favorites);
+ char subtitle[92];snprintf(subtitle,sizeof(subtitle),"%d TITULOS    %s    %s",
+  n,u->favorites?"SOMENTE FAVORITOS":"TODOS OS ARQUIVOS",c->layout?"LISTA":"GRADE");
+ clipped(117,106,subtitle,0.96f,muted,58);
+ if(n==0){
+  roundrect(119,141,494,255,card);
+  label(147,177,l->scanning?"PROCURANDO ARQUIVOS...":"NENHUM ARQUIVO",1.64f,0xffffffffu);
+  clipped(147,221,l->scanning?"INDEXANDO USB / SD":"VERIFIQUE A PASTA DO SISTEMA NO USB/SD",
+          1.04f,0xffcbd5e3u,46);
+  label(147,265,"X BUSCA  |  Y FAVORITO  |  B VOLTAR",0.92f,muted);
+  if(l->scanning)clipped(147,318,l->status,0.94f,0xff95debfu,50);
   return;
  }
  if(!c->layout){
   for(int i=0;i<8;i++){
    int pos=u->scroll+i,idx=library_visible(l,u->system,u->search,u->favorites,pos);
-   if(idx<0)break;const Game*g=&l->games[idx];
-   float x=115+(i%4)*127.0f,y=133+(i/4)*136.0f;
-   roundrect(x,y,120,129,pos==u->selected?bright:0xff27283au);
-   roundrect(x+5,y+5,110,89,0xff343750u);
-   if(!cover_draw(g,x+23,y+6,74,86))
-    clipped(x+32,y+40,"JOGO",1.33f,0xffffffffu,7);
-   clipped(x+7,y+104,g->name,1.01f,0xfff7f7ffu,13);
-   if(g->favorite)label(x+107,y+105,"*",0.98f,0xffffd783u);
+   if(idx<0)break;
+   const Game*g=&l->games[idx];
+   float x=115+(i%4)*127.0f,y=130+(i/4)*138.0f;
+   int selected=pos==u->selected;
+   if(selected)roundrect(x-3,y-3,126,139,bright);
+   roundrect(x,y,120,133,selected?0xff35414du:card);
+   roundrect(x+5,y+5,110,88,0xff3a4855u);
+   if(!cover_draw(g,x+21,y+6,78,86))
+    clipped(x+26,y+43,g->system==SYSTEM_MEDIA?"VIDEO":"JOGO",1.2f,0xffffffffu,8);
+   clipped(x+7,y+104,g->name,1.02f,0xfff5f8ffu,13);
+   if(g->favorite)label(x+108,y+105,"*",1.1f,0xfff9cd72u);
   }
  }else{
   for(int i=0;i<8;i++){
    int pos=u->scroll+i,idx=library_visible(l,u->system,u->search,u->favorites,pos);
-   if(idx<0)break;const Game*g=&l->games[idx];int y=132+i*36;
-   if(pos==u->selected)roundrect(113,y,509,34,bright);
-   else roundrect(113,y,509,34,i%2?0xff252a3au:0xff2d3144u);
-   clipped(125,y+11,g->name,1.08f,0xfff7f7ffu,48);
-   if(g->favorite)label(597,y+11,"*",1.2f,0xffffd783u);
+   if(idx<0)break;
+   const Game*g=&l->games[idx];
+   float y=129+i*36.0f;int selected=pos==u->selected;
+   roundrect(116,y,503,33,selected?bright:(i%2?0xff25303au:card));
+   clipped(128,y+10,g->name,1.04f,0xfff2f6feu,49);
+   if(g->favorite)label(596,y+10,"*",1.1f,0xffffce79u);
+   if(!selected)quad(118,y+32,499,1,0xff394552u,0xff394552u);
   }
  }
- if(l->scanning)clipped(119,418,l->status,0.87f,0xffc3b8eeu,56);
+ int selected=library_visible(l,u->system,u->search,u->favorites,u->selected);
+ if(selected>=0){
+  const Game*g=&l->games[selected];
+  quad(117,412,3,19,bright,bright);
+  clipped(130,417,g->name,0.93f,0xffe9eff8u,45);
+ }
+ if(l->scanning)clipped(401,417,l->status,0.78f,0xff8bd9bdu,26);
 }
 static void detail(const State*u,const Library*l,const Config*c){
  if(u->detail<0||u->detail>=l->count)return;const Game*g=&l->games[u->detail];
@@ -157,14 +195,21 @@ static void detail(const State*u,const Library*l,const Config*c){
  label(310,176,module_name(g->system),1.13f,0xffb9bcd9u);
  if(g->id[0]){char b[28];snprintf(b,sizeof(b),"ID: %.6s",g->id);label(310,199,b,1.1f,0xffb9bcd9u);}
  clipped(310,230,g->path,0.85f,0xffb1b2ccu,37);
- roundrect(313,291,269,48,module_available(g->system)?(graphite?0xff455f55u:0xff4fbc91u):0xff73536bu);
- label(345,307,module_available(g->system)?"A  INICIAR":"MODULO AUSENTE",1.39f,0xffffffffu);
+ int can_launch=module_variant_available(g->system,&u->game_config);
+ roundrect(313,291,269,48,can_launch?(graphite?0xff455f55u:0xff4fbc91u):0xff73536bu);
+ label(345,307,can_launch?"A  INICIAR":"MODULO AUSENTE",1.39f,0xffffffffu);
+ if(g->system==SYSTEM_MEDIA)
+  label(313,267,u->game_config.media_player?"WIIMC ORIGINAL":"WIIMC HID",0.95f,muted);
  label(313,358,"Y FAVORITO  B VOLTAR",1.1f,0xffb9bcd9u);
  label(313,386,"START: AJUSTES DESTE JOGO",0.92f,0xffb9bcd9u);
 }
 static void search_ui(const State*u,const Library*l){
  const char*characters=" ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-";
  label(119,77,"PESQUISAR",1.55f,0xffffffffu);
+ char count[48];
+ snprintf(count,sizeof(count),"%d RESULTADOS",
+          library_total(l,u->system,u->search,u->favorites));
+ clipped(449,82,count,0.88f,muted,20);
  roundrect(119,108,490,47,0xff33334fu);
  clipped(132,125,u->search[0]?u->search:"DIGITE UM TITULO",1.34f,0xffffffffu,34);
  label(119,165,"SETAS: ESCOLHER  A: INSERIR  B: APAGAR",0.92f,0xffaeb0c8u);
@@ -176,6 +221,21 @@ static void search_ui(const State*u,const Library*l){
   label(x+15,y+10,str,1.35f,0xffffffffu);
  }
  label(119,415,"START: RESULTADOS   L/R: SISTEMA",0.98f,0xffaeb0c8u);
+}
+static void welcome(const Config*c){
+ label(127,91,"BEM-VINDO AO MAIZO",2.06f,0xfff4f7ffu);
+ clipped(127,129,"SEU HUB DE JOGOS E MIDIA NO WII",1.08f,muted,47);
+ roundrect(119,178,493,193,card);
+ button(137,194,123,"100% GAMEPAD",0xff405661u);
+ button(271,194,133,"USB / SD",0xff405661u);
+ button(415,194,169,"JOGOS E VIDEOS",0xff405661u);
+ label(140,239,"A  EXPLORAR BIBLIOTECA",1.24f,0xffffffffu);
+ label(140,267,"L/R  TROCAR DE SISTEMA",1.05f,0xffd2dae6u);
+ label(140,293,"X  BUSCAR   Y  FAVORITOS",1.04f,0xffd2dae6u);
+ const char*palettes[]={"VIOLETA","TURQUESA","CORAL","GRAFITE"};
+ char b[60];snprintf(b,sizeof(b),"TEMA: %s  < >",palettes[c->theme%4]);
+ label(138,347,b,1.06f,0xffa8e2d1u);
+ label(124,406,"A INICIAR. O TEMA PODERA SER ALTERADO.",0.95f,muted);
 }
 static void hid_diagnostics_line(void){
  HidDiagnostics d;input_hid_diagnostics(&d);
@@ -281,13 +341,15 @@ void ui_boot_message(const char*stage){
 void ui_draw(const State*u,const Library*l,const Config*c,int hid){
  maizo_video_clear();
  graphite=c->theme==3;
- bright=graphite?0xff8998a4u:c->theme==1?0xff1cbea8u:c->theme==2?0xffdd6689u:0xff6661eau;
- panel=graphite?0xff24282du:0xff202132u;
- background=graphite?0xff131619u:0xff121420u;
- quad(0,0,640,480,background,0xff171b2eu);
+ bright=graphite?0xff84b4b9u:c->theme==1?0xff1cbea8u:c->theme==2?0xffdd6689u:0xff6661eau;
+ panel=graphite?0xff222a30u:0xff20283au;
+ card=graphite?0xff29343au:0xff28334au;
+ muted=graphite?0xffb9c5cbu:0xffadbcd0u;
+ background=graphite?0xff111a1fu:0xff121b2du;
+ quad(0,0,640,480,background,graphite?0xff1d2930u:0xff202a43u);
  quad(0,0,640,7,bright,bright);
  sidebar(u);titlebar(u,l,hid);
- switch(u->page){case PAGE_HOME:home(u,l);break;case PAGE_LIBRARY:library(u,l,c);break;case PAGE_DETAIL:detail(u,l,c);break;case PAGE_SEARCH:search_ui(u,l);break;case PAGE_SETTINGS:settings(u,u->settings_for_game?&u->game_config:c);break;case PAGE_HID:hid_page();break;case PAGE_CALIBRATION:calibration_ui(u,c);break;case PAGE_INFO:
+ switch(u->page){case PAGE_HOME:home(u,l);break;case PAGE_LIBRARY:library(u,l,c);break;case PAGE_DETAIL:detail(u,l,c);break;case PAGE_SEARCH:search_ui(u,l);break;case PAGE_SETTINGS:settings(u,u->settings_for_game?&u->game_config:c);break;case PAGE_HID:hid_page();break;case PAGE_CALIBRATION:calibration_ui(u,c);break;case PAGE_WELCOME:welcome(c);break;case PAGE_INFO:
  label(120,86,"AVISO MAIZO",1.8f,0xffffffffu);label(120,156,u->info,1.0f,0xffc9c9dfu);
  label(120,204,"APERTE B PARA VOLTAR",1.05f,0xffaeb1c8u);break;}
  footer(u,l);

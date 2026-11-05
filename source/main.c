@@ -1,4 +1,5 @@
 #include "app.h"
+#include "nav.h"
 #include <gccore.h>
 #include <fat.h>
 #include <ogc/disc_io.h>
@@ -63,16 +64,8 @@ static int total(void){return library_total(&library_state,state.system,state.se
 static void clamp_selection(void){
  int count=total();if(state.selected>=count)state.selected=count?count-1:0;
  if(state.selected<0)state.selected=0;
- if(!config.layout){
-  if(state.selected<state.scroll)state.scroll=(state.selected/4)*4;
-  if(state.selected>=state.scroll+8){
-   int row=state.selected/4;
-   state.scroll=(row>0?row-1:0)*4;
-  }
- }else{
-  if(state.scroll>state.selected)state.scroll=state.selected;
-  if(state.selected>=state.scroll+8)state.scroll=state.selected-7;
- }
+ state.scroll=maizo_nav_scroll(state.selected,state.scroll,count,
+                                 config.layout?1:4,8);
 }
 static void change_system(int diff){state.system=(System)((state.system+SYSTEM_COUNT+diff)%SYSTEM_COUNT);
  state.selected=0;state.scroll=0;state.favorites=0;state.search[0]=0;
@@ -88,10 +81,14 @@ static void close_settings(void){
   else {
    snprintf(state.info,sizeof(state.info),
             "FALHA AO SALVAR OPCOES DESTE JOGO");
-   state.page=PAGE_INFO;
+   state.info_return=PAGE_DETAIL;state.page=PAGE_INFO;
   }
  }else{
-  config_save(&config);state.page=PAGE_HOME;
+  if(config_save(&config))state.page=PAGE_HOME;
+  else{
+   snprintf(state.info,sizeof(state.info),"NAO FOI POSSIVEL GRAVAR AJUSTES NO USB/SD");
+   state.info_return=PAGE_SETTINGS;state.page=PAGE_INFO;
+  }
  }
 }
 static void option_change(int dir){
@@ -122,6 +119,16 @@ static void adjust_calibration(int dir){
  config_save(&config);
 }
 static void handle(const Input*i){
+ if(state.page==PAGE_WELCOME){
+  if(i->left||i->right)config.theme=(config.theme+4+(i->left?-1:1))%4;
+  if(i->accept||i->back||i->settings){
+   if(!config_save(&config)){
+    snprintf(state.info,sizeof(state.info),"BEM-VINDO! AJUSTES NAO SALVOS NO DISPOSITIVO");
+    state.info_return=PAGE_HOME;state.page=PAGE_INFO;
+   }else state.page=PAGE_HOME;
+  }
+  return;
+ }
  if(state.page==PAGE_CALIBRATION){
   if(i->up&&state.calibration_row>0)state.calibration_row--;
   if(i->down&&state.calibration_row<5)state.calibration_row++;
@@ -137,7 +144,10 @@ static void handle(const Input*i){
   if(i->back||i->settings||i->accept)state.page=PAGE_SETTINGS;
   return;
  }
- if(state.page==PAGE_INFO){if(i->back||i->accept)state.page=PAGE_LIBRARY;return;}
+ if(state.page==PAGE_INFO){
+  if(i->back||i->accept)state.page=state.info_return;
+  return;
+ }
  if(!state.settings_for_game &&
     (state.page==PAGE_HOME||state.page==PAGE_LIBRARY||state.page==PAGE_SEARCH)){
   if(i->tab_prev)change_system(-1);
@@ -157,7 +167,8 @@ static void handle(const Input*i){
  }
  if(i->search && (state.page==PAGE_LIBRARY||state.page==PAGE_HOME)){state.page=PAGE_SEARCH;state.search_index=1;return;}
  if(i->refresh && state.page==PAGE_HOME){
-  if(!media_ready)mount_storage();
+  mount_storage();
+  state.storage_usb=storage_usb;state.storage_sd=storage_sd;
   input_storage_ready(media_ready);
   module_refresh_available();
   if(media_ready)library_begin(&library_state);
@@ -197,18 +208,23 @@ static void handle(const Input*i){
   return;
  }
  if(state.page==PAGE_LIBRARY){
-  int n=total();if(n>0){
-   int stride=config.layout?1:4;
-   if(i->up)state.selected=(state.selected+n-(stride%n))%n;
-   if(i->down)state.selected=(state.selected+stride)%n;
-   if(!config.layout&&i->left)state.selected=(state.selected+n-1)%n;
-   if(!config.layout&&i->right)state.selected=(state.selected+1)%n;
+  int n=total();
+  if(n>0){
+   int columns=config.layout?1:4;
+   if(i->up)state.selected=maizo_nav_move(state.selected,n,columns,0,-1);
+   if(i->down)state.selected=maizo_nav_move(state.selected,n,columns,0,1);
+   if(i->left)state.selected=maizo_nav_move(state.selected,n,columns,1,-1);
+   if(i->right)state.selected=maizo_nav_move(state.selected,n,columns,1,1);
   }
   clamp_selection();
   if(i->favorite){int idx=library_visible(&library_state,state.system,state.search,state.favorites,state.selected);
    if(idx>=0){library_state.games[idx].favorite^=1;favorites_save(&library_state);clamp_selection();}}
   if(i->accept){int idx=library_visible(&library_state,state.system,state.search,state.favorites,state.selected);
-   if(idx>=0){state.detail=idx;state.page=PAGE_DETAIL;}}
+   if(idx>=0){
+    state.detail=idx;
+    config_game_load(&state.game_config,&config,&library_state.games[idx]);
+    state.page=PAGE_DETAIL;
+   }}
   if(i->back){state.page=PAGE_HOME;state.search[0]=0;}
   return;
  }
@@ -220,7 +236,8 @@ static void handle(const Input*i){
    const Game*g=&library_state.games[state.detail];
    Config effective;config_game_load(&effective,&config,g);
    module_launch(g,&effective,error,sizeof(error));
-   snprintf(state.info,sizeof(state.info),"%s",error);
+   snprintf(state.info,sizeof(state.info),"%s",error[0]?error:"MODULO RETORNOU SEM INICIAR");
+   state.info_return=PAGE_DETAIL;
    state.page=PAGE_INFO;
   }
  }
@@ -241,7 +258,9 @@ int main(int argc,char**argv){
  maizo_video_set_calibration((int)config.video_x-50,(int)config.video_y-50,config.video_w,config.video_h);
  memset(&state,0,sizeof(state));
  state.system=SYSTEM_GC;
- state.page=PAGE_HOME;
+ state.info_return=PAGE_HOME;
+ state.storage_usb=storage_usb;state.storage_sd=storage_sd;
+ state.page=storage_ready&&!config_has_settings()?PAGE_WELCOME:PAGE_HOME;
  ui_boot_message("VERIFICANDO MODULOS");
  module_refresh_available();
  ui_boot_message("INDEXANDO BIBLIOTECA");
