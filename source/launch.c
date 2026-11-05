@@ -1,5 +1,6 @@
 #include "app.h"
 #include "launch_args.h"
+#include "ps1_cue.h"
 #include <gccore.h>
 #include <ogcsys.h>
 #include <ogc/machine/processor.h>
@@ -163,6 +164,8 @@ int module_launch(const Game*g,const Config*c,char*error,size_t cap){
    snprintf(error,cap,"WiiSXRX original nao suporta este formato diretamente");return 0;
   }
  }
+ /* Fail before reboot when CUE tracks/PS1 image are missing or malformed. */
+ if(g->system==SYSTEM_PS1 && !maizo_probe_ps1_image(g->path,error,cap))return 0;
  /* Construct arguments with the exact same portable code exercised in CI.
   * Keep the Nintendont nincfg.bin contract separate from argv. */
  MaizoLaunchSpec spec={0};

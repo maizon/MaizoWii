@@ -201,6 +201,62 @@ def patch_wiimc(root: Path):
             "WiiMC single owner MPlayer paths")
     patch_file(root, "source/mplayer/mplayer.c", mplayer_path_owner)
 
+    # Legacy libfat exposed the volume label accessor, but the current Wii
+    # library no longer links that API. Keep FAT mounting, omit optional label.
+    patch_file(root, "source/fileop.cpp",
+               lambda s: replace_once(
+                   s, "fatGetVolumeLabel(mount, part[device][*devnum].name);",
+                   "part[device][*devnum].name[0] = 0;",
+                   "WiiMC FAT volume label optional"))
+    # The VI encoder needs 2-4 microsecond waits; use libogc watchdog ticks
+    # rather than introducing a millisecond-granularity usleep() regression.
+    patch_file(root, "source/utils/vi_encoder.c",
+               lambda s: replace_once(s, "extern void udelay(int us);",
+                  "#include <ogc/lwp_watchdog.h>\n"
+                  "static void udelay(int us){\n"
+                  " u64 start=gettime();\n"
+                  " while(diff_usec(start,gettime()) < (u32)us){}\n"
+                  "}",
+                  "WiiMC watchdog VI timing"))
+    # Modern bin2o does not produce the old *_size linker globals. Emit
+    # actual sizes from the pinned assets, with NO changes to asset contents.
+    asset_sources=[]
+    for folder,exts in (("fonts",(".ttf",)),("images",(".jpg",".png")),
+                        ("lang",(".lang",))):
+        for file in sorted((root/"source"/folder).iterdir()):
+            if file.is_file() and file.suffix.lower() in exts:
+                name="".join(c if c.isalnum() else "_" for c in file.name)
+                asset_sources.append(
+                    "unsigned int "+name+"_size="+str(file.stat().st_size)+"u;")
+    if not asset_sources:
+        raise ValueError("WiiMC assets missing from pinned source")
+    (root/"source/utils/maizo_asset_sizes.c").write_text(
+        "/* Actual sizes of unmodified WiiMC assets for modern bin2o. */\n"+
+        "\n".join(asset_sources)+"\n",encoding="utf-8")
+    # libmxml's pinned old precompiled archive still references newlib's
+    # retired __ctype_ptr__ (the old 257-byte ASCII/EOF classifier). Provide
+    # its ABI-compatible lookup table without touching the original library.
+    flags=[]
+    for code in range(256):
+        bits=0
+        if code<32 or code==127: bits|=0x20
+        if code in (9,10,11,12,13,32): bits|=0x08
+        if code==32: bits|=0x80
+        if code in (33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,
+                     58,59,60,61,62,63,64,91,92,93,94,95,96,123,124,125,126):
+            bits|=0x10
+        if 48<=code<=57:bits|=0x04|0x40
+        if 65<=code<=90:bits|=0x01
+        if 97<=code<=122:bits|=0x02
+        if 65<=code<=70 or 97<=code<=102:bits|=0x40
+        flags.append(bits)
+    table=",".join(str(v) for v in [0]+flags)
+    (root/"source/utils/maizo_legacy_ctype.c").write_text(
+        "/* Legacy newlib ABI for original mxml binary; ASCII classification. */\n"
+        "static unsigned char maizo_ctype_table[257]={"+table+"};\n"
+        "char *__ctype_ptr__=(char *)maizo_ctype_table;\n",
+        encoding="utf-8")
+
     # Pinned historical MPlayer has version.sh without its executable bit.
     # Run through /bin/sh rather than trusting a checkout's file mode.
     patch_file(root, "source/mplayer/Makefile",
