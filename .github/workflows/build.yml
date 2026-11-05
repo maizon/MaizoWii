@@ -156,9 +156,10 @@ jobs:
       full_rebuild: ${{ inputs.full_rebuild || false }}
 
   wiimc-dolphin-smoke:
-    # A screenshot/log is evidence, not a guarantee that HID devices work.
-    # A headless runner may have no hardware GPU or no Dolphin package.
-    needs: adapted
+    # Compare the adapted DOL with a PREBUILT upstream original. Do not waste
+    # time recompiling a control. A black root screenshot proves nothing
+    # unless the baseline renders in the identical emulator environment.
+    needs: [adapted, all-in-one]
     runs-on: ubuntu-26.04
     timeout-minutes: 12
     continue-on-error: true
@@ -167,43 +168,59 @@ jobs:
         with:
           name: MAIZO-ADAPTED-WiiMC
           path: wiimc
+      - uses: actions/download-artifact@v4
+        with:
+          name: MAIZOWII-PREVIEW-USB-SD
+          path: official-archive
+      - name: Extract unmodified official WiiMC baseline without compilation
+        run: |
+          unzip -q official-archive/MAIZOWII-ALL-IN-ONE.zip 'apps/WiiMC-official/boot.dol' -d official
+          test -s official/apps/WiiMC-official/boot.dol
+          test -s wiimc/apps/WiiMC/boot.dol
       - name: Install Dolphin and virtual display
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq dolphin-emu xvfb imagemagick python3-pil x11-utils
-      - name: Run built WiiMC in headless Dolphin and capture startup
+      - name: Compare WiiMC original and HID in the SAME Dolphin environment
         shell: bash
         run: |
           set -euo pipefail
-          test -s wiimc/apps/WiiMC/boot.dol
           mkdir -p smoke
           xvfb-run -a -s "-screen 0 1280x800x24" bash -c '
-            export LIBGL_ALWAYS_SOFTWARE=1
-            export QT_X11_NO_MITSHM=1
-            export QT_QPA_PLATFORM=xcb
-            timeout 35s dolphin-emu --video_backend="Software Renderer" --user="$PWD/smoke/dolphin-user" --exec="$PWD/wiimc/apps/WiiMC/boot.dol" > smoke/dolphin.log 2>&1 &
-            job=$!
-            sleep 23
-            ps ax -o pid,stat,comm,args | grep -i dolphin > smoke/process.txt || true
-            xwininfo -root -tree > smoke/windows.txt 2>&1 || true
-            import -display "$DISPLAY" -window root smoke/wiimc-startup.png || true
-            kill "$job" 2>/dev/null || true
-            wait "$job" 2>/dev/null || true
+            export LIBGL_ALWAYS_SOFTWARE=1 QT_X11_NO_MITSHM=1 QT_QPA_PLATFORM=xcb
+            for name in official adapted; do
+              if test "$name" = official; then dol="$PWD/official/apps/WiiMC-official/boot.dol"; else dol="$PWD/wiimc/apps/WiiMC/boot.dol"; fi
+              timeout 34s dolphin-emu --video_backend="Software Renderer" --user="$PWD/smoke/user-$name" --exec="$dol" > "smoke/$name.log" 2>&1 &
+              job=$!
+              sleep 20
+              ps ax -o pid,stat,comm,args | grep -i dolphin > "smoke/$name-process.txt" || true
+              xwininfo -root -tree > "smoke/$name-windows.txt" 2>&1 || true
+              import -display "$DISPLAY" -window root "smoke/$name.png" || true
+              kill "$job" 2>/dev/null || true
+              wait "$job" 2>/dev/null || true
+              sleep 1
+            done
           '
-          test -s smoke/wiimc-startup.png
           python3 - <<'PY'
           from PIL import Image
           from pathlib import Path
-          img=Image.open("smoke/wiimc-startup.png").convert("RGB")
-          w,h=img.size
-          pix=img.crop((w//4,h//4,3*w//4,3*h//4)).resize((128,128))
-          colors=pix.getcolors(maxcolors=16384)
-          bright=sum(1 for r,g,b in pix.getdata() if max(r,g,b)>32)
-          report=f"Dolphin startup screenshot center bright pixels: {bright}/16384; colors={len(colors) if colors else 'more than 16384'}\\n"
-          Path("smoke/report.txt").write_text(report)
-          print(report)
-          if bright < 100:
-              raise SystemExit("FAIL: Dolphin screenshot is black or no GUI window exists; WiiMC boot NOT validated")
+          results={}
+          for name in ("official","adapted"):
+              p=Path(f"smoke/{name}.png")
+              if not p.is_file():
+                  results[name]=-1
+                  continue
+              im=Image.open(p).convert("RGB")
+              w,h=im.size
+              sample=im.crop((w//4,h//4,3*w//4,3*h//4)).resize((128,128))
+              results[name]=sum(1 for r,g,b in sample.getdata() if max(r,g,b)>32)
+          verdict=f"Dolphin center bright pixels original={results['official']} adapted={results['adapted']} (16384 max each)"
+          Path("smoke/verdict.txt").write_text(verdict+"\\n")
+          print(verdict)
+          if results["official"]<100:
+              raise SystemExit("INCONCLUSIVE: official WiiMC also rendered no usable GUI under headless Dolphin")
+          if results["adapted"]<100:
+              raise SystemExit("FAIL: original WiiMC rendered but HID-adapted WiiMC did not")
           PY
       - uses: actions/upload-artifact@v4
         if: always()
