@@ -92,7 +92,7 @@ def patch_wiimc(root: Path):
         s = replace_once(
             s, "WPAD_SetVRes(WPAD_CHAN_ALL, screenwidth, screenheight);",
             "WPAD_SetVRes(WPAD_CHAN_ALL, screenwidth, screenheight);\n"
-            "\tmaizo_hid_tick(); /* one-time discovery before autoplay */",
+            "\t(void)maizo_hid_tick(); /* one-time discovery before autoplay */",
             "WiiMC argv-autoplay HID pre-attach")
         # Never dereference a missing WPAD_Data() with no Wiimote paired.
         # The original GuiTrigger embeds a zero-initialized WPADData.
