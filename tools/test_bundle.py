@@ -20,6 +20,22 @@ class BundleTests(unittest.TestCase):
         self.assertFalse(valid_dol(b"junk" * 64))
         self.assertFalse(valid_dol(fake_dol()[:-1]))
 
+    def test_loader_rejects_invalid_addresses(self):
+        import struct
+        for word, val in ((56, 0x80003000), (56, 0x93000000),
+                          (18, 0x92001000), (18, 0x93000000)):
+            with self.subTest(field=word, value=val):
+                dol=bytearray(fake_dol())
+                struct.pack_into(">I",dol,4*word,val)
+                self.assertFalse(valid_dol(bytes(dol)))
+        dol=bytearray(fake_dol())
+        struct.pack_into(">I",dol,4*54,0x93200000)
+        struct.pack_into(">I",dol,4*55,512)
+        self.assertFalse(valid_dol(bytes(dol)))
+        dol=bytearray(fake_dol())
+        struct.pack_into(">I",dol,4*56,0x80005000)
+        self.assertFalse(valid_dol(bytes(dol)))
+
     def test_choose_homebrew_not_forwarder(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp)

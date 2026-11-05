@@ -185,7 +185,7 @@ def patch_wiimc(root: Path):
     # rejects the resulting duplicates. Provide one definition in mplayer.c.
     def extern_mplayer_paths(s):
         for name in ("DATADIR", "CONFDIR", "LIBDIR", "CSSDIR"):
-            s=replace_once(s, "char MPLAYER_"+name+"[512];",
+            s=replace_once(s, "char MPLAYER_"+name+"[512]; ",
                            "extern char MPLAYER_"+name+"[512];",
                            "WiiMC MPlayer common variable "+name)
         return s
@@ -210,14 +210,17 @@ def patch_wiimc(root: Path):
                    "WiiMC FAT volume label optional"))
     # The VI encoder needs 2-4 microsecond waits; use libogc watchdog ticks
     # rather than introducing a millisecond-granularity usleep() regression.
-    patch_file(root, "source/utils/vi_encoder.c",
-               lambda s: replace_once(s, "extern void udelay(int us);",
-                  "#include <ogc/lwp_watchdog.h>\n"
-                  "static void udelay(int us){\n"
-                  " u64 start=gettime();\n"
-                  " while(diff_usec(start,gettime()) < (u32)us){}\n"
-                  "}",
-                  "WiiMC watchdog VI timing"))
+    def vi_delay_compat(s):
+        if s.count("udelay(") < 5:
+            raise ValueError("Unexpected VI encoder microsecond delay layout")
+        s=s.replace("udelay(", "maizo_udelay(")
+        return replace_once(s, "extern void maizo_udelay(int us);",
+            "#include <ogc/lwp_watchdog.h>\n"
+            "static void maizo_udelay(int us){\n"
+            " u64 start=gettime();\n"
+            " while(diff_usec(start,gettime()) < (u32)us){}\n"
+            "}", "WiiMC unique watchdog VI timing")
+    patch_file(root, "source/utils/vi_encoder.c", vi_delay_compat)
     # Modern bin2o does not produce the old *_size linker globals. Emit
     # actual sizes from the pinned assets, with NO changes to asset contents.
     asset_sources=[]
