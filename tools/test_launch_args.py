@@ -97,6 +97,14 @@ class LaunchArgsTests(unittest.TestCase):
         self.assertIsNone(self.build(0, b"file", ident=b"ABCD12"))
         self.assertIsNone(self.build(2, b"sd:/ps1/a.bin", ps1_audio=4))
 
+    def test_unsafe_paths_are_rejected(self):
+        self.assertIsNone(self.build(2, b"usb:/ps1/../hidden.iso"))
+        self.assertIsNone(self.build(3, b"usb:/roms//test.sfc"))
+        self.assertIsNone(self.build(3, b"usb:/roms/./test.sfc"))
+        self.assertIsNone(self.build(3, b"usb:/"))
+        self.assertIsNone(self.build(3, b"usb:/roms/a\\\\b.sfc"))
+        self.assertIsNone(self.build(7, b"sd:/videos/test\\rfoo.avi"))
+
     def test_reject_oversize_before_copy(self):
         self.assertIsNone(self.build(3, b"usb:/roms/" + b"x" * 2500 + b".sfc"))
 

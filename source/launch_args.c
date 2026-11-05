@@ -19,8 +19,23 @@ static int append(MaizoLaunchArgs *out,const char *arg){
  out->argc++;
  return 1;
 }
+/* Accept only absolute FAT paths, never traversal or command-line controls. */
 static int storage_path(const char *p){
- return p && ((!strncmp(p,"usb:/",5))||(!strncmp(p,"sd:/",4)));
+ if(!p)return 0;
+ size_t prefix=!strncmp(p,"usb:/",5)?5:(!strncmp(p,"sd:/",4)?4:0);
+ if(!prefix || !p[prefix])return 0;
+ const char *part=p+prefix;
+ for(const char *c=part;;c++){
+  if(*c=='\\' || (*c && (unsigned char)*c<32))return 0;
+  if(*c=='/' || !*c){
+   size_t n=(size_t)(c-part);
+   if(n==0 || (n==1 && part[0]=='.') ||
+      (n==2 && part[0]=='.' && part[1]=='.'))return 0;
+   if(!*c)break;
+   part=c+1;
+  }
+ }
+ return 1;
 }
 static int id6(const char *id){
  if(!id || strlen(id)!=6)return 0;

@@ -15,13 +15,28 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #define DOL_IMAGE 0x92000000u
 #define BOOT_ADDR 0x93000000u
 #define ARG_ADDR 0x93200000u
 #define MAX_DOL (12u*1024u*1024u)
 #define MIN_DOL_ADDR 0x80003F00u
-static char dol_reason[112];
+static char dol_reason[112],last_problem[160];
+static void remember_problem(const char*path,const char*reason){
+ snprintf(last_problem,sizeof(last_problem),"%s: %s",path,reason);
+}
+/* Store only a final diagnostic on SD/USB (never NAND). */
+static void save_forwarder_failure(void){
+ const char*logs[]={"sd:/maizo/forwarder.log","usb:/maizo/forwarder.log"};
+ for(unsigned i=0;i<2;i++){
+  mkdir(i?"usb:/maizo":"sd:/maizo",0777);
+  FILE*f=fopen(logs[i],"ab");if(!f)continue;
+  fprintf(f,"MAIZO-FORWARDER/3 %s\n",last_problem[0]?last_problem:"SD/USB indisponivel");
+  fclose(f);
+  printf("Log: %s\n",logs[i]);return;
+ }
+}
 typedef struct {
  u32 text_pos[7], data_pos[11], text_start[7], data_start[11];
  u32 text_size[7], data_size[11], bss_start, bss_size, entry_point;
@@ -80,8 +95,9 @@ static int try_file(const char*path) {
  printf("Abrindo %s ...\n",path);
  FILE *f=fopen(path,"rb");
  if(!f){
-  printf("  ausente/inacessivel (errno=%d)\n",errno);
-  return 0;
+  snprintf(dol_reason,sizeof(dol_reason),"ausente/inacessivel errno=%d",errno);
+  remember_problem(path,dol_reason);
+  printf("  %s\n",dol_reason);return 0;
  }
  if(fseek(f,0,SEEK_END)){printf("  seek falhou\n");fclose(f);return 0;}
  long len=ftell(f);
@@ -96,6 +112,7 @@ static int try_file(const char*path) {
  fclose(f);
  if(got!=(size_t)len){printf("  leitura incompleta: %lu bytes\n",(unsigned long)got);return 0;}
  if(!validate(image,(size_t)len)){
+  remember_problem(path,dol_reason);
   printf("  DOL rejeitado: %s\n",dol_reason);return 0;
  }
  if(maizo_bootstub_len<16 || maizo_bootstub_len>65536){
@@ -147,6 +164,7 @@ int main(void) {
   int result=try_file(paths[i]);
   if(result<0)break;
  }
+ save_forwarder_failure();
  printf("\nNAO FOI POSSIVEL INICIAR O FRONTEND.\n");
  printf("Confirme apps/maizo/boot.dol (DOL valido) no FAT32.\n");
  printf("O forwarder NAO instala um canal nem grava na NAND.\n");

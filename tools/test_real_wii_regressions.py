@@ -25,7 +25,15 @@ class WiiRealBootRegressions(unittest.TestCase):
     def test_bootstub_clears_header_bss(self):
         stub = (ROOT / "bootstub/stub.c").read_text()
         self.assertIn("clear_bytes", stub)
-        self.assertIn("if(h->bss_size)clear_bytes", stub)
+        self.assertIn("if(h->bss_size){", stub)
+        self.assertIn("clear_bytes((void *)(uintptr_t)h->bss,h->bss_size)", stub)
+
+    def test_forwarder_log_and_bss_cache(self):
+        stub=(ROOT/"bootstub/stub.c").read_text()
+        fw=(ROOT/"forwarder/main.c").read_text()
+        self.assertIn('asm volatile("dcbst',stub)
+        self.assertIn('sd:/maizo/forwarder.log',fw)
+        self.assertIn('save_forwarder_failure();',fw)
 
     def test_ps1_fail_closed_and_wiimc_avoids_autoboot_exit(self):
         patch = (ROOT / "tools/patch_upstreams.py").read_text()

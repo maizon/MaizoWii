@@ -1,5 +1,6 @@
 #include "app.h"
 #include "launch_args.h"
+#include "ps1_cue.h"
 #include <gccore.h>
 #include <ogcsys.h>
 #include <ogc/machine/processor.h>
@@ -96,8 +97,16 @@ static int save_nincfg(const Game*g,const Config*c) {
  snprintf(n.GamePath,sizeof(n.GamePath),"%s",relative);
  if(g->id[0])memcpy(&n.GameID,g->id,4);
  char dest[32];snprintf(dest,sizeof(dest),"%s:/nincfg.bin",(n.Config&NIN_CFG_USB)?"usb":"sd");
- FILE*f=fopen(dest,"wb");if(!f)return 0;
- int ok=fwrite(&n,1,sizeof(n),f)==sizeof(n);if(fclose(f))ok=0;return ok;
+ char tmp[48],backup[48];snprintf(tmp,sizeof(tmp),"%s.tmp",dest);
+ snprintf(backup,sizeof(backup),"%s.bak",dest);
+ FILE*f=fopen(tmp,"wb");if(!f)return 0;
+ int ok=fwrite(&n,1,sizeof(n),f)==sizeof(n);if(fclose(f))ok=0;
+ if(!ok){remove(tmp);return 0;}
+ if(rename(tmp,dest)==0)return 1;
+ remove(backup);
+ if(rename(dest,backup)!=0){remove(tmp);return 0;}
+ if(rename(tmp,dest)==0){remove(backup);return 1;}
+ rename(backup,dest);remove(tmp);return 0;
 }
 static void save_launch_record(const Game*g,const Config*c) {
  char dest[96];snprintf(dest,sizeof(dest),"%s/maizo",(g->path[0]=='s')?"sd:":"usb:");
@@ -146,6 +155,8 @@ static int valid_dol(const unsigned char*image,size_t len){
  return sections>0 && entry_in_text;
 }
 int module_launch(const Game*g,const Config*c,char*error,size_t cap){
+ if(!g||!c||!error||!cap)return 0;
+ error[0]=0;
  const char*exe=resolve(g->system);if(!exe){snprintf(error,cap,"DOL do %s nao encontrado",module_name(g->system));return 0;}
  if(g->system==SYSTEM_PS1){
   const char*e=strrchr(g->path,'.');
@@ -153,8 +164,8 @@ int module_launch(const Game*g,const Config*c,char*error,size_t cap){
    snprintf(error,cap,"WiiSXRX original nao suporta este formato diretamente");return 0;
   }
  }
- if(g->system==SYSTEM_GC&&!save_nincfg(g,c)){snprintf(error,cap,"Falha ao gravar nincfg.bin");return 0;}
- save_launch_record(g,c);
+ /* Fail before reboot when CUE tracks/PS1 image are missing or malformed. */
+ if(g->system==SYSTEM_PS1 && !maizo_probe_ps1_image(g->path,error,cap))return 0;
  /* Construct arguments with the exact same portable code exercised in CI.
   * Keep the Nintendont nincfg.bin contract separate from argv. */
  MaizoLaunchSpec spec={0};
@@ -171,6 +182,10 @@ int module_launch(const Game*g,const Config*c,char*error,size_t cap){
  unsigned char*image=(unsigned char*)0x92000000;
  if(fread(image,1,(size_t)size,f)!=(size_t)size){fclose(f);snprintf(error,cap,"Falha ao ler DOL");return 0;}fclose(f);
  if(!valid_dol(image,(size_t)size)){snprintf(error,cap,"DOL invalido: cabecalho/secoes");return 0;}
+ if(g->system==SYSTEM_GC&&!save_nincfg(g,c)){
+  snprintf(error,cap,"Falha ao gravar nincfg.bin");return 0;
+ }
+ save_launch_record(g,c);
  /* The stand-alone bootstub executes from MEM2 so its memory copy cannot
   * overwrite the frontend while the child DOL is being installed. */
  if(maizo_bootstub_len==0||maizo_bootstub_len>65536u){

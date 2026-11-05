@@ -47,6 +47,21 @@ class FinalDolIntegrityTests(unittest.TestCase):
         manifest = json.loads((self.dist / "maizo/MODULE_MANIFEST.json").read_text())
         self.assertEqual(set(manifest["final_dol_sha256"]), set(self.modules))
 
+    def test_wiimc_hid_overlay_preserves_official_player(self):
+        import hashlib
+        baseline = (self.dist/"apps/WiiMC/boot.dol").read_bytes()
+        override = self.patched/"apps/WiiMC/boot.dol"
+        override.parent.mkdir(parents=True,exist_ok=True)
+        override.write_bytes(fake_dol())
+        overlay(self.patched,self.dist)
+        recovery = self.dist/"apps/WiiMC-official/boot.dol"
+        self.assertEqual(recovery.read_bytes(),baseline)
+        m=json.loads((self.dist/"maizo/MODULE_MANIFEST.json").read_text())
+        self.assertEqual(m["wiimc_official_sha256"],hashlib.sha256(baseline).hexdigest())
+        self.assertEqual(self.verify().returncode,0,self.verify().stderr)
+        recovery.write_bytes(b"corrupted")
+        self.assertIn("Missing WiiMC original", self.verify().stderr)
+
     def test_additional_forwarder_and_installer_are_hashed(self):
         import hashlib
         for name in ("maizo-forwarder", "maizo-installer"):

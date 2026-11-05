@@ -65,6 +65,14 @@ def patch_wiimc(root: Path):
                          "u16 down = PAD_ButtonsDown(cur_chan) | maizo_hid_down(cur_chan);", "MPlayerInput")
         s = replace_once(s, "u16 held = PAD_ButtonsHeld(cur_chan);",
                          "u16 held = PAD_ButtonsHeld(cur_chan) | maizo_hid_held(cur_chan);", "MPlayerInput")
+        # Channel switching previously reverted to the native pad only.
+        if (s.count("held = PAD_ButtonsDown(cur_chan);") != 2 or
+                s.count("down = PAD_ButtonsDown(cur_chan);") != 2):
+            raise ValueError("Unexpected WiiMC channel switching layout")
+        s = s.replace("held = PAD_ButtonsDown(cur_chan);",
+                      "held = userInput[cur_chan].pad.btns_h;")
+        s = s.replace("down = PAD_ButtonsDown(cur_chan);",
+                      "down = userInput[cur_chan].pad.btns_d;")
         return s
     patch_file(root, "source/input.cpp", input_patch)
     def wiimc_autoplay(s):
@@ -146,6 +154,12 @@ def patch_wiimc(root: Path):
             "#if HAVE_PAIRED\n    c->scale_block = scale_block_paired;\n#endif",
             "WiiMC Bink legacy accelerated function absent on modern GCC")
     patch_file(root, "source/mplayer/ffmpeg/libavcodec/binkdsp.c", patch_bink)
+    patch_file(root, "source/mplayer/ffmpeg/libavcodec/h264pred.c",
+               lambda s: replace_once(
+                   s, "if (HAVE_PAIRED) ff_h264_pred_init_ppc(h, codec_id, bit_depth, chroma_format_idc);",
+                   "#if HAVE_PAIRED\n    ff_h264_pred_init_ppc(h, codec_id, bit_depth, chroma_format_idc);\n#endif",
+                   "WiiMC old H264 paired disabled on modern devkitPPC"))
+
     # Generated config.h has HAVE_PAIRED=0; C runtime 'if(0)' still references
     # undeclared paired functions because C compilation type-checks dead code.
     for source, oldcall in (
@@ -158,6 +172,104 @@ def patch_wiimc(root: Path):
                        s, oldcall, "#if HAVE_PAIRED\n    " +
                        oldcall.replace("if (HAVE_PAIRED)", "").strip() +
                        "\n#endif", "WiiMC guarded PPC paired init " + source))
+    # Modern devkitPPC exports __app_start, whereas this legacy linker
+    # script expects _start. Keep WiiMC's USB stub without dropping CRT0.
+    def modern_wiimc_linker(s):
+        s = replace_once(s, "EXTERN(_start);", "EXTERN(__app_start);",
+                         "WiiMC modern entry symbol")
+        s = replace_once(s, "ENTRY(_start);", "ENTRY(__app_start);",
+                         "WiiMC modern ENTRY directive")
+        return replace_once(
+            s, "KEEP (*crt0.o(*.init))",
+            "KEEP (*(.crt0 .crt0.*))\n\t\tKEEP (*crt0.o(*.init))",
+            "WiiMC modern crt0 section")
+    patch_file(root, "build/wiimc.ld", modern_wiimc_linker)
+    # Old header defined four globals in every C file; GCC -fno-common
+    # rejects the resulting duplicates. Provide one definition in mplayer.c.
+    def extern_mplayer_paths(s):
+        for name in ("DATADIR", "CONFDIR", "LIBDIR", "CSSDIR"):
+            s=replace_once(s, "char MPLAYER_"+name+"[512]; ",
+                           "extern char MPLAYER_"+name+"[512];",
+                           "WiiMC MPlayer common variable "+name)
+        return s
+    patch_file(root, "source/mplayer/config.h", extern_mplayer_paths)
+    def mplayer_path_owner(s):
+        return replace_once(
+            s, '#include "stream/stream.h"',
+            '#include "stream/stream.h"\n'
+            'char MPLAYER_DATADIR[512]={0};\n'
+            'char MPLAYER_CONFDIR[512]={0};\n'
+            'char MPLAYER_LIBDIR[512]={0};\n'
+            'char MPLAYER_CSSDIR[512]={0};',
+            "WiiMC single owner MPlayer paths")
+    patch_file(root, "source/mplayer/mplayer.c", mplayer_path_owner)
+
+    # Legacy libfat exposed the volume label accessor, but the current Wii
+    # library no longer links that API. Keep FAT mounting, omit optional label.
+    patch_file(root, "source/fileop.cpp",
+               lambda s: replace_once(
+                   s, "fatGetVolumeLabel(mount, part[device][*devnum].name);",
+                   "part[device][*devnum].name[0] = 0;",
+                   "WiiMC FAT volume label optional"))
+    # The VI encoder needs 2-4 microsecond waits; use libogc watchdog ticks
+    # rather than introducing a millisecond-granularity usleep() regression.
+    def vi_delay_compat(s):
+        if s.count("udelay(") < 5:
+            raise ValueError("Unexpected VI encoder microsecond delay layout")
+        s=s.replace("udelay(", "maizo_udelay(")
+        return replace_once(s, "extern void maizo_udelay(int us);",
+            "#include <ogc/lwp_watchdog.h>\n"
+            "static void maizo_udelay(int us){\n"
+            " u64 start=gettime();\n"
+            " while(diff_usec(start,gettime()) < (u32)us){}\n"
+            "}", "WiiMC unique watchdog VI timing")
+    patch_file(root, "source/utils/vi_encoder.c", vi_delay_compat)
+    # Modern bin2o does not produce the old *_size linker globals. Emit
+    # actual sizes from the pinned assets, with NO changes to asset contents.
+    asset_sources=[]
+    for folder,exts in (("fonts",(".ttf",)),("images",(".jpg",".png")),
+                        ("lang",(".lang",))):
+        for file in sorted((root/"source"/folder).iterdir()):
+            if file.is_file() and file.suffix.lower() in exts:
+                name="".join(c if c.isalnum() else "_" for c in file.name)
+                asset_sources.append(
+                    "unsigned int "+name+"_size="+str(file.stat().st_size)+"u;")
+    if not asset_sources:
+        raise ValueError("WiiMC assets missing from pinned source")
+    (root/"source/utils/maizo_asset_sizes.c").write_text(
+        "/* Actual sizes of unmodified WiiMC assets for modern bin2o. */\n"+
+        "\n".join(asset_sources)+"\n",encoding="utf-8")
+    # libmxml's pinned old precompiled archive still references newlib's
+    # retired __ctype_ptr__ (the old 257-byte ASCII/EOF classifier). Provide
+    # its ABI-compatible lookup table without touching the original library.
+    flags=[]
+    for code in range(256):
+        bits=0
+        if code<32 or code==127: bits|=0x20
+        if code in (9,10,11,12,13,32): bits|=0x08
+        if code==32: bits|=0x80
+        if code in (33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,
+                     58,59,60,61,62,63,64,91,92,93,94,95,96,123,124,125,126):
+            bits|=0x10
+        if 48<=code<=57:bits|=0x04|0x40
+        if 65<=code<=90:bits|=0x01
+        if 97<=code<=122:bits|=0x02
+        if 65<=code<=70 or 97<=code<=102:bits|=0x40
+        flags.append(bits)
+    table=",".join(str(v) for v in [0]+flags)
+    (root/"source/utils/maizo_legacy_ctype.c").write_text(
+        "/* Legacy newlib ABI for original mxml binary; ASCII classification. */\n"
+        "static unsigned char maizo_ctype_table[257]={"+table+"};\n"
+        "char *__ctype_ptr__=(char *)maizo_ctype_table;\n"
+        "/* Deprecated external udelay ABI used by pinned MPlayer archive. */\n"
+        "#include <ogc/lwp_watchdog.h>\n"
+        "void maizo_compat_udelay(unsigned us) __asm__(\"udelay\");\n"
+        "void maizo_compat_udelay(unsigned us){\n"
+        " u64 start=gettime();\n"
+        " while(diff_usec(start,gettime())<us){}\n"
+        "}\n",
+        encoding="utf-8")
+
     # Pinned historical MPlayer has version.sh without its executable bit.
     # Run through /bin/sh rather than trusting a checkout's file mode.
     patch_file(root, "source/mplayer/Makefile",

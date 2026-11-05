@@ -39,6 +39,14 @@ for name in adapted:
 for name in ADAPTABLE:
     provenance = manifest.get("module_input_provenance", {}).get(name, "")
     assert ("HID source adapter" in provenance) == (name in adapted), "adapter provenance mismatch: " + name
+# Never distribute an unverified adapted WiiMC without the original
+# working player as an integrity-protected recovery copy.
+backup = manifest.get("wiimc_official_sha256")
+if backup is not None:
+    assert "WiiMC" in adapted, "WiiMC recovery copy without adapted binary"
+    original = root / "apps/WiiMC-official/boot.dol"
+    assert original.is_file() and valid_dol(original.read_bytes()), "Missing WiiMC original"
+    assert hashlib.sha256(original.read_bytes()).hexdigest() == backup, "WiiMC recovery hash mismatch"
 # Additional HBC DOL and GPL-licensed manager are independent of the
 # eight core modules. Verify their provenance whenever the final manifest
 # declares them; do not treat a naked DOL as an installable channel WAD.

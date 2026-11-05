@@ -78,6 +78,19 @@ def overlay(adapter_root: Path, dist: Path) -> dict[str,str]:
             status[module] = "official (HID adapter binary unavailable)"
             continue
         contents = prepared[module]
+        if module == "WiiMC":
+            # Preserve the officially working player as a recovery copy.
+            official = dist / "apps/WiiMC-official/boot.dol"
+            if "wiimc_official_sha256" not in manifest:
+                official.parent.mkdir(parents=True, exist_ok=True)
+                original = destination.read_bytes()
+                if not valid_dol(original):
+                    raise ValueError("Cannot preserve invalid official WiiMC")
+                official.write_bytes(original)
+                manifest["wiimc_official_sha256"] = hashlib.sha256(original).hexdigest()
+            elif (not official.is_file() or hashlib.sha256(official.read_bytes()).hexdigest()
+                  != manifest["wiimc_official_sha256"]):
+                raise ValueError("WiiMC official recovery copy missing or modified")
         tmp = destination.with_suffix(".patched")
         tmp.write_bytes(contents)
         tmp.replace(destination)

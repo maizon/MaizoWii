@@ -101,6 +101,12 @@ void input_poll(Input*out){
   m|=from_gc(PAD_ButtonsHeld(port));
   m|=from_wii(WPAD_ButtonsHeld(port));
   m|=from_gc(maizo_hid_held(port));
+  if(maizo_hid_connected(port)){
+   if(maizo_hid_stickX(port,0)<-55)m|=B_LEFT;
+   if(maizo_hid_stickX(port,0)>55)m|=B_RIGHT;
+   if(maizo_hid_stickY(port,0)<-55)m|=B_DOWN;
+   if(maizo_hid_stickY(port,0)>55)m|=B_UP;
+  }
   if(PAD_StickX(port)<-55)m|=B_LEFT;
   if(PAD_StickX(port)>55)m|=B_RIGHT;
   if(PAD_StickY(port)<-55)m|=B_DOWN;

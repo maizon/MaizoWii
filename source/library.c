@@ -16,7 +16,9 @@ static const struct { System system;const char *path; } roots[]={
  {SYSTEM_GBA,"usb:/vbagx/roms"},{SYSTEM_GBA,"sd:/vbagx/roms"},{SYSTEM_GBA,"usb:/roms/gba"},{SYSTEM_GBA,"sd:/roms/gba"},
  {SYSTEM_GB,"usb:/vbagx/roms"},{SYSTEM_GB,"sd:/vbagx/roms"},{SYSTEM_GB,"usb:/roms/gb"},{SYSTEM_GB,"sd:/roms/gb"},
  {SYSTEM_PS1,"usb:/ps1"},{SYSTEM_PS1,"sd:/ps1"},{SYSTEM_PS1,"usb:/wiisxrx/isos"},{SYSTEM_PS1,"sd:/wiisxrx/isos"},
- {SYSTEM_MEDIA,"usb:/videos"},{SYSTEM_MEDIA,"sd:/videos"},{SYSTEM_MEDIA,"usb:/movies"},{SYSTEM_MEDIA,"sd:/movies"},{SYSTEM_MEDIA,"usb:/music"},{SYSTEM_MEDIA,"sd:/music"}
+ {SYSTEM_PS1,"usb:/roms/ps1"},{SYSTEM_PS1,"sd:/roms/ps1"},{SYSTEM_PS1,"usb:/PSXISOS"},{SYSTEM_PS1,"sd:/PSXISOS"},
+ {SYSTEM_MEDIA,"usb:/videos"},{SYSTEM_MEDIA,"sd:/videos"},{SYSTEM_MEDIA,"usb:/movies"},{SYSTEM_MEDIA,"sd:/movies"},{SYSTEM_MEDIA,"usb:/music"},{SYSTEM_MEDIA,"sd:/music"},
+ {SYSTEM_MEDIA,"usb:/media"},{SYSTEM_MEDIA,"sd:/media"}
 };
 static int ext(const char*s,const char*e){const char*d=strrchr(s,'.');return d&&!strcasecmp(d,e);}
 static int allowed(System s,const char*n){
@@ -32,7 +34,15 @@ static int allowed(System s,const char*n){
 }
 static void insert(Library*l,System sys,const char*path,const char*filename,const char*parent) {
  if(l->count>=MAIZO_MAX_GAMES)return;
- if(sys==SYSTEM_PS1&&ext(filename,".bin")){char p[MAIZO_PATH];snprintf(p,sizeof(p),"%s",path);char*d=strrchr(p,'.');if(d){strcpy(d,".cue");FILE*f=fopen(p,"rb");if(f){fclose(f);return;}}}
+ if(sys==SYSTEM_PS1&&ext(filename,".bin")){
+  char p[MAIZO_PATH];snprintf(p,sizeof(p),"%s",path);
+  char*d=strrchr(p,'.');
+  if(d){
+   strcpy(d,".cue");FILE*f=fopen(p,"rb");
+   if(!f){strcpy(d,".CUE");f=fopen(p,"rb");}
+   if(f){fclose(f);return;}
+  }
+ }
  for(int i=0;i<l->count;i++)if(!strcasecmp(path,l->games[i].path))return;
  Game*g=&l->games[l->count++];memset(g,0,sizeof(*g));g->system=sys;
  snprintf(g->path,sizeof(g->path),"%s",path);

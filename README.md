@@ -235,3 +235,23 @@ Actions não é armazenamento permanente e não garante reuso indefinido.
   de patches diferentes: isso nao comprova integracao HID. A recompilacao
   agora exige novo DOL, propagacao dos erros do MPlayer e mudanca de hash.
   Se falhar, o ALL-IN-ONE mantem o WiiMC oficial que ja reproduz videos.
+
+## Estabilidade: pacote de regressao e protecao
+- A leitura de jogos e argv rejeitam caminhos SD/USB com traversal e bytes de controle.
+- Configuracoes globais e favoritos passam a usar backup ao salvar em FAT32.
+- Um erro no forwarder pode deixar um log em `sd:/maizo/forwarder.log`
+  ou `usb:/maizo/forwarder.log` quando o dispositivo estiver montado.
+- Cada DOL adaptado e distinguido do fallback oficial no resumo do CI.
+- WiiMC, PS1, HID e WAD **exigem testes reais** antes de qualquer alegacao de
+  compatibilidade completa. Nao instalar WAD experimental sem backup da NAND.
+
+### Pacote de estabilidade: WiiMC original preservado e modulos testaveis
+Se `maizo/MODULE_MANIFEST.json` indicar `WiiMC` em
+`adapted_modules`, o empacotamento preserva automaticamente o player
+anterior em `apps/WiiMC-official/boot.dol` com SHA-256 no manifesto.
+**No Wii real**, caso a nova versao HID tenha problema, copie esse executavel
+para `apps/WiiMC/boot.dol` no USB/SD (mantendo um backup do adaptado).
+O novo executavel passou por compilacao no CI, mas **compatibilidade
+HID, reproducao em CRT PAL-M e retorno ao Maizo exigem teste fisico**.
+O WiiMC original que ja reproduzia videos continua recuperavel.
+O frontend tambem procura PS1 em `roms/ps1` e `PSXISOS` e midia em `media/`.

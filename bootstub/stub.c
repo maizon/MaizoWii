@@ -39,7 +39,14 @@ void maizo_boot_main(void){
  }
  /* The DOL header reserves BSS separately from file-backed sections.
   * Previous loader left stale frontend state in child global variables. */
- if(h->bss_size)clear_bytes((void *)(uintptr_t)h->bss,h->bss_size);
+ if(h->bss_size){
+  clear_bytes((void *)(uintptr_t)h->bss,h->bss_size);
+  /* Data-cache visibility matters when returning from libogc shutdown. */
+  uintptr_t a=((uintptr_t)h->bss)&~31u;
+  uintptr_t end=(((uintptr_t)h->bss)+h->bss_size+31u)&~31u;
+  for(;a<end;a+=32)asm volatile("dcbst 0,%0"::"b"(a):"memory");
+  asm volatile("sync":::"memory");
+ }
  uintptr_t entry=h->entry;
  if(ARG_BLOCK->argvMagic==ARGV_MAGIC){
   void *argv_slot=(void *)(entry+8);

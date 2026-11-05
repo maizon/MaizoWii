@@ -139,28 +139,39 @@ def safe_extract(source: Path, destination: Path):
         raise ValueError("unknown release archive")
 
 def valid_dol(data: bytes):
-    """DOL has no magic; validate nonempty sections and entrypoint sanity."""
-    if len(data) < 256:
+    """Conform to MAIZO bootstub MEM2 overlap, BSS and entrypoint rules."""
+    if len(data) < 0x100 or len(data) > 12 * 1024 * 1024:
         return False
     import struct
-    words = struct.unpack_from(">57I", data, 0)
-    entry = words[56]
-    # 7 text + 11 data section offsets, addresses, lengths
-    offsets = words[:18]
-    addresses = words[18:36]
-    sizes = words[36:54]
-    sections = 0
-    if not (0x80000000 <= entry < 0x94000000):
+    w = struct.unpack_from(">57I", data, 0)
+    offsets, addresses, sizes = w[:18], w[18:36], w[36:54]
+    bss, bss_size, entry = w[54], w[55], w[56]
+    if not (0x80003F00 <= entry < 0x94000000):
         return False
-    for offset, addr, size in zip(offsets, addresses, sizes):
-        if not size:
+    reserved = ((0x92000000, 12 * 1024 * 1024),
+                (0x93000000, 0x20000),
+                (0x93200000, 0x10000))
+    def legal_range(addr, length):
+        if not (0x80003F00 <= addr < 0x94000000 and
+                length <= 0x94000000 - addr):
+            return False
+        return not any(addr < base + span and base < addr + length
+                       for base, span in reserved)
+    entry_in_text, sections = False, 0
+    for i, (off, addr, length) in enumerate(zip(offsets, addresses, sizes)):
+        if not length:
             continue
         sections += 1
-        if not (offset >= 0x100 and offset + size <= len(data)
-                and 0x80000000 <= addr < 0x94000000
-                and addr + size <= 0x94000000):
+        if off < 0x100 or off >= len(data) or length > len(data) - off:
             return False
-    return sections > 0
+        if not legal_range(addr, length):
+            return False
+        if i < 7 and addr <= entry < addr + length:
+            entry_in_text = True
+    if bss_size and not legal_range(bss, bss_size):
+        return False
+    return sections > 0 and entry_in_text
+
 
 def choose_dol(src: Path, name: str):
     candidates = [p for p in src.rglob("*") if p.is_file() and p.suffix.lower() == ".dol"]
