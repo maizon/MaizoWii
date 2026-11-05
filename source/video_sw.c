@@ -5,18 +5,40 @@
  */
 #include "app.h"
 #include <ogc/video.h>
+#include <string.h>
 #include <ogc/system.h>
 #include <stdint.h>
 #include <stddef.h>
 /* Own a writable mode snapshot: the shared preferred template must never
  * be mutated because it is reused by libogc and other homebrew code. */
-static GXRModeObj video_mode;
+static GXRModeObj video_mode,boot_video_mode;
 static GXRModeObj *mode;
 static unsigned original_vi_width=640,original_vi_x=40;
 static void *buffers[2];
 static int back=0, visible=0;
 static int cal_x=0,cal_y=0;
 static unsigned cal_w=100,cal_h=100;
+static void apply_vi_geometry(void);
+/* Frontend output only. Other DOLs reconfigure the VI on their own. */
+int maizo_video_frontend_select(unsigned selection){
+ if(!mode||selection>2)return 0;
+ video_mode=boot_video_mode;
+ if(selection==1){
+  video_mode.viTVMode=(video_mode.viTVMode&~3u)|VI_INTERLACE;
+  video_mode.xfbMode=VI_XFBMODE_DF;
+ }else if(selection==2){
+  video_mode.viTVMode=(video_mode.viTVMode&~3u)|VI_NON_INTERLACE;
+  video_mode.viHeight/=2;
+  video_mode.xfbHeight/=2;
+  video_mode.efbHeight/=2;
+  video_mode.viYOrigin/=2;
+  video_mode.xfbMode=VI_XFBMODE_SF;
+  video_mode.field_rendering=0;
+ }
+ original_vi_width=video_mode.viWidth;
+ original_vi_x=video_mode.viXOrigin;
+ apply_vi_geometry();return 1;
+}
 /* Geometry is not just a framebuffer crop: the video interface itself
  * outputs a wider active region. This can remove overscan/black side bands
  * that drawing wider inside an unchanged 640px VI window cannot touch.
@@ -90,6 +112,7 @@ int maizo_video_init(void){
  if(!preferred||!preferred->fbWidth||!preferred->xfbHeight||
     (preferred->fbWidth&1))return 0;
  video_mode=*preferred;
+ boot_video_mode=*preferred;
  mode=&video_mode;
  original_vi_width=mode->viWidth;
  original_vi_x=mode->viXOrigin;

@@ -11,6 +11,12 @@ from pathlib import Path
 import shutil
 
 SOURCE = Path(__file__).resolve().parents[1] / "integrations/maizo_hid.inc"
+GAME_VIDEO = SOURCE.parent / "maizo_game_video.inc"
+
+def install_game_video(root: Path, folder: str):
+    target=root / folder
+    target.mkdir(parents=True,exist_ok=True)
+    shutil.copyfile(GAME_VIDEO,target / "maizo_game_video.inc")
 
 def replace_once(src: str, old: str, new: str, where: str):
     count = src.count(old)
@@ -685,6 +691,28 @@ def patch_wiisx(root: Path):
             'unsigned int maizo_gui_hid_held(int port){ return maizo_hid_held(port); }',
             "WiiSXRX GUI HID exports")
     patch_file(root, "Gamecube/gc_input/controller-GC.c", gui_exports)
+    # Game screen has a separate GX quad from its menu. Do not change menu VI.
+    install_game_video(root,"PeopsSoftGPU")
+    def video_game(s):
+        s=replace_once(s,'#include "draw.h"',
+           '#include "draw.h"\n#include "maizo_game_video.inc"',
+           "WiiSXRX gameplay-only video calibration")
+        s=replace_once(s,'float xcoord = 1.0;',
+           'MaizoGameVideo cal=maizo_game_video(maizo_game_native_output());\n'
+           '\tfloat maizo_x=cal.x/320.0f,maizo_y=cal.y/240.0f;\n'
+           '\tfloat xcoord = cal.w/100.0f;',
+           "WiiSXRX game width")
+        s=replace_once(s,'float ycoord = 1.0;',
+           'float ycoord = cal.h/100.0f;',
+           "WiiSXRX game height")
+        for old,new in (
+          ('GX_Position2f32(-xcoord, ycoord);','GX_Position2f32(-xcoord+maizo_x, ycoord+maizo_y);'),
+          ('GX_Position2f32( xcoord, ycoord);','GX_Position2f32( xcoord+maizo_x, ycoord+maizo_y);'),
+          ('GX_Position2f32( xcoord,-ycoord);','GX_Position2f32( xcoord+maizo_x,-ycoord+maizo_y);'),
+          ('GX_Position2f32(-xcoord,-ycoord);','GX_Position2f32(-xcoord+maizo_x,-ycoord+maizo_y);')):
+            s=replace_once(s,old,new,"WiiSXRX GX gameplay quad")
+        return s
+    patch_file(root,"PeopsSoftGPU/drawGX.c",video_game)
     # WiiSXRX uses PAD_ButtonsHeld() DIRECTLY in its separate GUI source;
     # the controller-GC.c emulator patch alone never reached its menus.
     def gui_focus(s):
@@ -865,6 +893,25 @@ def patch_wiisx422(root: Path):
             'u16 currentButtonsGC = PAD_ButtonsHeld(i) | maizo_gui_hid_held(i);',
             "WiiSX 4.2.2 file picker HID page controls")
     patch_file(root,"Gamecube/menu/FileBrowserFrame.cpp",browser)
+    # WiiSX beta 4.2.2 uses game-only VI entrypoints. Menus are unchanged.
+    install_game_video(root,"Gamecube/libgui")
+    def game_video(s):
+        s=replace_once(s,'#include "GraphicsGX.h"',
+          '#include "GraphicsGX.h"\n#include "maizo_game_video.inc"',
+          "WiiSX 4.2.2 game-only video profile")
+        s=replace_once(s,'vmode->viWidth = 640;\n\tvmode->viXOrigin = (VI_MAX_WIDTH_PAL - vmode->viWidth) / 2;\n\tVIDEO_Init ();',
+          'vmode->viWidth = 640;\n\tvmode->viXOrigin = (VI_MAX_WIDTH_PAL - vmode->viWidth) / 2;\n'
+          '\tmaizo_video_adjust_vi(vmode,0);\n\tVIDEO_Init ();',
+          "WiiSX 4.2.2 interlaced game VI geometry")
+        s=replace_once(s,'if(is_pal) {\n\t\tm = &TVPal264Ds;\n\t}',
+          'if(is_pal) {\n\t\tm = &TVPal264Ds;\n\t}\n'
+          '    static GXRModeObj maizo_native_video;\n'
+          '    memcpy(&maizo_native_video,m,sizeof(maizo_native_video));\n'
+          '    m=&maizo_native_video;\n'
+          '    maizo_video_adjust_vi(m,1);',
+          "WiiSX 4.2.2 progressive game VI geometry")
+        return s
+    patch_file(root,"Gamecube/libgui/GraphicsGX.cpp",game_video)
 
 
 MAP_GENERIC = '''
@@ -923,6 +970,34 @@ def patch_snes(root: Path):
           "Mayflash_ButtonsHeld(channel) | maizo_hid_held(channel);", "SNES union")
         return s
     patch_file(root,"source/drivers/ogc/wii/input/WiiUsbPads.cpp", change)
+    # SNES game quad is built independently from GUI; adapt the quad only.
+    install_game_video(root,"source/drivers/ogc")
+    def game_video(s):
+        s=replace_once(s,'#include "OgcEmulatorVideo.h"',
+          '#include "OgcEmulatorVideo.h"\n#include "maizo_game_video.inc"',
+          "SNES game-only video profile")
+        s=replace_once(s,'xscale *= EmuSettings.videoZoomHor;',
+          'MaizoGameVideo cal=maizo_game_video(EmuSettings.videoMode == VIDEOMODE_ORIGINAL_240P);\n'
+          '\t\txscale = xscale * (int)cal.w / 100;\n'
+          '\t\tyscale = yscale * (int)cal.h / 100;\n'
+          '\t\tint maizo_x=cal.x * (int)vmode->fbWidth / 640;\n'
+          '\t\tint maizo_y=cal.y * (int)vmode->efbHeight / 480;\n'
+          '\t\txscale *= EmuSettings.videoZoomHor;',
+          "SNES game geometry video mode")
+        s=replace_once(s,'square[6] = square[3]  =  xscale + EmuSettings.videoXshift;',
+          'square[6] = square[3]  =  xscale + EmuSettings.videoXshift + maizo_x;',
+          "SNES right game quad")
+        s=replace_once(s,'-xscale + EmuSettings.videoXshift;',
+          '-xscale + EmuSettings.videoXshift + maizo_x;',
+          "SNES left game quad")
+        s=replace_once(s,'square[4] = square[1]  =  yscale - EmuSettings.videoYshift;',
+          'square[4] = square[1]  =  yscale - EmuSettings.videoYshift + maizo_y;',
+          "SNES upper game quad")
+        s=replace_once(s,'-yscale - EmuSettings.videoYshift;',
+          '-yscale - EmuSettings.videoYshift + maizo_y;',
+          "SNES bottom game quad")
+        return s
+    patch_file(root,"source/drivers/ogc/OgcEmulatorVideo.cpp",game_video)
 
 MODULES = {
   "WiiMC": patch_wiimc,

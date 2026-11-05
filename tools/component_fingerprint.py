@@ -25,6 +25,7 @@ PATCH_FUNCTIONS = {
 }
 COMMON = ("replace_once", "patch_file", "install_inc")
 USES_PAD_UPDATE = frozenset(("WiiMC", "usbloader_gx"))
+VIDEO_MODULES = frozenset(("WiiSXRX", "WiiSX", "snes9xgx"))
 GX = frozenset(("fceugx", "vbagx"))
 HID_FILES = (
     "integrations/maizo_hid.inc",
@@ -60,6 +61,8 @@ def fingerprint(module: str, root: Path = ROOT) -> str:
     selected = set(COMMON) | {PATCH_FUNCTIONS[module]}
     if module in USES_PAD_UPDATE:
         selected.add("fix_pad_update")
+    if module in VIDEO_MODULES:
+        selected.add("install_game_video")
     missing = selected - set(functions)
     if missing:
         raise ValueError("Missing patch helpers: " + repr(sorted(missing)))
@@ -86,6 +89,8 @@ def fingerprint(module: str, root: Path = ROOT) -> str:
                 continue  # mapping is explicitly verified above
             if "MAP_GENERIC" in names and module not in GX:
                 continue
+            if "GAME_VIDEO" in names and module not in VIDEO_MODULES:
+                continue
             update("global", ast.dump(node, include_attributes=False).encode())
 
     for name in sorted(selected):
@@ -93,6 +98,9 @@ def fingerprint(module: str, root: Path = ROOT) -> str:
                ast.dump(functions[name], include_attributes=False).encode())
     for name in HID_FILES:
         update(name, (root / name).read_bytes())
+    if module in VIDEO_MODULES:
+        update("integrations/maizo_game_video.inc",
+               (root / "integrations/maizo_game_video.inc").read_bytes())
     if module == "WiiMC":
         # Only this adapter is sensitive to a different linked libogc ABI.
         # Isolated cache invalidation forces one genuine rebuild when the

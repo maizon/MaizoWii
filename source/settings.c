@@ -6,14 +6,20 @@
  * The separate calibration screen modifies only the MAIZO frontend UI.
  * Do not imply that arbitrary DOLs consume frontend-only geometry. */
 int settings_count(System s){
- switch(s){case SYSTEM_WII:return 6;case SYSTEM_GC:return 14;
- case SYSTEM_PS1:return 15;case SYSTEM_MEDIA:return 7;default:return 4;}
+ switch(s){case SYSTEM_WII:return 7;case SYSTEM_GC:return 15;
+ case SYSTEM_PS1:return 20;case SYSTEM_SNES:return 9;
+ case SYSTEM_MEDIA:return 8;default:return 5;}
 }
 const char*settings_label(System s,int row){
  if(row==0)return "TEMA";
  if(row==1)return "MODO DA BIBLIOTECA";
  if(row==settings_count(s)-1)return "VOLTAR";
  if(row==settings_count(s)-2)return "CALIBRAR TELA MAIZO";
+ if(row==settings_count(s)-3)return "BAIXAR CAPAS FALTANTES";
+ if((s==SYSTEM_SNES||s==SYSTEM_PS1)&&row>=settings_count(s)-7&&row<settings_count(s)-3){
+  static const char*labels[]={"JOGO 240P: HORIZONTAL","JOGO 480I: HORIZONTAL","JOGO 240P: LARGURA","JOGO 480I: LARGURA"};
+  return labels[row-(settings_count(s)-7)];
+ }
  static const char*wii[]={"IOS INICIAL DO LOADER","PORTA USB"};
  static const char*gc[]={"MEMORY CARD EMULADA","WIDESCREEN","CHEATS","SKIP IPL","VIDEO GAMECUBE","MEMCARD MULTI","CONTROLE GC NATIVO","REMOVE LIMIT","LARGURA GC (NINTENDONT)","POSICAO VERTICAL GC"};
  static const char*ps[]={"NUCLEO PS1","CPU (INTERP/DYNAREC)","FRAME SKIP","AUDIO","SAIDA NATIVA 240P","MODO DE VIDEO","PROPORCAO","DEFLICKER","DITHERING","MOSTRAR FPS","LIMITAR FPS"};
@@ -51,7 +57,14 @@ static unsigned get(const Config*c,System s,int row){
 }
 void settings_value(const Config*c,System s,int row,char*dest,size_t cap){
  if(row==settings_count(s)-1){snprintf(dest,cap,"A / B");return;}
- if(row==settings_count(s)-2){snprintf(dest,cap,"ABRIR");return;}
+ if(row==settings_count(s)-2||row==settings_count(s)-3){snprintf(dest,cap,"ABRIR");return;}
+ if((s==SYSTEM_SNES||s==SYSTEM_PS1)&&row>=settings_count(s)-7&&row<settings_count(s)-3){
+  unsigned v=row==settings_count(s)-7?c->game_x240:row==settings_count(s)-6?c->game_x480:
+             row==settings_count(s)-5?c->game_w240:c->game_w480;
+  if(row==settings_count(s)-7||row==settings_count(s)-6)snprintf(dest,cap,"%+d",(int)v-50);
+  else snprintf(dest,cap,"%u%%",v);
+  return;
+ }
  unsigned v=get(c,s,row);
  if(row==0){const char*themes[]={"VIOLETA","TURQUESA","CORAL","GRAFITE","OLED","CLASSICO"};snprintf(dest,cap,"%s",themes[v%6]);return;}
  if(row==1){const char *layouts[]={"GRADE","LISTA","CARROSSEL"};snprintf(dest,cap,"%s",layouts[v%3]);return;}
@@ -76,7 +89,15 @@ void settings_value(const Config*c,System s,int row,char*dest,size_t cap){
  snprintf(dest,cap,"%s",v?"LIGADO":"DESLIGADO");
 }
 int settings_change(Config*c,System s,int row,int dir){
- if(row>=settings_count(s)-2||row<0)return 0;
+ if(row>=settings_count(s)-3||row<0)return 0;
+ if((s==SYSTEM_SNES||s==SYSTEM_PS1)&&row>=settings_count(s)-7&&row<settings_count(s)-3){
+  unsigned *p=row==settings_count(s)-7?&c->game_x240:row==settings_count(s)-6?&c->game_x480:
+             row==settings_count(s)-5?&c->game_w240:&c->game_w480;
+  unsigned lo=(row>=settings_count(s)-5)?70:0,hi=(row>=settings_count(s)-5)?130:100;
+  if(dir<0)*p=*p<=lo?lo:*p-1;
+  else *p=*p>=hi?hi:*p+1;
+  return 1;
+ }
  unsigned*v=NULL,lim=2;
  if(row==0){v=&c->theme;lim=6;}
  else if(row==1){v=&c->layout;lim=3;}
@@ -117,7 +138,8 @@ int settings_change(Config*c,System s,int row,int dir){
 /* Category headers reflect actual supported parameters, not fake sliders. */
 const char*settings_category(System s,int row){
  if(row==0||row==1)return "APARENCIA";
- if(row>=settings_count(s)-2)return "GERAL";
+ if(row>=settings_count(s)-3)return "GERAL";
+ if((s==SYSTEM_SNES||s==SYSTEM_PS1)&&row>=settings_count(s)-7&&row<settings_count(s)-3)return "VIDEO JOGO";
  if(s==SYSTEM_WII)return row==2?"EMULACAO / IOS":"ARMAZENAMENTO";
  if(s==SYSTEM_GC){
   if(row==6||row>=10)return "VIDEO";

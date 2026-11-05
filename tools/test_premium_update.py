@@ -32,8 +32,8 @@ class PremiumUpdateContracts(unittest.TestCase):
         ui = source("source/ui.c")
         self.assertIn("maizo_card_slot(delta,&slot)", ui)
         geometry = source("source/carousel_layout.c")
-        self.assertIn("{240,125,160,224}", geometry)
-        self.assertIn("{114,165,112,157}", geometry)
+        self.assertIn("{240,127,160,220}", geometry)
+        self.assertIn("{116,169,112,154}", geometry)
         self.assertNotIn("x+=shift",ui)
         covers = source("source/covers.c")
         self.assertIn("(hdr[7]!=160&&hdr[7]!=176)", covers)
@@ -72,7 +72,7 @@ class PremiumUpdateContracts(unittest.TestCase):
         self.assertIn("void cover_reset(void)", covers)
         self.assertIn("prefetch_covers();", main)
         self.assertLess(main.index("ui_draw(&state,&library_state,&config,in.hid_present);"),
-                        main.index("  prefetch_covers();"))
+                        main.index("  else prefetch_covers();"))
         self.assertIn('ui_boot_message("CARREGANDO CAPAS...")', main)
 
     def test_vi_software_renderer_avoids_repeated_slow_divisions(self):

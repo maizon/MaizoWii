@@ -32,7 +32,7 @@ int config_has_settings(void){
  struct stat st;
  return stat(p,&st)==0 || stat(backup,&st)==0;
 }
-void config_defaults(Config*c){memset(c,0,sizeof(*c));c->theme=3;c->layout=2;c->media_player=1;c->wii_ios=249;c->wii_usb_port=0;c->gc_memcard=1;c->gc_skip_ipl=1;c->ps1_audio=1;c->media_volume=75;c->gc_offset=20;c->media_autoboot=1;c->video_x=50;c->video_y=50;c->video_w=100;c->video_h=100;}
+void config_defaults(Config*c){memset(c,0,sizeof(*c));c->theme=3;c->layout=2;c->media_player=1;c->wii_ios=249;c->wii_usb_port=0;c->gc_memcard=1;c->gc_skip_ipl=1;c->ps1_audio=1;c->media_volume=75;c->gc_offset=20;c->media_autoboot=1;c->video_x=50;c->video_y=50;c->video_w=100;c->video_h=100;c->game_x240=c->game_x480=50;c->game_w240=c->game_w480=100;}
 void config_load(Config*c){config_defaults(c);char p[80];snprintf(p,sizeof(p),"%s/settings.ini",where());FILE*f=fopen(p,"rb");if(!f){
   char backup[100];snprintf(backup,sizeof(backup),"%s.bak",p);
   f=fopen(backup,"rb");
@@ -69,14 +69,19 @@ void config_load(Config*c){config_defaults(c);char p[80];snprintf(p,sizeof(p),"%
   else if(!strcmp(key,"gc_scale"))c->gc_scale=(val>=40&&val<=120&&!(val%2))?val:0;
   else if(!strcmp(key,"gc_offset"))c->gc_offset=val<=40?val:20;
   else if(!strcmp(key,"video_x"))c->video_x=val<=100?val:50;
+  else if(!strcmp(key,"frontend_video_mode"))c->frontend_video_mode=val<=2?val:0;
+  else if(!strcmp(key,"game_x240"))c->game_x240=val<=100?val:50;
+  else if(!strcmp(key,"game_x480"))c->game_x480=val<=100?val:50;
+  else if(!strcmp(key,"game_w240"))c->game_w240=val>=70&&val<=130?val:100;
+  else if(!strcmp(key,"game_w480"))c->game_w480=val>=70&&val<=130?val:100;
   else if(!strcmp(key,"video_y"))c->video_y=val<=100?val:50;
   else if(!strcmp(key,"video_w"))c->video_w=(val>=70&&val<=130)?val:100;
   else if(!strcmp(key,"video_h"))c->video_h=(val>=70&&val<=130)?val:100;
  }fclose(f);}
 int config_save(const Config*c){const char*root=where();mkdir(root,0777);
  char p[80],tmp[80];snprintf(p,sizeof(p),"%s/settings.ini",root);snprintf(tmp,sizeof(tmp),"%s/settings.tmp",root);FILE*f=fopen(tmp,"wb");if(!f)return 0;
- fprintf(f,"theme=%u\nlayout=%u\nwii_ios=%u\nwii_usb_port=%u\ngc_mc_multi=%u\ngc_native_si=%u\ngc_rem_limit=%u\ngc_memcard=%u\ngc_wide=%u\ngc_cheats=%u\ngc_skip_ipl=%u\ngc_video=%u\nps1_interpreter=%u\nps1_frameskip=%u\nps1_audio=%u\nmedia_volume=%u\nps1_engine=%u\nps1_native=%u\nps1_video=%u\nps1_aspect=%u\nps1_deflicker=%u\nps1_dither=%u\nps1_fps=%u\nps1_limit=%u\ngc_scale=%u\ngc_offset=%u\nvideo_x=%u\nvideo_y=%u\nvideo_w=%u\nvideo_h=%u\nmedia_player=%u\nmedia_autoboot=%u\n",
- c->theme,c->layout,c->wii_ios,c->wii_usb_port,c->gc_mc_multi,c->gc_native_si,c->gc_rem_limit,c->gc_memcard,c->gc_wide,c->gc_cheats,c->gc_skip_ipl,c->gc_video,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio,c->media_volume,c->ps1_engine,c->ps1_native,c->ps1_video,c->ps1_aspect,c->ps1_deflicker,c->ps1_dither,c->ps1_fps,c->ps1_limit,c->gc_scale,c->gc_offset,c->video_x,c->video_y,c->video_w,c->video_h,c->media_player,c->media_autoboot);
+ fprintf(f,"theme=%u\nlayout=%u\nwii_ios=%u\nwii_usb_port=%u\ngc_mc_multi=%u\ngc_native_si=%u\ngc_rem_limit=%u\ngc_memcard=%u\ngc_wide=%u\ngc_cheats=%u\ngc_skip_ipl=%u\ngc_video=%u\nps1_interpreter=%u\nps1_frameskip=%u\nps1_audio=%u\nmedia_volume=%u\nps1_engine=%u\nps1_native=%u\nps1_video=%u\nps1_aspect=%u\nps1_deflicker=%u\nps1_dither=%u\nps1_fps=%u\nps1_limit=%u\ngc_scale=%u\ngc_offset=%u\nvideo_x=%u\nvideo_y=%u\nvideo_w=%u\nvideo_h=%u\nfrontend_video_mode=%u\ngame_x240=%u\ngame_x480=%u\ngame_w240=%u\ngame_w480=%u\nmedia_player=%u\nmedia_autoboot=%u\n",
+ c->theme,c->layout,c->wii_ios,c->wii_usb_port,c->gc_mc_multi,c->gc_native_si,c->gc_rem_limit,c->gc_memcard,c->gc_wide,c->gc_cheats,c->gc_skip_ipl,c->gc_video,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio,c->media_volume,c->ps1_engine,c->ps1_native,c->ps1_video,c->ps1_aspect,c->ps1_deflicker,c->ps1_dither,c->ps1_fps,c->ps1_limit,c->gc_scale,c->gc_offset,c->video_x,c->video_y,c->video_w,c->video_h,c->frontend_video_mode,c->game_x240,c->game_x480,c->game_w240,c->game_w480,c->media_player,c->media_autoboot);
  if(fclose(f)){remove(tmp);return 0;}
  return commit_file(tmp,p);
 }
@@ -118,7 +123,11 @@ void config_game_load(Config*out,const Config*defaults,const Game*g){
  unsigned value;
  while(fgets(line,sizeof(line),f)){
   if(sscanf(line," %47[^=]=%u",key,&value)!=2)continue;
-  if(g->system==SYSTEM_WII){
+  if(!strcmp(key,"game_x240")&&value<=100)out->game_x240=value;
+  else if(!strcmp(key,"game_x480")&&value<=100)out->game_x480=value;
+  else if(!strcmp(key,"game_w240")&&value>=70&&value<=130)out->game_w240=value;
+  else if(!strcmp(key,"game_w480")&&value>=70&&value<=130)out->game_w480=value;
+  else if(g->system==SYSTEM_WII){
    if(!strcmp(key,"wii_ios")&&(value==58||(value>=200&&value<=255)))
     out->wii_ios=value;
    else if(!strcmp(key,"wii_usb_port")&&value<=1)
@@ -156,8 +165,7 @@ void config_game_load(Config*out,const Config*defaults,const Game*g){
 }
 int config_game_save(const Config*c,const Game*g){
  if(!c||!g)return 0;
- if(g->system!=SYSTEM_WII&&g->system!=SYSTEM_GC&&
-    g->system!=SYSTEM_PS1&&g->system!=SYSTEM_MEDIA)return 1;
+ /* Generic game geometry profiles are supported for SNES/NES/GBA/GB too. */
  char dest[112],tmp[118];
  if(!maizo_game_profile_path((unsigned)g->system,g->path,dest,sizeof(dest)))return 0;
  const char*dev=!strncmp(g->path,"sd:/",4)?"sd:":"usb:";
@@ -167,7 +175,8 @@ int config_game_save(const Config*c,const Game*g){
  mkdir(root,0777);mkdir(folder,0777);
  snprintf(tmp,sizeof(tmp),"%s.tmp",dest);
  FILE*f=fopen(tmp,"wb");if(!f)return 0;
- int ok=fprintf(f,"format=1\n")>0;
+ int ok=fprintf(f,"format=2\ngame_x240=%u\ngame_x480=%u\ngame_w240=%u\ngame_w480=%u\n",
+   c->game_x240,c->game_x480,c->game_w240,c->game_w480)>0;
  switch(g->system){
   case SYSTEM_WII:
    ok &= fprintf(f,"wii_ios=%u\nwii_usb_port=%u\n",c->wii_ios,c->wii_usb_port)>0;

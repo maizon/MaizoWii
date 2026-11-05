@@ -4,6 +4,7 @@
 #include "app.h"
 #include "video_sw.h"
 #include "carousel_layout.h"
+#include "cover_download.h"
 #include "font8x8.h"
 #include <string.h>
 #include <stdio.h>
@@ -234,9 +235,9 @@ static void carousel(const State*u,const Library*l,int home){
   const float x=(float)slot.x,y=(float)slot.y;
   const float w=(float)slot.w,h=(float)slot.h;
   /* Shadow and background must not move when another card is selected. */
-  rounded(x+4,y+8,w,h,0xff080c12u);
-  if(delta==0)rounded(x-5,y-5,w+10,h+10,focus_color);
-  rounded(x-2,y-2,w+4,h+4,0xff29343du);
+  quad(x+4,y+7,w,h,0xff080c12u,0xff080c12u);
+  if(delta==0)quad(x-5,y-5,w+10,h+10,focus_color,focus_color);
+  quad(x-3,y-3,w+6,h+6,0xff29343du,0xff29343du);
   art(u,l,home,pos,x,y,w,h);
  }
  const char*name=item_name(u,l,home,focused);
@@ -331,21 +332,49 @@ static void hid_page(void){
  }
  label(43,413,"B OU START PARA VOLTAR",0.90f,muted);
 }
+static void downloads_ui(void){
+ MaizoCoverDownloadStatus d=maizo_cover_download_status();
+ label(38,84,"CAPAS AUTOMATICAS / WII",1.55f,ink);
+ clipped(38,124,"WII GC PS1 SNES NES GBA GB/GBC  -  HTTPS",0.94f,muted,72);
+ char line[120];
+ snprintf(line,sizeof(line),"VERIFICADOS %d / %d",d.processed,d.total);
+ label(38,163,line,1.25f,ink);
+ snprintf(line,sizeof(line),"NOVAS: %d   JA EXISTIAM: %d",d.downloaded,d.existing);
+ label(38,202,line,1.05f,accent);
+ snprintf(line,sizeof(line),"NAO ENCONTRADAS: %d   SEM PROVEDOR: %d",d.failed,d.unavailable);
+ label(38,239,line,0.98f,ink);
+ rounded(38,286,562,24,surface);
+ if(d.total>0){
+  int bar=d.processed*555/d.total;
+  if(bar>555)bar=555;
+  if(bar>0)quad(41,290,bar,16,accent,accent);
+ }
+ clipped(38,331,d.current,1.0f,ink,48);
+ clipped(38,364,d.message,0.96f,muted,70);
+ label(38,417,d.active?"B INTERROMPER DOWNLOAD":"A OU B VOLTAR",1.0f,ink);
+}
 static void calibration_ui(const State*u,const Config*c){
  label(38,83,"CALIBRACAO DO FRONTEND",1.56f,ink);
  clipped(38,111,"VI HORIZONTAL + AJUSTE DE CONTEUDO; NAO ALTERA EMULADORES",0.94f,muted,77);
- const char*names[]={"CENTRO HORIZONTAL","CENTRO VERTICAL","LARGURA / VI","ALTURA DO CONTEUDO","RESTAURAR PADRAO","SALVAR E VOLTAR"};
+ const char*names[]={"CENTRO HORIZONTAL","CENTRO VERTICAL","LARGURA / VI","ALTURA DO CONTEUDO","MODO VIDEO SO FRONTEND","RESTAURAR PADRAO","SALVAR E VOLTAR"};
  const int vals[]={((int)c->video_x-50),((int)c->video_y-50),
                    (int)c->video_w,(int)c->video_h};
- for(int i=0;i<6;i++){
-  int y=143+i*42;
+ for(int i=0;i<7;i++){
+  int y=141+i*36;
   rounded(39,y,557,35,i==u->calibration_row?0xff4a6e73u:surface);
   label(53,y+11,names[i],1.05f,ink);
   char value[32]="";
   if(i<2)snprintf(value,sizeof(value),"%+d",vals[i]);
   if(i>=2&&i<4)snprintf(value,sizeof(value),"%d%%",vals[i]);
+   if(i==4){
+    static const char *modes[]={"AUTO","480I/576I","240P/288P"};
+    snprintf(value,sizeof(value),"%s",modes[c->frontend_video_mode%3]);
+   }
   if(i<4)label(521,y+11,value,1.04f,ink);
+   if(i==4)label(457,y+11,value,0.88f,ink);
  }
+ if(u->video_preview_frames>0)
+  label(40,414,"A CONFIRMA / B REVERTE MODO DE VIDEO",0.91f,0xffefbf88u);
 }
 static void hid_note(void){
  HidDiagnostics d;input_hid_diagnostics(&d);
@@ -429,6 +458,7 @@ void ui_draw(const State*u,const Library*l,const Config*c,int hid){
  case PAGE_SEARCH:search_ui(u,l);break;
  case PAGE_SETTINGS:settings_ui(u,u->settings_for_game?&u->game_config:c);break;
  case PAGE_HID:hid_page();break;
+  case PAGE_COVERS:downloads_ui();break;
  case PAGE_CALIBRATION:calibration_ui(u,c);break;
  case PAGE_WELCOME:welcome(c);break;
  case PAGE_INFO:

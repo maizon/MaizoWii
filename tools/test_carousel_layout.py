@@ -38,7 +38,7 @@ class CarouselGeometryTests(unittest.TestCase):
                 cell=Slot()
                 self.assertEqual(self.slot(relative,ctypes.byref(cell)),1)
                 self.assertEqual((cell.x,cell.y,cell.w,cell.h),reference)
-        self.assertEqual(baseline[2],(240,125,160,224))
+        self.assertEqual(baseline[2],(240,127,160,220))
     def test_aspect_and_screen_safety(self):
         for relative in range(-2,3):
             cell=Slot()
@@ -47,7 +47,7 @@ class CarouselGeometryTests(unittest.TestCase):
             self.assertGreater(cell.y,100)
             self.assertLessEqual(cell.x+cell.w,640)
             self.assertLessEqual(cell.y+cell.h,480)
-            self.assertLess(abs(cell.w/cell.h-5/7),0.007)
+            self.assertLess(abs(cell.w/cell.h-8/11),0.001)
         self.assertEqual(self.slot(-3,ctypes.byref(Slot())),0)
         self.assertEqual(self.slot(3,ctypes.byref(Slot())),0)
         self.assertEqual(self.slot(0,None),0)

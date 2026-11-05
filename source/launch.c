@@ -144,8 +144,25 @@ static void save_launch_record(const Game*g,const Config*c) {
  char dest[96];snprintf(dest,sizeof(dest),"%s/maizo",(g->path[0]=='s')?"sd:":"usb:");
  mkdir(dest,0777);strncat(dest,"/maizo-launch.txt",sizeof(dest)-strlen(dest)-1);
  FILE*f=fopen(dest,"wb");if(!f)return;
- fprintf(f,"MAIZO-LAUNCH/2\nsystem=%d\nfile=%s\nmodule=%s\nmedia_volume=%u\nps1_interpreter=%u\nps1_frameskip=%u\nps1_audio=%u\nps1_engine=%u\n",
- g->system,g->path,module_name(g->system),c->media_volume,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio,c->ps1_engine);
+ /* The frontend calibration is the baseline for games. Per-game mode
+  * corrections are added, but frontend-only TV standard is never exported.
+  * Clamp for malformed legacy settings before the game's renderer reads it. */
+ int x240=(int)c->video_x+(int)c->game_x240-100;
+ int x480=(int)c->video_x+(int)c->game_x480-100;
+ unsigned w240=c->video_w*c->game_w240/100u;
+ unsigned w480=c->video_w*c->game_w480/100u;
+ if(x240< -50)x240=-50;if(x240>50)x240=50;
+ if(x480< -50)x480=-50;if(x480>50)x480=50;
+ if(w240<70)w240=70;if(w240>130)w240=130;
+ if(w480<70)w480=70;if(w480>130)w480=130;
+ fprintf(f,"MAIZO-LAUNCH/3\nsystem=%d\nfile=%s\nmodule=%s\n"
+ "media_volume=%u\nps1_interpreter=%u\nps1_frameskip=%u\n"
+ "ps1_audio=%u\nps1_engine=%u\nps1_native=%u\n"
+ "game_x240=%d\ngame_x480=%d\ngame_y240=%d\ngame_y480=%d\n"
+ "game_w240=%u\ngame_w480=%u\ngame_h240=%u\ngame_h480=%u\n",
+ g->system,g->path,module_name(g->system),
+ c->media_volume,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio,c->ps1_engine,c->ps1_native,
+ x240,x480,(int)c->video_y-50,(int)c->video_y-50,w240,w480,c->video_h,c->video_h);
  fclose(f);
 }
 /* MEM2 bootstrap: do not copy target DOL sections over the running frontend.

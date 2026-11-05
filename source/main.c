@@ -1,5 +1,7 @@
 #include "app.h"
 #include "nav.h"
+#include "cover_download.h"
+#include "video_sw.h"
 #include <gccore.h>
 #include <fat.h>
 #include <ogc/disc_io.h>
@@ -160,7 +162,15 @@ static void adjust_calibration(int dir){
  case 1:p=&config.video_y;break;
  case 2:p=&config.video_w;low=70;high=130;break;
  case 3:p=&config.video_h;low=70;high=130;break;
- case 4:config.video_x=config.video_y=50;config.video_w=config.video_h=100;break;
+ case 4:{
+  unsigned next=(config.frontend_video_mode+3+(dir<0?-1:1))%3;
+  if(!state.video_preview_frames)state.video_previous_mode=config.frontend_video_mode;
+  if(maizo_video_frontend_select(next)){
+   config.frontend_video_mode=next;state.video_preview_frames=600;
+  }
+  return;
+ }
+ case 5:config.video_x=config.video_y=50;config.video_w=config.video_h=100;break;
  default:return;
  }
  if(p){
@@ -201,17 +211,34 @@ static void handle(const Input*i){
  }
  if(state.page==PAGE_CALIBRATION){
   if(i->up&&state.calibration_row>0)state.calibration_row--;
-  if(i->down&&state.calibration_row<5)state.calibration_row++;
+  if(i->down&&state.calibration_row<6)state.calibration_row++;
   if(i->left)adjust_calibration(-1);
   if(i->right||i->accept){
-   if(state.calibration_row==5){config_save(&config);state.page=PAGE_SETTINGS;}
-   else adjust_calibration(1);
+   if(state.calibration_row==4 && state.video_preview_frames>0){
+    state.video_preview_frames=0;config_save(&config);
+   }else if(state.calibration_row==6){
+    state.video_preview_frames=0;config_save(&config);state.page=PAGE_SETTINGS;
+   }else adjust_calibration(1);
   }
-  if(i->back){config_save(&config);state.page=PAGE_SETTINGS;}
+  if(i->back){
+   if(state.video_preview_frames>0){
+    maizo_video_frontend_select(state.video_previous_mode);
+    config.frontend_video_mode=state.video_previous_mode;
+    state.video_preview_frames=0;
+   }
+   config_save(&config);state.page=PAGE_SETTINGS;
+  }
   return;
  }
  if(state.page==PAGE_HID){
   if(i->back||i->settings||i->accept)state.page=PAGE_SETTINGS;
+  return;
+ }
+ if(state.page==PAGE_COVERS){
+  MaizoCoverDownloadStatus d=maizo_cover_download_status();
+  if(i->back||i->settings){
+   maizo_cover_download_cancel();state.page=PAGE_SETTINGS;
+  }else if(!d.active&&i->accept)state.page=PAGE_SETTINGS;
   return;
  }
  if(state.page==PAGE_INFO){
@@ -263,6 +290,10 @@ static void handle(const Input*i){
   return;
  }
  if(state.page==PAGE_SETTINGS){
+  if(state.settings_row==settings_count(state.system)-3 && (i->accept||i->right)){
+   maizo_cover_download_begin(&library_state);
+   state.page=PAGE_COVERS;return;
+  }
   if(state.settings_row==settings_count(state.system)-2 && (i->accept||i->right)){
    state.calibration_row=0;state.page=PAGE_CALIBRATION;return;
   }
@@ -332,6 +363,7 @@ int main(int argc,char**argv){
   (storage_usb?"USB MONTADO - CARREGANDO DADOS":"SD MONTADO - CARREGANDO DADOS"):
   "ERRO USB E SD - REINSIRA, START/SELECT REVER");
  config_load(&config);
+ maizo_video_frontend_select(config.frontend_video_mode);
  maizo_video_set_calibration((int)config.video_x-50,(int)config.video_y-50,config.video_w,config.video_h);
  memset(&state,0,sizeof(state));
  state.system=SYSTEM_GC;
@@ -367,7 +399,12 @@ int main(int argc,char**argv){
   if(media_ready)library_step(&library_state,10);
   clamp_selection();
   ui_draw(&state,&library_state,&config,in.hid_present);
-  prefetch_covers();
+  if(state.video_preview_frames>0 && --state.video_preview_frames==0){
+   config.frontend_video_mode=state.video_previous_mode;
+   maizo_video_frontend_select(state.video_previous_mode);
+  }
+  if(state.page==PAGE_COVERS)maizo_cover_download_step(&library_state);
+  else prefetch_covers();
   state.frame++;
  }
 }

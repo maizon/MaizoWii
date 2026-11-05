@@ -38,6 +38,28 @@ jobs:
         with:
           path: boot.dol
           key: maizo-frontend-v2-${{ hashFiles('source/**', 'include/**', 'Makefile', 'bootstub/**', 'tools/embed_bootstub.py', 'assets/**', 'data/**') }}-devkitppc-20261102-${{ inputs.full_rebuild && github.run_id || 'regular' }}
+      - name: Install pinned HTTPS client for native Wii cover downloads
+        if: steps.cached-frontend.outputs.cache-hit != 'true'
+        run: |
+          set -eu
+          mkdir -p /tmp/maizo-cover-libs
+          cd /tmp/maizo-cover-libs
+          REL='https://github.com/AndrewPiroli/wii-curl/releases/download/c8.12.1%2Bm3.6.2'
+          for archive in wii-curl-8.12.1-1-any.pkg.tar.gz libwiisocket-0.1-1-any.pkg.tar.gz wii-mbedtls-3.6.2-2-any.pkg.tar.gz; do
+            curl --fail --location --retry 3 --output "$archive" "$REL/$archive"
+            tar -xzf "$archive"
+          done
+          cp -a opt/devkitpro/. /opt/devkitpro/
+          # libpng is a PowerPC portlib, NOT included in every devkitPPC image.
+          if [ ! -f /opt/devkitpro/portlibs/ppc/include/png.h ]; then
+            dkp-pacman -Sy --needed --noconfirm ppc-libpng
+          fi
+          echo "HTTPS/PNG DEPENDENCIES (for easier CI diagnosis):"
+          find /opt/devkitpro -name libcurl.a -o -name libwiisocket.a -o -name libpng.a -o -name png.h -o -name wiisocket.h
+          tar -tzf libwiisocket-0.1-1-any.pkg.tar.gz | grep -E '/(lib|include)/|libwiisocket' | tail -25
+          test -s /opt/devkitpro/portlibs/wii/lib/libcurl.a
+          test -e /opt/devkitpro/portlibs/wii/include/curl/curl.h
+          test -e /opt/devkitpro/portlibs/ppc/include/libpng16/png.h
       - name: Compile frontend on cache miss only
         if: steps.cached-frontend.outputs.cache-hit != 'true'
         run: make -j2

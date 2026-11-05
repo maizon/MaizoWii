@@ -5,10 +5,12 @@ endif
 include $(DEVKITPPC)/wii_rules
 
 SOURCES := $(wildcard source/*.c)
-OBJECTS := $(patsubst source/%.c,build/%.o,$(SOURCES)) build/bootstub_bytes.o
-CFLAGS := -O2 -g -Wall -Wextra -Wno-unused-parameter $(MACHDEP) -Iinclude -I$(LIBOGC_INC)
-LDFLAGS := -g $(MACHDEP) -Wl,-Map,boot.map -L$(LIBOGC_LIB)
-LIBS := -lfat -lwiiuse -lbte -logc -lm
+OBJECTS := $(patsubst source/%.c,build/%.o,$(SOURCES)) build/bootstub_bytes.o build/ca_bundle.o
+CFLAGS := -O2 -g -Wall -Wextra -Wno-unused-parameter $(MACHDEP) -Iinclude -I$(LIBOGC_INC) -I$(DEVKITPRO)/portlibs/wii/include -I$(DEVKITPRO)/portlibs/ppc/include -I$(DEVKITPRO)/portlibs/ppc/include/libpng16
+# Old wii-curl libwiisocket duplicates inet_ntop/inet_pton already provided by
+# libogc 3.2. Keep legacy first definition to satisfy its dependent archive.
+LDFLAGS := -g $(MACHDEP) -Wl,-Map,boot.map -Wl,--allow-multiple-definition -L$(DEVKITPRO)/portlibs/wii/lib -L$(DEVKITPRO)/portlibs/ppc/lib -L$(LIBOGC_LIB)
+LIBS := -lcurl -lpng -lz -lmbedtls -lmbedcrypto -lmbedx509 -lwiisocket -lfat -lwiiuse -lbte -logc -lm
 STUBFLAGS := $(MACHDEP) -O2 -Wall -Wextra -ffreestanding -fno-builtin -fno-stack-protector -fno-asynchronous-unwind-tables -mno-eabi -mno-sdata -mcpu=750 -I$(LIBOGC_INC)
 
 .PHONY: all clean
@@ -19,6 +21,8 @@ build:
 build/%.o: source/%.c | build
 	$(CC) $(CFLAGS) -c $< -o $@
 
+build/ca_bundle.o: source/ca_bundle.S data/cacert.pem | build
+	$(CC) $(MACHDEP) -c $< -o $@
 build/stub_entry.o: bootstub/start.S | build
 	$(CC) $(STUBFLAGS) -c $< -o $@
 build/stub_main.o: bootstub/stub.c | build
