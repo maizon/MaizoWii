@@ -4,11 +4,16 @@ Requires: python -m pip install pillow. All work happens on a PC/Android.
 """
 from pathlib import Path
 import argparse,struct
+from PIL import ImageOps
 try: from PIL import Image
 except ImportError: raise SystemExit("Pillow required: python -m pip install pillow")
 W,H=128,160
 def pack_rgba(im):
-    im=im.convert("RGBA").resize((W,H),Image.Resampling.LANCZOS)
+    # Preserve original image proportions.
+    im=ImageOps.contain(im.convert("RGBA"),(W,H),Image.Resampling.LANCZOS)
+    canvas=Image.new("RGBA",(W,H),(19,24,33,255))
+    canvas.alpha_composite(im,((W-im.width)//2,(H-im.height)//2))
+    im=canvas
     pix=im.load()
     out=bytearray(b"MZG1"+struct.pack(">HH",W,H))
     for ty in range(0,H,4):

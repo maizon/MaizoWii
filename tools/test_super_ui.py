@@ -92,13 +92,15 @@ class UiIntegration(unittest.TestCase):
         self.assertIn("maizo_nav_scroll(state.selected,state.scroll,count",main)
         self.assertNotIn("stride%n",main)
 
-    def test_welcome_does_not_block_usb_and_is_persisted(self):
+    def test_first_boot_opens_carousel_and_usb_mount_still_runs(self):
         main=self.read("source/main.c")
         config=self.read("source/config.c")
-        self.assertIn("PAGE_WELCOME",main)
-        self.assertIn("storage_ready&&!config_has_settings()",main)
-        self.assertIn("if(!config_save(&config))",main)
-        self.assertIn("int config_has_settings(void)",config)
+        self.assertIn("int storage_ready=mount_storage(1)",main)
+        self.assertIn("input_storage_ready(media_ready)",main)
+        self.assertIn("state.page=PAGE_HOME;",main)
+        self.assertNotIn("storage_ready&&!config_has_settings()",main)
+        self.assertIn("config_load(&config)",main)
+        self.assertIn("c->layout=2;",config)
         self.assertIn("c->theme=3",config)
 
     def test_info_returns_to_relevant_context(self):
@@ -119,15 +121,18 @@ class UiIntegration(unittest.TestCase):
         self.assertIn("WIIMC ORIGINAL",ui)
         self.assertIn("WIIMC HID",ui)
 
-    def test_ui_is_cpu_only_and_reports_both_media_statuses(self):
+    def test_ui_is_cpu_only_and_logo_is_exclusive_top_layer(self):
         ui=self.read("source/ui.c")
+        main=self.read("source/main.c")
         self.assertNotIn("GX_",ui)
         self.assertNotIn("fopen(",ui)
-        self.assertIn("u->storage_usb",ui)
-        self.assertIn("u->storage_sd",ui)
-        self.assertIn("static void welcome(",ui)
-        self.assertIn("PAGE_WELCOME:welcome(c)",ui)
-        self.assertIn("100% GAMEPAD",ui)
+        self.assertNotIn("USB OK",ui)
+        self.assertNotIn("SD OK",ui)
+        self.assertIn('label(25,23,"MAIZO",2.0f,ink);',ui)
+        self.assertIn("topbar(u,l,hid);",ui)
+        self.assertIn("state.storage_usb=storage_usb",main)
+        self.assertIn("state.storage_sd=storage_sd",main)
+        self.assertIn("if(u->page!=PAGE_HOME && u->page!=PAGE_LIBRARY)footer(u);",ui)
 
 if __name__=="__main__":
     unittest.main()

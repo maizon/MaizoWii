@@ -58,13 +58,13 @@ static const char *sys_names[SYSTEM_COUNT]={
  "NINTENDO WII","GAMECUBE","PLAYSTATION","SUPER NINTENDO",
  "NINTENDO NES","GAME BOY ADV","GAME BOY","VIDEOS E MUSICAS"
 };
-static int layout_of(const Config*c){return c->layout<3?(int)c->layout:0;}
+static int layout_of(const Config*c){return c->layout<3?(int)c->layout:2;}
 static int count_items(const State*u,const Library*l,int home){
- return home?SYSTEM_COUNT:library_total(l,u->system,u->search,u->favorites);
+ return home?SYSTEM_COUNT:library_total(l,u->system,u->search,0);
 }
 static const Game *game_at(const State*u,const Library*l,int home,int pos){
  int idx=home?library_visible(l,(System)pos,"",0,0):
-  library_visible(l,u->system,u->search,u->favorites,pos);
+  library_visible(l,u->system,u->search,0,pos);
  return idx>=0&&idx<l->count?&l->games[idx]:NULL;
 }
 static int system_at(const State*u,int home,int pos){
@@ -82,6 +82,16 @@ static void art(const State*u,const Library*l,int home,int pos,
                 float x,float y,float w,float h){
  int sys=system_at(u,home,pos);
  const Game*g=game_at(u,l,home,pos);
+ /* Platform images are prebuilt from retro-game-console-icons; custom Wii fallback. */
+ if(home){
+  static const char *keys[SYSTEM_COUNT]={
+   "IWII","IGC","IPS1","ISNES","INES","IGBA","IGB","IMEDIA"
+  };
+  Game icon={0};
+  icon.system=(System)sys;
+  snprintf(icon.id,sizeof(icon.id),"%s",keys[sys]);
+  if(cover_draw(&icon,x,y,w,h))return;
+ }
  rounded(x,y,w,h,0xff344550u);
  if(g&&cover_draw(g,x+2,y+2,w-4,h-4))return;
  /* Genre-color visual placeholder for unloaded artwork. */
@@ -94,27 +104,18 @@ static void art(const State*u,const Library*l,int home,int pos,
  float z=sys==SYSTEM_MEDIA?1.32f:sys==SYSTEM_SNES?1.46f:1.7f;
  clipped(x+14,y+h*.46f,sys_short[sys],z,ink,7);
 }
+/* Always draw the original MAIZO wordmark in the highest layer. */
 static void topbar(const State*u,const Library*l,int hid){
- rounded(19,12,602,53,surface);
- quad(20,12,600,3,accent,accent);
- label(33,28,"MAIZO",2.0f,ink);
- quad(155,23,2,30,accent,accent);
- label(170,31,u->page==PAGE_HOME||u->page==PAGE_WELCOME?"MEUS SISTEMAS":
-  system_title(u->system),1.05f,0xffd5e1e6u);
- rounded(462,26,57,25,u->storage_usb?0xff345b4du:0xff42474bu);
- clipped(471,34,u->storage_usb?"USB OK":"USB --",0.85f,ink,8);
- rounded(524,26,48,25,u->storage_sd?0xff345b4du:0xff42474bu);
- clipped(533,34,u->storage_sd?"SD OK":"SD --",0.85f,ink,7);
- rounded(577,26,29,25,hid?0xff3b9678u:0xff38434bu);
- clipped(584,34,"HID",0.77f,ink,4);
+ (void)u;(void)l;(void)hid;
+ label(25,23,"MAIZO",2.0f,ink);
 }
 static void footer(const State*u){
  rounded(19,446,602,26,surface);
- const char *msg="A ABRIR   B VOLTAR   L/R SISTEMA   Y FAVORITO   START AJUSTES";
+ const char *msg="A ABRIR   B VOLTAR   L/R SISTEMA   START AJUSTES";
  if(u->page==PAGE_HOME)
   msg="A ENTRAR   SETAS NAVEGAM   START AJUSTES   Z REINDEXAR";
  else if(u->page==PAGE_LIBRARY)
-  msg="A DETALHES   B SISTEMAS   X BUSCA   Y FAVORITO   START AJUSTES";
+  msg="A DETALHES   B SISTEMAS   X BUSCA   START AJUSTES";
  else if(u->page==PAGE_DETAIL)
   msg="A INICIAR   START: AJUSTES DESTE JOGO   B VOLTAR";
  else if(u->page==PAGE_SETTINGS)
@@ -153,7 +154,7 @@ static void grid_tile(const State*u,const Library*l,int home,int pos,
        ready?0xff6fdab0u:0xffd88876u);
  }else{
   const Game*g=game_at(u,l,0,pos);
-  if(g&&g->favorite)clipped(x+109,y+128,"*",0.98f,0xffeac777u,2);
+  (void)g; /* No favorites badges. */
  }
 }
 static void grid(const State*u,const Library*l,const Config*c,int home){
@@ -195,30 +196,30 @@ static void split_list(const State*u,const Library*l,int home){
   }
  }
 }
+/* Premium carousel: no counters or hints on the home and game library. */
 static void carousel(const State*u,const Library*l,int home){
  int n=count_items(u,l,home);
  if(n<=0)return;
  int focused=home?(int)u->system:u->selected;
- /* Draw far cards first, then center. Every card uses the same native
-  * cover aspect and preserves the bitmap's 128x160 geometry. */
- for(int delta=-2;delta<=2;delta++){
-  int pos=focused+delta;
+ static const int order[5]={-2,2,-1,1,0};
+ for(int i=0;i<5;i++){
+  int delta=order[i],pos=focused+delta;
   if(pos<0||pos>=n)continue;
   float x,y,w,h;
-  if(delta==0){x=256;y=143;w=128;h=180;}
-  else if(delta<0){x=delta==-1?99:15;y=delta==-1?170:195;
-                    w=delta==-1?112:79;h=delta==-1?150:114;}
-  else {x=delta==1?429:546;y=delta==1?170:195;
-        w=delta==1?112:79;h=delta==1?150:114;}
-  if(delta==0)rounded(x-4,y-4,w+8,h+8,accent);
-  rounded(x-2,y-2,w+4,h+4,surface);
+  if(delta==0){x=232;y=128;w=176;h=220;}
+  else if(delta==-1){x=98;y=164;w=124;h=155;}
+  else if(delta==1){x=418;y=164;w=124;h=155;}
+  else if(delta==-2){x=10;y=197;w=88;h=110;}
+  else {x=542;y=197;w=88;h=110;}
+  rounded(x+3,y+6,w,h,0xff0b1118u);
+  if(delta==0)rounded(x-5,y-5,w+10,h+10,accent);
+  rounded(x-2,y-2,w+4,h+4,0xff29343du);
   art(u,l,home,pos,x,y,w,h);
  }
- rounded(91,346,458,71,surface);
- clipped(111,359,item_name(u,l,home,focused),1.40f,ink,31);
- char s[75];snprintf(s,sizeof(s),"%d / %d   <  %s  >",
-    focused+1,n,home?system_title((System)focused):"A: DETALHES");
- clipped(112,391,s,0.90f,muted,56);
+ const char*name=item_name(u,l,home,focused);
+ int length=(int)strlen(name);if(length>39)length=39;
+ float scale=length>27?0.95f:length>19?1.20f:1.48f;
+ clipped(320.0f-length*4.0f*scale,374,name,scale,ink,length);
 }
 static void no_items(const State*u,const Library*l){
  rounded(44,140,552,270,surface);
@@ -228,7 +229,7 @@ static void no_items(const State*u,const Library*l){
  if(!u->storage_usb)label(75,324,"USB NAO MONTADO: TENTANDO NOVAMENTE",0.95f,0xffe7ab89u);
 }
 static void catalog(const State*u,const Library*l,const Config*c,int home){
- section_title(u,l,c,home);
+ /* Keep the whole top canvas reserved for MAIZO. */
  if(!count_items(u,l,home)){no_items(u,l);return;}
  switch(layout_of(c)){
   case 1:split_list(u,l,home);break;
@@ -366,8 +367,15 @@ void ui_draw(const State*u,const Library*l,const Config*c,int hid){
  muted=graphite?0xffb8c9cbu:0xffb3bed5u;
  maizo_video_clear();
  quad(0,0,640,480,base,0xff1e2b31u);
- quad(0,0,640,6,accent,accent);
- topbar(u,l,hid);
+ /* Restrained native color fields: system identity without heavyweight GPU
+  * shaders, animation buffers, or icons fighting for screen space. */
+ static const unsigned ambience[SYSTEM_COUNT]={
+  0xff1c323eu,0xff30294fu,0xff263753u,0xff393044u,
+  0xff49352eu,0xff213d4au,0xff2b3445u,0xff2d3b46u
+ };
+ quad(0,104,640,304,base,ambience[(unsigned)u->system%SYSTEM_COUNT]);
+ quad(0,408,640,72,ambience[(unsigned)u->system%SYSTEM_COUNT],base);
+ /* Logo is rendered after every panel. */
  switch(u->page){
  case PAGE_HOME:catalog(u,l,c,1);break;
  case PAGE_LIBRARY:catalog(u,l,c,0);break;
@@ -383,7 +391,8 @@ void ui_draw(const State*u,const Library*l,const Config*c,int hid){
   label(43,259,"APERTE A OU B PARA VOLTAR",1.13f,accent);
   break;
  }
- footer(u);
+ if(u->page!=PAGE_HOME && u->page!=PAGE_LIBRARY)footer(u);
+ topbar(u,l,hid);
  maizo_video_present();
 }
 void ui_shutdown(void){maizo_video_shutdown();}

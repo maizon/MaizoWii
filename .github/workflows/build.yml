@@ -28,6 +28,7 @@ jobs:
           python3 tools/test_contract.py
           python3 -m unittest discover -s tools -p "test_*.py"
           python3 -m unittest discover -s tests -p "test_*.py"
+          python3 tools/test_premium_ui.py
           python3 -m py_compile tools/package_all.py
       # Independent cache keys: changing the frontend does not compile the forwarder,
       # and changing the forwarder does not compile the frontend.
@@ -250,6 +251,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y p7zip-full
       - name: Collect pinned official homebrew modules
         run: python3 tools/package_all.py --frontend stage/apps/maizo/boot.dol --forwarder stage/apps/maizo-forwarder/boot.dol --out dist
+      - name: Prepare licensed console portraits for FAT32 storage
+        run: |
+          python3 -m pip install --user --break-system-packages Pillow
+          python3 tools/prepare_system_icons.py --out dist/maizo/covers
       - name: Overlay HID builds with fail-safe official fallback
         run: python3 tools/overlay_adapted.py patched dist
       - name: Require HID YAWM for ALL-IN-ONE release
@@ -281,6 +286,39 @@ jobs:
           Path(os.environ['GITHUB_STEP_SUMMARY']).write_text('\n\n'.join(report)+'\n')
           print('FALLBACKS:',fallback)
           PY
+      # The package must include an actual channel WAD, not only a forwarder DOL.
+      # It remains experimental until real-console verification.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Install channel packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential make zlib1g-dev fonts-dejavu-core
+          python3 -m pip install --user --break-system-packages Pillow pycryptodomex
+      - name: Build Maizo channel banner and icon
+        run: |
+          git clone -q https://github.com/Monsterray/hbc-reborn.git channel-base
+          git -C channel-base checkout --detach 559a768d63a38cfe3fcd142b31c5b5c36d566f49
+          python3 tools/render_wad_titles.py channel-base
+          make -C channel-base/channel/banner -j2
+          test -s channel-base/channel/banner/build/banner.arc
+          test -s channel-base/channel/banner/build/icon.arc
+      - name: Package experimental IOS58 MZIO forwarder WAD
+        run: |
+          git clone -q https://github.com/davi-x86/WadPakk.git wad-builder
+          git -C wad-builder checkout --detach 155a00d4b2180eab968cf5b2f5da68f3c3ebdafd
+          dotnet build wad-builder/WadPakk.csproj -c Release -p:PlatformTarget=AnyCPU -p:RuntimeIdentifier=linux-x64
+          cp -r wad-builder/Resources wad-builder/bin/Release/net8.0/linux-x64/Resources
+          dotnet wad-builder/bin/Release/net8.0/linux-x64/WadPakk.dll pack \
+            -base wad-builder/Resources/base.wad \
+            -banner channel-base/channel/banner/build/banner.arc \
+            -icon channel-base/channel/banner/build/icon.arc \
+            -dol dist/apps/maizo-forwarder/boot.dol \
+            -id MZIO -name "Maizo Wii" -ios 58 -loader comex \
+            -o dist/wad/MAIZOWII-FORWARDER-MZIO-EXPERIMENTAL.wad
+          python3 tools/inspect_forwarder_wad.py dist/wad/MAIZOWII-FORWARDER-MZIO-EXPERIMENTAL.wad
+          python3 tools/assemble_channel.py dist
       - name: Verify every executable and zip the storage root
         run: |
           test -s dist/apps/maizo-installer/boot.dol

@@ -249,10 +249,12 @@ int main(void){
  sd_ready=mount_one("sd",&__io_wiisd);
  if(usb_ready){
   if(launch_from("usb:/apps/maizo/boot.dol"))return 0;
+   if(launch_from("usb:/apps/Maizo/boot.dol"))return 0;
   if(launch_from("usb:/apps/MaizoWii/boot.dol"))return 0;
  }
  if(sd_ready){
   if(launch_from("sd:/apps/maizo/boot.dol"))return 0;
+   if(launch_from("sd:/apps/Maizo/boot.dol"))return 0;
   if(launch_from("sd:/apps/MaizoWii/boot.dol"))return 0;
  }
  save_failure();

@@ -195,12 +195,25 @@ Veja `THIRD_PARTY.md`.
 
 
 ## Forwarder e instalador
-O ZIP inclui um DOL de forwarder para HBC em apps/maizo-forwarder/boot.dol,
-que tenta iniciar sd:/apps/maizo/boot.dol ou usb:/apps/maizo/boot.dol.
-Nao e canal WAD. Inclui YAWM ModMii Edition em apps/maizo-installer/boot.dol,
-instalador **interativo**, que solicita a escolha/confirmacao do WAD.
-O WAD MaizoWii ainda NAO foi produzido nem validado para instalacao na NAND.
-Consulte docs/FORWARDER_INSTALADOR.md.
+A build ALL-IN-ONE gera o forwarder DOL para HBC em
+`apps/maizo-forwarder/boot.dol` e um WAD `MZIO` **experimental** em
+`wad/MAIZOWII-FORWARDER-MZIO-EXPERIMENTAL.wad`. O canal deve procurar
+`usb:/apps/maizo/boot.dol` primeiro e `sd:/apps/maizo/boot.dol` como
+alternativa; variantes com `apps/Maizo/` tambem sao aceitas.
+O instalador YAWM em `apps/maizo-installer/` requer confirmacao manual.
+**Nenhum WAD esta validado no Wii real**: teste o DOL pelo HBC e o canal no
+Dolphin antes de qualquer instalacao na NAND, com backup e recuperacao.
+
+### Maizo AAA — carrossel e assets
+- Carrossel como padrao de fabrica, iniciando diretamente na biblioteca.
+- Apenas o logotipo pixelado MAIZO no topo, desenhado por ultimo.
+- Centro com retratos de consoles do projeto KyleBing (CC BY 4.0),
+  preparados em `maizo/covers/I*.gxt`; Wii usa retrato de fallback local.
+- Nome centralizado sob a capa; nenhum favorito, historico ou HUD na home.
+- Capas de jogos sao convertidas sem distorcer a imagem original.
+- Os scripts `cover_sync.py` e `build_cover_cache.py` continuam
+  destinados ao PC/Android: o Wii exibe a biblioteca offline.
+- A compilacao CI nao substitui testes no Wii real nem prova USB HID universal.
 
 
 ## HID compartilhado e compilação do instalador (nova rodada)

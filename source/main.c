@@ -198,12 +198,12 @@ static void handle(const Input*i){
   state.selected=state.scroll=0;
   return;
  }
- if(i->refresh && state.page==PAGE_LIBRARY){state.favorites=!state.favorites;state.selected=state.scroll=0;return;}
+ /* Library shows all games. No favorites filter. */
  if(state.page==PAGE_HOME){
   if(i->left)change_system(-1);if(i->right)change_system(1);
   if(i->up)change_system(config.layout==0?-4:-1);
   if(i->down)change_system(config.layout==0?4:1);
-  if(i->accept||i->favorite){state.page=PAGE_LIBRARY;state.favorites=!!i->favorite;state.selected=state.scroll=0;}
+  if(i->accept){state.page=PAGE_LIBRARY;state.selected=state.scroll=0;}
   return;
  }
  if(state.page==PAGE_SETTINGS){
@@ -249,8 +249,7 @@ static void handle(const Input*i){
    }
   }
   clamp_selection();
-  if(i->favorite){int idx=library_visible(&library_state,state.system,state.search,state.favorites,state.selected);
-   if(idx>=0){library_state.games[idx].favorite^=1;favorites_save(&library_state);clamp_selection();}}
+  
   if(i->accept){int idx=library_visible(&library_state,state.system,state.search,state.favorites,state.selected);
    if(idx>=0){
     state.detail=idx;
@@ -262,7 +261,7 @@ static void handle(const Input*i){
  }
  if(state.page==PAGE_DETAIL){
   if(i->back){state.page=PAGE_LIBRARY;return;}
-  if(i->favorite&&state.detail>=0&&state.detail<library_state.count){library_state.games[state.detail].favorite^=1;favorites_save(&library_state);}
+  
   if(i->accept&&state.detail>=0&&state.detail<library_state.count){
    char error[160]="";
    const Game*g=&library_state.games[state.detail];
@@ -292,7 +291,8 @@ int main(int argc,char**argv){
  state.system=SYSTEM_GC;
  state.info_return=PAGE_HOME;
  state.storage_usb=storage_usb;state.storage_sd=storage_sd;
- state.page=storage_ready&&!config_has_settings()?PAGE_WELCOME:PAGE_HOME;
+ /* Start in the carousel, without the first-run wizard. */
+  state.page=PAGE_HOME;
  ui_boot_message("VERIFICANDO MODULOS");
  module_refresh_available();
  ui_boot_message("INDEXANDO BIBLIOTECA");

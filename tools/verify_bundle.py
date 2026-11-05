@@ -61,7 +61,20 @@ manager = manifest.get("installer")
 if manager:
     assert manager["source"] == "modmii/YAWM-ModMii-Edition", "unapproved installer"
     assert manager["auto_installs"] is False, "unsafe automatic NAND install"
-    assert manager["channel_wad_included"] is False, "unexpected WAD claim"
+    assert isinstance(manager["channel_wad_included"], bool), "invalid WAD inventory"
+    if manager["channel_wad_included"]:
+        channel = manifest.get("channel")
+        assert isinstance(channel, dict), "channel provenance missing"
+        assert channel.get("title_id") == "MZIO", "wrong channel title ID"
+        assert channel.get("ios") == 58, "unexpected channel IOS"
+        assert channel.get("real_wii_verified") is False, "unverified Wii claim"
+        rel = channel.get("path")
+        assert rel == "wad/MAIZOWII-FORWARDER-MZIO-EXPERIMENTAL.wad"
+        wad = root / rel
+        assert wad.is_file() and wad.stat().st_size >= 1024, "missing channel WAD"
+        assert hashlib.sha256(wad.read_bytes()).hexdigest() == channel.get("sha256"), "channel WAD SHA mismatch"
+    else:
+        assert not list((root / "wad").glob("*.wad")), "untracked WAD in bundle"
     exe = root / "apps/maizo-installer/boot.dol"
     assert valid_dol(exe.read_bytes()), "INVALID installer manager DOL"
     assert hashlib.sha256(exe.read_bytes()).hexdigest() == manager["dol_sha256"], "installer hash mismatch"
