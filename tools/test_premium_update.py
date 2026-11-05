@@ -30,8 +30,11 @@ class PremiumUpdateContracts(unittest.TestCase):
         self.assertIn("ImageOps.contain", builder)
         self.assertIn('rglob("*.png")', builder)
         ui = source("source/ui.c")
-        self.assertIn("w=160;h=224", ui)
-        self.assertIn("w=112;h=157", ui)
+        self.assertIn("maizo_card_slot(delta,&slot)", ui)
+        geometry = source("source/carousel_layout.c")
+        self.assertIn("{240,125,160,224}", geometry)
+        self.assertIn("{114,165,112,157}", geometry)
+        self.assertNotIn("x+=shift",ui)
         covers = source("source/covers.c")
         self.assertIn("(hdr[7]!=160&&hdr[7]!=176)", covers)
         self.assertIn("w/wanted", covers)
@@ -50,7 +53,7 @@ class PremiumUpdateContracts(unittest.TestCase):
             library = source("source/library.c")
             self.assertIn("usb:/", library)
             self.assertIn("sd:/", library)
-        self.assertIn('out / system / (key + ".png")',
+        self.assertIn('out / folder / (key + ".png")',
                       source("tools/cover_sync.py"))
 
     def test_direct_play_and_offline_error(self):
@@ -60,6 +63,23 @@ class PremiumUpdateContracts(unittest.TestCase):
         self.assertIn("if(idx>=0)play_game(idx,PAGE_LIBRARY)", main)
         self.assertIn("JOGO INDISPONIVEL.", main)
         self.assertIn("int old_usb=storage_usb,old_sd=storage_sd", main)
+
+    def test_cover_fat_io_is_off_the_render_path(self):
+        covers = source("source/covers.c")
+        main = source("source/main.c")
+        self.assertIn("Cache*c=lookup(g,0)", covers)
+        self.assertIn("(void)lookup(g,1)", covers)
+        self.assertIn("void cover_reset(void)", covers)
+        self.assertIn("prefetch_covers();", main)
+        self.assertLess(main.index("ui_draw(&state,&library_state,&config,in.hid_present);"),
+                        main.index("  prefetch_covers();"))
+        self.assertIn('ui_boot_message("CARREGANDO CAPAS...")', main)
+
+    def test_vi_software_renderer_avoids_repeated_slow_divisions(self):
+        video = source("source/video_sw.c")
+        self.assertIn("const int solid=a==b", video)
+        self.assertIn("unsigned char tex_x[720]",video)
+        self.assertIn("int tx=tex_x[px]",video)
 
     def test_six_themes_and_dynamic_palette_no_fat_in_draw(self):
         self.assertIn("c->theme=val%6", source("source/config.c"))

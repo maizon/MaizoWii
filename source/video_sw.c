@@ -111,12 +111,20 @@ void maizo_video_rect(float x,float y,float w,float h,unsigned a,unsigned b){
  int height=y1-y0;
  int ar=(a>>16)&255,ag=(a>>8)&255,ab=a&255;
  int br=(b>>16)&255,bg=(b>>8)&255,bb=b&255;
+ /* The UI has thousands of solid rectangles (especially tiny font
+  * pixels). Color conversion and 3 divisions per scanline for each solid
+  * rectangle were unnecessary. Convert solid colors exactly once. */
+ const int solid=a==b;
+ const uint32_t solid_color=yuyv_pair(ar,ag,ab,ar,ag,ab);
  for(int py=y0;py<y1;py++){
-  int row=py-y0;
-  int r=(ar*(height-row)+br*row)/height;
-  int g=(ag*(height-row)+bg*row)/height;
-  int bl=(ab*(height-row)+bb*row)/height;
-  uint32_t color=yuyv_pair(r,g,bl,r,g,bl);
+  uint32_t color=solid_color;
+  if(!solid){
+   int row=py-y0;
+   int r=(ar*(height-row)+br*row)/height;
+   int g=(ag*(height-row)+bg*row)/height;
+   int bl=(ab*(height-row)+bb*row)/height;
+   color=yuyv_pair(r,g,bl,r,g,bl);
+  }
   uint32_t *dest=(uint32_t *)((uint8_t *)buffers[back]+
                              (size_t)py*mode->fbWidth*2u);
   for(int pair=x0/2;pair<(x1+1)/2;pair++)
@@ -129,6 +137,18 @@ void maizo_video_cover(const unsigned char *source,unsigned tex_w,unsigned tex_h
  int x0,y0,x1,y1;
  rect_coords(x,y,w,h,&x0,&y0,&x1,&y1);
  if(x0>=x1||y0>=y1)return;
+ /* Wii VI framebuffer <=720px. Precalculate the horizontal nearest-neighbor
+  * coordinate once per cover instead of dividing twice for every pixel
+  * on every scanline (tens of thousands of divisions per card). */
+ unsigned char tex_x[720];
+ const int width=(int)mode->fbWidth;
+ if(width>720)return;
+ for(int px=x0;px<x1;px++){
+  int tx=(px-x0)*128/(x1-x0);
+  tex_x[px]=(unsigned char)(tx>127?127:tx);
+ }
+ if(x0&1)tex_x[x0-1]=0;
+ if((x1&1)&&x1<width)tex_x[x1]=127;
  /* MZG1 files store 128x160 (legacy) or 128x176 GX 4x4 tiles.
   * We decode directly to YUYV, so existing saved covers stay compatible. */
  for(int py=y0;py<y1;py++){
@@ -140,9 +160,7 @@ void maizo_video_cover(const unsigned char *source,unsigned tex_w,unsigned tex_h
    int rgb[2][3];
    for(int side=0;side<2;side++){
     int px=pair*2+side;
-    int tx=(px-x0)*128/(x1-x0);
-    if(tx<0)tx=0;
-    if(tx>127)tx=127;
+    int tx=tex_x[px];
     int base=((ty/4)*32+tx/4)*64+
              (((ty&3)*4+(tx&3))*2);
     rgb[side][0]=source[base+1];

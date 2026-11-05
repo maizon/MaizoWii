@@ -34,6 +34,8 @@ void input_storage_ready(int);
 void input_hid_diagnostics(HidDiagnostics*);
 void module_refresh_available(void);
 int cover_draw(const Game*,float,float,float,float);
+void cover_prefetch(const Game*);
+void cover_reset(void);
 unsigned cover_tint(const Game*);
 int ui_init(void);void ui_boot_message(const char*);
 void ui_draw(const State*,const Library*,const Config*,int);void ui_shutdown(void);

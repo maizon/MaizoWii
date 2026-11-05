@@ -38,6 +38,25 @@ class CoverTests(unittest.TestCase):
             (Path(tmp) / "bad.iso").write_bytes(b"??????")
             self.assertEqual(list(mod.images(Path(tmp), "gc")), [])
 
+    def test_wii_wbfs_disc_id_from_real_offset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            p=root/"No ID in name.wbfs"
+            p.write_bytes(b"WBFS"+bytes(0x1fc)+b"RZDE01"+bytes(64))
+            self.assertEqual(list(mod.images(root,"wii")),["RZDE01"])
+
+    def test_wbfs_invalid_container_does_not_yield_fake_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p=Path(tmp)/"Bad image.wbfs"
+            p.write_bytes(b"NOPE"+bytes(0x1fc)+b"ABCD12")
+            self.assertEqual(list(mod.images(Path(tmp),"wii")),[])
+
+    def test_gamecube_ciso_header_not_misidentified_as_disc_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p=Path(tmp)/"game.ciso"
+            p.write_bytes(b"CISO00"+bytes(1024))
+            self.assertEqual(list(mod.images(Path(tmp),"gc")),[])
+
     def test_libretro_game_title_and_gx_key(self):
         self.assertEqual(mod.cover_key("Super Mario World (USA)"),
                          "SUPER-MARIO-WORLD-USA")

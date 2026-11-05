@@ -36,12 +36,22 @@ def images(root, kind):
                 code = match.group(1).encode()
             elif ID.fullmatch(p.stem.encode("ascii", "ignore")):
                 code = p.stem.encode("ascii")
-        if code is None and (p.suffix.lower() == ".iso" or kind == "gc"):
+        if code is None and kind == "wii" and p.suffix.lower() == ".wbfs":
+            # Genuine WBFS: six-byte Wii disc ID at 0x200, not at offset 0.
+            try:
+                with p.open("rb") as f:
+                    if f.read(4) == b"WBFS":
+                        f.seek(0x200)
+                        code = f.read(6)
+            except OSError:
+                continue
+        if code is None and p.suffix.lower() in (".iso", ".gcm"):
             try:
                 with p.open("rb") as f:
                     code = f.read(6)
             except OSError:
                 continue
+        # A CISO header is not a GameCube disc ID; don't invent a title key.
         if code and ID.fullmatch(code):
             key = code.decode("ascii").upper()
             if key not in seen:
@@ -140,11 +150,18 @@ def main():
     p.add_argument("--region", default="US", choices=["US","EN","FR","DE","ES","IT","JP","BR"])
     p.add_argument("--limit", type=int, default=150)
     p.add_argument("--systems", choices=["all", "gc", "wii", *LIBRETRO], default="all")
+    p.add_argument("--convert", action="store_true",
+                   help="Also prepare native .gxt for MaizoWii in one pass (requires Pillow)")
     a = p.parse_args()
     out = a.device / "maizo" / "covers"
     out.mkdir(parents=True, exist_ok=True)
     stats = {"downloaded": 0, "existing": 0, "missing": 0}
-    pairs = [("gc",a.device/"games"), ("wii",a.device/"wbfs")]
+    pairs = [
+        ("gc", a.device / "games"),
+        ("gc", a.device / "roms/gamecube"),
+        ("wii", a.device / "wbfs"),
+        ("wii", a.device / "roms/wii"),
+    ]
     for kind, game_root in pairs:
         if a.systems not in ("all", kind) or not game_root.is_dir():
             continue
@@ -153,7 +170,7 @@ def main():
             if sum(stats.values()) >= a.limit:
                 break
             target = out / kind / (key + ".png")
-            if target.exists():
+            if target.exists() or target.with_suffix(".gxt").exists():
                 stats["existing"] += 1
                 continue
             success = False
@@ -171,18 +188,43 @@ def main():
     for system, (repo, _, _) in LIBRETRO.items():
         if a.systems not in ("all", system):
             continue
-        (out / system).mkdir(parents=True, exist_ok=True)
+        # Game Boy Color shares MAIZO's GB system tab and cover folder.
+        folder = "gb" if system == "gbc" else system
+        (out / folder).mkdir(parents=True, exist_ok=True)
         for key, title in named_roms(a.device, system):
             if sum(stats.values()) >= a.limit:
                 break
-            target = out / system / (key + ".png")
-            if target.exists():
+            target = out / folder / (key + ".png")
+            if target.exists() or target.with_suffix(".gxt").exists():
                 stats["existing"] += 1
                 continue
             success = fetch_libretro(repo, title, target)
             stats["downloaded" if success else "missing"] += 1
             print(f"{system.upper()} {title}: {'OK' if success else 'not found'}")
             time.sleep(0.1)
+    if a.convert:
+        from PIL import Image
+        from build_cover_cache import pack_rgba
+        converted = 0
+        errors = 0
+        for src in sorted(out.rglob("*.png")):
+            dest = src.with_suffix(".gxt")
+            if dest.is_file() and dest.stat().st_mtime >= src.stat().st_mtime:
+                continue
+            try:
+                with Image.open(src) as img:
+                    binary = pack_rgba(img)
+                # Atomic file replacement on FAT32: partial cached art is
+                # never mistaken for a valid MZG1 image by the frontend.
+                tmp = dest.with_suffix(".gxt.part")
+                tmp.write_bytes(binary)
+                tmp.replace(dest)
+                converted += 1
+            except (OSError, ValueError) as exc:
+                print(f"WARN cover conversion {src}: {exc}")
+                errors += 1
+        stats["converted"] = converted
+        stats["conversion_errors"] = errors
     print(json.dumps(stats,indent=2))
 
 if __name__ == "__main__":

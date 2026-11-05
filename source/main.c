@@ -78,11 +78,42 @@ static void retry_missing_storage(void){
  if(old_usb!=storage_usb||old_sd!=storage_sd){
   input_storage_ready(media_ready);
   module_refresh_available();
+  cover_reset();
   library_begin(&library_state);
   state.selected=state.scroll=0;
  }
 }
 static int total(void){return library_total(&library_state,state.system,state.search,state.favorites);}
+/* One cover file per cycle, never from ui_draw(). This is deliberate:
+ * synchronous FAT access in the raster hot path caused frame stalls when
+ * navigating between covers on real storage. */
+static unsigned cover_cycle=0;
+static const char *icon_codes[SYSTEM_COUNT]={
+ "IWII","IGC","IPS1","ISNES","INES","IGBA","IGB","IMEDIA"
+};
+static void prefetch_covers(void){
+ if(!media_ready)return;
+ unsigned round=cover_cycle++;
+ if(state.page==PAGE_HOME){
+  unsigned system=round%SYSTEM_COUNT;
+  Game icon={0};icon.system=(System)system;
+  snprintf(icon.id,sizeof(icon.id),"%s",icon_codes[system]);
+  cover_prefetch(&icon);
+ }else if(state.page==PAGE_LIBRARY){
+  int n=total();if(n<=0)return;
+  static const int offsets[]={0,-1,1,-2,2,-3,3};
+  int pos=state.selected;
+  if(config.layout==0)pos=state.scroll+(int)(round%8);
+  else if(config.layout==2)pos+=offsets[round%5];
+  else pos+=offsets[round%7];
+  if(pos<0||pos>=n)return;
+  int idx=library_visible(&library_state,state.system,state.search,0,pos);
+  if(idx>=0)cover_prefetch(&library_state.games[idx]);
+ }else if(state.page==PAGE_DETAIL &&
+          state.detail>=0&&state.detail<library_state.count){
+  cover_prefetch(&library_state.games[state.detail]);
+ }
+}
 static void clamp_selection(void){
  int count=total();if(state.selected>=count)state.selected=count?count-1:0;
  if(state.selected<0)state.selected=0;
@@ -217,6 +248,7 @@ static void handle(const Input*i){
   state.storage_usb=storage_usb;state.storage_sd=storage_sd;
   input_storage_ready(media_ready);
   module_refresh_available();
+  cover_reset();
   if(media_ready)library_begin(&library_state);
   else library_end(&library_state);
   state.selected=state.scroll=0;
@@ -312,6 +344,16 @@ int main(int argc,char**argv){
  ui_boot_message("VERIFICANDO LISTA DE JOGOS...");
  if(media_ready)library_begin(&library_state);
  else memset(&library_state,0,sizeof(library_state));
+ ui_boot_message("CARREGANDO CAPAS...");
+ /* Boot splash makes initialization explicit; the carousel never waits
+  * for storage during a redraw. Platform tiles are loaded once here. */
+ if(media_ready){
+  for(int system=0;system<SYSTEM_COUNT;system++){
+   Game icon={0};icon.system=(System)system;
+   snprintf(icon.id,sizeof(icon.id),"%s",icon_codes[system]);
+   cover_prefetch(&icon);
+  }
+ }
  ui_boot_message("DETECTANDO CONTROLES...");
  input_init();
  input_storage_ready(media_ready);
@@ -325,6 +367,7 @@ int main(int argc,char**argv){
   if(media_ready)library_step(&library_state,10);
   clamp_selection();
   ui_draw(&state,&library_state,&config,in.hid_present);
+  prefetch_covers();
   state.frame++;
  }
 }

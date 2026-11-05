@@ -3,6 +3,7 @@
  * Three identical library/system layouts: grid, split list and carousel. */
 #include "app.h"
 #include "video_sw.h"
+#include "carousel_layout.h"
 #include "font8x8.h"
 #include <string.h>
 #include <stdio.h>
@@ -203,24 +204,38 @@ static void carousel(const State*u,const Library*l,int home){
  if(n<=0)return;
  int focused=home?(int)u->system:u->selected;
  static const int order[5]={-2,2,-1,1,0};
- static int prev=-1,prev_page=-1,remaining=0,dir=0;
- if(prev_page!=(int)u->page){prev=focused;prev_page=(int)u->page;remaining=0;}
- if(prev!=focused){dir=focused>prev?-1:1;remaining=8;prev=focused;}
- float shift=remaining>0?(float)(dir*remaining*remaining)*0.14f:0;
- if(remaining>0)remaining--;
+ /* Pixel-stable slots: NEVER translate the whole row on a selection event.
+  * The previous global 'shift' moved every cover ~9 pixels and then
+  * stepped back, producing the reported wobble/flicker on CRT and Dolphin.
+  * Animate only the focus frame; card geometry is exact integers each frame. */
+ static int previous_focus=-1,previous_page=-1,focus_frames=8;
+ if(previous_page!=(int)u->page){
+  previous_focus=focused;previous_page=(int)u->page;focus_frames=8;
+ }else if(previous_focus!=focused){
+  previous_focus=focused;focus_frames=0;
+ }
+ if(focus_frames<8)focus_frames++;
+ unsigned focus_color=accent;
+ if(focus_frames<8){
+  const unsigned dark=0xff37454eu;
+  unsigned rgb=0;
+  for(unsigned shift=0;shift<24;shift+=8){
+   int from=(int)((dark>>shift)&255u),to=(int)((accent>>shift)&255u);
+   int value=from+(to-from)*focus_frames/8;
+   rgb|=((unsigned)value&255u)<<shift;
+  }
+  focus_color=0xff000000u|rgb;
+ }
  for(int i=0;i<5;i++){
   int delta=order[i],pos=focused+delta;
   if(pos<0||pos>=n)continue;
-  float x,y,w,h;
-  if(delta==0){x=240;y=125;w=160;h=224;}
-  else if(delta==-1){x=114;y=165;w=112;h=157;}
-  else if(delta==1){x=414;y=165;w=112;h=157;}
-  else if(delta==-2){x=28;y=197;w=76;h=107;}
-  else {x=536;y=197;w=76;h=107;}
-  x+=shift;
-  /* Soft shadow without multi-pass filters: stable on the Wii VI backend. */
+  MaizoCardSlot slot;
+  if(!maizo_card_slot(delta,&slot))continue;
+  const float x=(float)slot.x,y=(float)slot.y;
+  const float w=(float)slot.w,h=(float)slot.h;
+  /* Shadow and background must not move when another card is selected. */
   rounded(x+4,y+8,w,h,0xff080c12u);
-  if(delta==0)rounded(x-5,y-5,w+10,h+10,accent);
+  if(delta==0)rounded(x-5,y-5,w+10,h+10,focus_color);
   rounded(x-2,y-2,w+4,h+4,0xff29343du);
   art(u,l,home,pos,x,y,w,h);
  }

@@ -18,12 +18,17 @@ static void key_for(const Game*g,char*key,size_t cap){
   else if(c==' '&&n&&key[n-1]!='-')key[n++]='-';
  }key[n]=0;
 }
-static Cache*lookup(const Game*g){
+/* Disk I/O is strictly forbidden from the render path. The first
+ * request for a new cover is handled in cover_prefetch between frames.
+ * A negative cache entry avoids repeatedly opening missing files. */
+static Cache*lookup(const Game*g,int allow_io){
+ if(!g||g->system<0||g->system>=SYSTEM_COUNT)return NULL;
  char key[120];key_for(g,key,sizeof(key));if(!*key)return NULL;
  clock_id++;
  for(int j=0;j<12;j++)if(cache[j].key[0]&&cache[j].system==(int)g->system&&!strcmp(cache[j].key,key)){
   cache[j].last=clock_id;return cache[j].valid?&cache[j]:NULL;
  }
+ if(!allow_io)return NULL;
  int slot=-1;for(int j=0;j<12;j++)if(!cache[j].key[0]){slot=j;break;}
  if(slot<0){slot=0;for(int j=1;j<12;j++)if(cache[j].last<cache[slot].last)slot=j;}
  Cache*c=&cache[slot];
@@ -74,8 +79,9 @@ static Cache*lookup(const Game*g){
  }
  c->valid=1;return c;
 }
+/* The UI can always render a placeholder without blocking on FAT. */
 int cover_draw(const Game*g,float x,float y,float w,float h){
- Cache*c=lookup(g);
+ Cache*c=lookup(g,0);
  if(!c)return 0;
  /* Letterbox older 128x160 covers instead of stretching into the new
   * portrait card frame. Preserve even square source images via preprocessing. */
@@ -95,4 +101,19 @@ unsigned cover_tint(const Game*g){
   if(cache[i].valid && cache[i].system==(int)g->system &&
      strcmp(cache[i].key,key)==0)return cache[i].tint;
  return 0;
+}
+
+/* The main loop runs at most one new file request per video frame.
+ * Safe to call repeatedly; after first success or failure it is RAM-only. */
+void cover_prefetch(const Game*g){
+ (void)lookup(g,1);
+}
+/* Explicit rescan/changed media: forget old negative entries and textures.
+ * Never touch running WiiMC/Nintendont modules: this is frontend-only. */
+void cover_reset(void){
+ for(unsigned i=0;i<sizeof(cache)/sizeof(cache[0]);i++){
+  free(cache[i].pixels);
+  memset(&cache[i],0,sizeof(cache[i]));
+ }
+ clock_id=0;
 }
