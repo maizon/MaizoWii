@@ -71,12 +71,12 @@ static int mount_storage(int initial){
 /* Forwarder -> DOL handoff may reopen FAT after the initial mount window.
  * Retry USB without requiring a Wiimote, a press of Z, or an SD card. */
 static void retry_missing_storage(void){
- if(storage_usb||state.frame==0||(state.frame%900)!=0)return;
- int old_ready=media_ready;
+ if((storage_usb&&storage_sd)||state.frame==0||(state.frame%900)!=0)return;
+ int old_usb=storage_usb,old_sd=storage_sd;
  mount_storage(0);
  state.storage_usb=storage_usb;state.storage_sd=storage_sd;
- input_storage_ready(media_ready);
- if(media_ready && (!old_ready||storage_usb)){
+ if(old_usb!=storage_usb||old_sd!=storage_sd){
+  input_storage_ready(media_ready);
   module_refresh_available();
   library_begin(&library_state);
   state.selected=state.scroll=0;
@@ -140,9 +140,26 @@ static void adjust_calibration(int dir){
                              config.video_w,config.video_h);
  config_save(&config);
 }
+/* Direct play from the library and details use the exact same safe path. */
+static void play_game(int index,Page back){
+ if(index<0||index>=library_state.count)return;
+ const Game*g=&library_state.games[index];
+ state.detail=index;
+ struct stat st;
+ if(stat(g->path,&st)!=0 || !S_ISREG(st.st_mode)){
+  snprintf(state.info,sizeof(state.info),"JOGO INDISPONIVEL. CONFIRA USB/SD E REINDEXE");
+  state.info_return=back;state.page=PAGE_INFO;return;
+ }
+ Config effective;config_game_load(&effective,&config,g);
+ char error[160]="";
+ if(!module_launch(g,&effective,error,sizeof(error))){
+  snprintf(state.info,sizeof(state.info),"%s",error[0]?error:"FALHA NA INICIALIZACAO DO JOGO");
+  state.info_return=back;state.page=PAGE_INFO;
+ }
+}
 static void handle(const Input*i){
  if(state.page==PAGE_WELCOME){
-  if(i->left||i->right)config.theme=(config.theme+4+(i->left?-1:1))%4;
+  if(i->left||i->right)config.theme=(config.theme+6+(i->left?-1:1))%6;
   if(i->accept||i->back||i->settings){
    if(!config_save(&config)){
     snprintf(state.info,sizeof(state.info),"BEM-VINDO! AJUSTES NAO SALVOS NO DISPOSITIVO");
@@ -174,6 +191,13 @@ static void handle(const Input*i){
     (state.page==PAGE_HOME||state.page==PAGE_LIBRARY||state.page==PAGE_SEARCH)){
   if(i->tab_prev)change_system(-1);
   if(i->tab_next)change_system(1);
+ }
+ if(i->settings && state.page==PAGE_LIBRARY){
+  int idx=library_visible(&library_state,state.system,state.search,0,state.selected);
+  if(idx>=0){state.detail=idx;
+   config_game_load(&state.game_config,&config,&library_state.games[idx]);
+   state.page=PAGE_DETAIL;}
+  return;
  }
  if(i->settings && state.page==PAGE_DETAIL){
   if(state.detail>=0&&state.detail<library_state.count){
@@ -250,27 +274,17 @@ static void handle(const Input*i){
   }
   clamp_selection();
   
-  if(i->accept){int idx=library_visible(&library_state,state.system,state.search,state.favorites,state.selected);
-   if(idx>=0){
-    state.detail=idx;
-    config_game_load(&state.game_config,&config,&library_state.games[idx]);
-    state.page=PAGE_DETAIL;
-   }}
+  if(i->accept){
+   int idx=library_visible(&library_state,state.system,state.search,0,state.selected);
+   if(idx>=0)play_game(idx,PAGE_LIBRARY);
+  }
   if(i->back){state.page=PAGE_HOME;state.search[0]=0;}
   return;
  }
  if(state.page==PAGE_DETAIL){
   if(i->back){state.page=PAGE_LIBRARY;return;}
   
-  if(i->accept&&state.detail>=0&&state.detail<library_state.count){
-   char error[160]="";
-   const Game*g=&library_state.games[state.detail];
-   Config effective;config_game_load(&effective,&config,g);
-   module_launch(g,&effective,error,sizeof(error));
-   snprintf(state.info,sizeof(state.info),"%s",error[0]?error:"MODULO RETORNOU SEM INICIAR");
-   state.info_return=PAGE_DETAIL;
-   state.page=PAGE_INFO;
-  }
+  if(i->accept)play_game(state.detail,PAGE_DETAIL);
  }
 }
 /* Start the software VI framebuffer first. FAT/USB HID may block:
@@ -278,9 +292,9 @@ static void handle(const Input*i){
 int main(int argc,char**argv){
  (void)argc;(void)argv;
  if(!ui_init())return 1;
- ui_boot_message("VIDEO VI OK");
+ ui_boot_message("VIDEO PREPARADO");
  VIDEO_WaitVSync();
- ui_boot_message("MONTANDO SD E USB");
+ ui_boot_message("MONTANDO DISPOSITIVOS...");
  int storage_ready=mount_storage(1);
  ui_boot_message(storage_ready?
   (storage_usb?"USB MONTADO - CARREGANDO DADOS":"SD MONTADO - CARREGANDO DADOS"):
@@ -293,12 +307,12 @@ int main(int argc,char**argv){
  state.storage_usb=storage_usb;state.storage_sd=storage_sd;
  /* Start in the carousel, without the first-run wizard. */
   state.page=PAGE_HOME;
- ui_boot_message("VERIFICANDO MODULOS");
+ ui_boot_message("CARREGANDO MODULOS...");
  module_refresh_available();
- ui_boot_message("INDEXANDO BIBLIOTECA");
+ ui_boot_message("VERIFICANDO LISTA DE JOGOS...");
  if(media_ready)library_begin(&library_state);
  else memset(&library_state,0,sizeof(library_state));
- ui_boot_message("INICIALIZANDO CONTROLES");
+ ui_boot_message("DETECTANDO CONTROLES...");
  input_init();
  input_storage_ready(media_ready);
  /* Show a complete home frame before the first USB HID probe. */

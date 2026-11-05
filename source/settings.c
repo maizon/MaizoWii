@@ -53,7 +53,7 @@ void settings_value(const Config*c,System s,int row,char*dest,size_t cap){
  if(row==settings_count(s)-1){snprintf(dest,cap,"A / B");return;}
  if(row==settings_count(s)-2){snprintf(dest,cap,"ABRIR");return;}
  unsigned v=get(c,s,row);
- if(row==0){const char*themes[]={"VIOLETA","TURQUESA","CORAL","GRAFITE"};snprintf(dest,cap,"%s",themes[v%4]);return;}
+ if(row==0){const char*themes[]={"VIOLETA","TURQUESA","CORAL","GRAFITE","OLED","CLASSICO"};snprintf(dest,cap,"%s",themes[v%6]);return;}
  if(row==1){const char *layouts[]={"GRADE","LISTA","CARROSSEL"};snprintf(dest,cap,"%s",layouts[v%3]);return;}
  if(s==SYSTEM_WII){if(row==2)snprintf(dest,cap,"IOS %u",v);
   else snprintf(dest,cap,"USB %u",v);return;}
@@ -78,7 +78,7 @@ void settings_value(const Config*c,System s,int row,char*dest,size_t cap){
 int settings_change(Config*c,System s,int row,int dir){
  if(row>=settings_count(s)-2||row<0)return 0;
  unsigned*v=NULL,lim=2;
- if(row==0){v=&c->theme;lim=4;}
+ if(row==0){v=&c->theme;lim=6;}
  else if(row==1){v=&c->layout;lim=3;}
  else if(s==SYSTEM_WII&&row==2){
   const unsigned ios[]={58,249,250,251,252};int n=1;
@@ -112,4 +112,25 @@ int settings_change(Config*c,System s,int row,int dir){
  else if(s==SYSTEM_MEDIA&&row==4)v=&c->media_autoboot;
  if(!v)return 0;
  *v=(*v+lim+(dir<0?-1:1))%lim;return 1;
+}
+
+/* Category headers reflect actual supported parameters, not fake sliders. */
+const char*settings_category(System s,int row){
+ if(row==0||row==1)return "APARENCIA";
+ if(row>=settings_count(s)-2)return "GERAL";
+ if(s==SYSTEM_WII)return row==2?"EMULACAO / IOS":"ARMAZENAMENTO";
+ if(s==SYSTEM_GC){
+  if(row==6||row>=10)return "VIDEO";
+  if(row==8)return "CONTROLES";
+  if(row==2||row==7)return "SAVES";
+  if(row==4)return "CHEATS";
+  return "EMULACAO";
+ }
+ if(s==SYSTEM_PS1){
+  if(row==5)return "AUDIO";
+  if(row>=6)return "VIDEO / QUALIDADE";
+  return "EMULACAO";
+ }
+ if(s==SYSTEM_MEDIA)return row==2?"AUDIO":"REPRODUCAO";
+ return "EMULACAO";
 }

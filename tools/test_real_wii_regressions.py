@@ -47,6 +47,13 @@ class WiiRealBootRegressions(unittest.TestCase):
         self.assertIn("if(h->bss_size){", stub)
         self.assertIn("clear_bytes((void *)(uintptr_t)h->bss,h->bss_size)", stub)
 
+    def test_gx_hid_no_wiimote_input_guard(self):
+        patch=(ROOT/"tools/patch_upstreams.py").read_text()
+        self.assertIn("USBLoader no-Wiimote input guard", patch)
+        self.assertIn("if(maizo_remote)memcpy", patch)
+        argv=(ROOT/"source/launch_args.c").read_text()
+        self.assertIn('!append(out,"-sdmode=1")',argv)
+
     def test_forwarder_log_and_bss_cache(self):
         stub=(ROOT/"bootstub/stub.c").read_text()
         fw=(ROOT/"forwarder/main.c").read_text()

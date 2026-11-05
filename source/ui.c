@@ -54,6 +54,7 @@ static const char *sys_short[SYSTEM_COUNT]={
  "Wii","GC","PS1","SNES","NES","GBA","GB","MEDIA"
 };
 static const char *layout_name[3]={"GRADE","LISTA","CARROSSEL"};
+static const char *premium_themes[6]={"VIOLETA","TURQUESA","CORAL","GRAFITE","OLED","CLASSICO"};
 static const char *sys_names[SYSTEM_COUNT]={
  "NINTENDO WII","GAMECUBE","PLAYSTATION","SUPER NINTENDO",
  "NINTENDO NES","GAME BOY ADV","GAME BOY","VIDEOS E MUSICAS"
@@ -115,9 +116,9 @@ static void footer(const State*u){
  if(u->page==PAGE_HOME)
   msg="A ENTRAR   SETAS NAVEGAM   START AJUSTES   Z REINDEXAR";
  else if(u->page==PAGE_LIBRARY)
-  msg="A DETALHES   B SISTEMAS   X BUSCA   START AJUSTES";
+  msg="A JOGAR   START DETALHES   B SISTEMAS   X BUSCA";
  else if(u->page==PAGE_DETAIL)
-  msg="A INICIAR   START: AJUSTES DESTE JOGO   B VOLTAR";
+  msg="A JOGAR   START CONFIGURAR   B VOLTAR";
  else if(u->page==PAGE_SETTINGS)
   msg="SETAS ALTERAM   A CONFIRMA   B SALVA   Z DIAGNOSTICO";
  else if(u->page==PAGE_WELCOME)
@@ -146,7 +147,7 @@ static void grid_tile(const State*u,const Library*l,int home,int pos,
  int selected=item_marked(u,home,pos);
  if(selected)rounded(x-3,y-3,130,151,accent);
  rounded(x,y,124,145,selected?0xff3b4d55u:card);
- art(u,l,home,pos,x+11,y+7,102,114);
+ art(u,l,home,pos,x+21,y+7,82,114);
  clipped(x+8,y+127,item_name(u,l,home,pos),0.87f,ink,15);
  if(home){
   int ready=module_available((System)pos);
@@ -202,16 +203,23 @@ static void carousel(const State*u,const Library*l,int home){
  if(n<=0)return;
  int focused=home?(int)u->system:u->selected;
  static const int order[5]={-2,2,-1,1,0};
+ static int prev=-1,prev_page=-1,remaining=0,dir=0;
+ if(prev_page!=(int)u->page){prev=focused;prev_page=(int)u->page;remaining=0;}
+ if(prev!=focused){dir=focused>prev?-1:1;remaining=8;prev=focused;}
+ float shift=remaining>0?(float)(dir*remaining*remaining)*0.14f:0;
+ if(remaining>0)remaining--;
  for(int i=0;i<5;i++){
   int delta=order[i],pos=focused+delta;
   if(pos<0||pos>=n)continue;
   float x,y,w,h;
-  if(delta==0){x=232;y=128;w=176;h=220;}
-  else if(delta==-1){x=98;y=164;w=124;h=155;}
-  else if(delta==1){x=418;y=164;w=124;h=155;}
-  else if(delta==-2){x=10;y=197;w=88;h=110;}
-  else {x=542;y=197;w=88;h=110;}
-  rounded(x+3,y+6,w,h,0xff0b1118u);
+  if(delta==0){x=240;y=125;w=160;h=224;}
+  else if(delta==-1){x=114;y=165;w=112;h=157;}
+  else if(delta==1){x=414;y=165;w=112;h=157;}
+  else if(delta==-2){x=28;y=197;w=76;h=107;}
+  else {x=536;y=197;w=76;h=107;}
+  x+=shift;
+  /* Soft shadow without multi-pass filters: stable on the Wii VI backend. */
+  rounded(x+4,y+8,w,h,0xff080c12u);
   if(delta==0)rounded(x-5,y-5,w+10,h+10,accent);
   rounded(x-2,y-2,w+4,h+4,0xff29343du);
   art(u,l,home,pos,x,y,w,h);
@@ -219,7 +227,8 @@ static void carousel(const State*u,const Library*l,int home){
  const char*name=item_name(u,l,home,focused);
  int length=(int)strlen(name);if(length>39)length=39;
  float scale=length>27?0.95f:length>19?1.20f:1.48f;
- clipped(320.0f-length*4.0f*scale,374,name,scale,ink,length);
+ clipped(320.0f-length*4.0f*scale,372,name,scale,ink,length);
+ if(!home)label(196,407,"A JOGAR     START DETALHES",0.94f,muted);
 }
 static void no_items(const State*u,const Library*l){
  rounded(44,140,552,270,surface);
@@ -245,7 +254,7 @@ static void detail(const State*u,const Library*l,const Config*c){
  rounded(45,140,172,251,0xff38525cu);
  clipped(70,256,sys_short[g->system],1.66f,ink,8);
  /* Cover must always belong to the actual selected detail game. */
- cover_draw(g,48,143,166,245);
+ cover_draw(g,48,143,168,235);
  clipped(255,141,g->name,1.54f,ink,25);
  clipped(255,184,module_name(g->system),1.04f,muted,38);
  if(g->id[0]){
@@ -253,12 +262,13 @@ static void detail(const State*u,const Library*l,const Config*c){
   label(255,208,id,1.05f,muted);
  }
  clipped(255,244,g->path,0.87f,muted,48);
+ label(255,280,"CHEATS E SAVES: CONFIGURAR NO NUCLEO",0.81f,muted);
  if(g->system==SYSTEM_MEDIA)
   label(255,280,u->game_config.media_player?"WIIMC ORIGINAL":"WIIMC HID",0.93f,muted);
  int can=module_variant_available(g->system,&u->game_config);
  rounded(255,317,322,52,can?0xff40675bu:0xff754d4du);
  label(279,334,can?"A   INICIAR":"MODULO NAO INSTALADO",1.26f,ink);
- label(256,392,"START: AJUSTES DESTE JOGO",0.99f,muted);
+ label(256,392,"START: CONFIGURACOES DO JOGO",0.99f,muted);
 }
 static void search_ui(const State*u,const Library*l){
  const char*alphabet=" ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-";
@@ -282,8 +292,7 @@ static void welcome(const Config*c){
  rounded(42,220,559,163,surface);
  label(69,250,"100% GAMEPAD",1.36f,ink);
  label(69,287,"GRADE  |  LISTA  |  CARROSSEL",1.16f,ink);
- char s[65];const char *names[]={"VIOLETA","TURQUESA","CORAL","GRAFITE"};
- snprintf(s,sizeof(s),"TEMA: %s  < >",names[c->theme%4]);
+ char s[65];snprintf(s,sizeof(s),"TEMA: %s  < >",premium_themes[c->theme%6]);
  label(69,346,s,1.11f,accent);
 }
 static void hid_page(void){
@@ -331,8 +340,9 @@ static void hid_note(void){
 }
 static void settings_ui(const State*u,const Config*c){
  label(39,83,u->settings_for_game?"OPCOES DESTE JOGO":"AJUSTES DO MAIZO",1.57f,ink);
- clipped(39,111,u->settings_for_game?"PARAMETROS DESTE JOGO":system_title(u->system),
-  0.95f,muted,65);
+ char group[88];
+ snprintf(group,sizeof(group),"%s  /  %s",system_title(u->system),settings_category(u->system,u->settings_row));
+ clipped(39,111,group,0.95f,muted,65);
  int n=settings_count(u->system);
  int top=u->settings_row-7;if(top<0)top=0;
  if(top>n-9)top=n>9?n-9:0;
@@ -347,24 +357,27 @@ static void settings_ui(const State*u,const Config*c){
 }
 void ui_boot_message(const char*stage){
  maizo_video_clear();
- ink=0xfff7f8fau;muted=0xffb2c4cdu;base=0xff10151au;
- surface=0xff202b31u;card=0xff27333au;accent=0xff82afb2u;
- quad(0,0,640,480,base,0xff1b2a30u);
- rounded(65,150,510,190,surface);
- label(94,193,"MAIZO",2.85f,ink);
- label(94,248,"INICIANDO WII HUB",1.28f,muted);
- clipped(94,288,stage,1.02f,accent,65);
+ /* Same MAIZO font, centered on solid black, no intermediary UI. */
+ quad(0,0,640,480,0xff000000u,0xff000000u);
+ label(280,223,"MAIZO",2.0f,0xfff7f8fau);
+ if(stage){
+  int count=(int)strlen(stage);if(count>57)count=57;
+  float scale=0.85f;
+  float px=608.0f-count*8.0f*scale;
+  if(px<20.0f)px=20.0f;
+  clipped(px,447,stage,scale,0xffa9b5bdu,count);
+ }
  maizo_video_present();
 }
 int ui_init(void){return maizo_video_init();}
 void ui_draw(const State*u,const Library*l,const Config*c,int hid){
- static const unsigned accents[]={0xff7772dbu,0xff37b9a4u,0xffe07c97u,0xff82afb2u};
- accent=accents[c->theme%4];
- int graphite=c->theme==3;
- base=graphite?0xff10191eu:0xff141b26u;
- surface=graphite?0xff202a30u:0xff232b3bu;
- card=graphite?0xff29363bu:0xff293449u;
- muted=graphite?0xffb8c9cbu:0xffb3bed5u;
+ static const unsigned accents[]={0xff7772dbu,0xff37b9a4u,0xffe07c97u,0xff82afb2u,0xffb1b7c6u,0xffbad0d3u};
+ accent=accents[c->theme%6];
+ int graphite=c->theme==3,oled=c->theme==4,classic=c->theme==5;
+ base=oled?0xff08090cu:classic?0xff263039u:graphite?0xff10191eu:0xff141b26u;
+ surface=oled?0xff15181cu:classic?0xff344049u:graphite?0xff202a30u:0xff232b3bu;
+ card=oled?0xff202328u:classic?0xff40525au:graphite?0xff29363bu:0xff293449u;
+ muted=classic?0xffd3e2e5u:graphite?0xffb8c9cbu:0xffb3bed5u;
  maizo_video_clear();
  quad(0,0,640,480,base,0xff1e2b31u);
  /* Restrained native color fields: system identity without heavyweight GPU
@@ -373,8 +386,26 @@ void ui_draw(const State*u,const Library*l,const Config*c,int hid){
   0xff1c323eu,0xff30294fu,0xff263753u,0xff393044u,
   0xff49352eu,0xff213d4au,0xff2b3445u,0xff2d3b46u
  };
- quad(0,104,640,304,base,ambience[(unsigned)u->system%SYSTEM_COUNT]);
- quad(0,408,640,72,ambience[(unsigned)u->system%SYSTEM_COUNT],base);
+ unsigned target=ambience[(unsigned)u->system%SYSTEM_COUNT];
+ if(u->page==PAGE_LIBRARY||u->page==PAGE_DETAIL){
+  const Game*g=u->page==PAGE_DETAIL?(u->detail>=0&&u->detail<l->count?&l->games[u->detail]:NULL):game_at(u,l,0,u->selected);
+  if(g){unsigned tint=cover_tint(g);if(tint)target=tint;}
+ }
+ if(oled)target=0xff17191eu;
+ static unsigned previous=0;
+ if(!previous)previous=target;
+ if(previous!=target){
+  unsigned a=previous,b=target,channels=0;
+  for(int i=0;i<3;i++){
+   unsigned shift=i*8,va=(a>>shift)&255,vb=(b>>shift)&255;
+   int d=(int)vb-(int)va;int step=d>0?(d+7)/8:(d-7)/8;
+   int v=(int)va+step;if((d>0&&v>(int)vb)||(d<0&&v<(int)vb))v=vb;
+   channels|=((unsigned)v&255u)<<shift;
+  }
+  previous=0xff000000u|channels;
+ }
+ quad(0,104,640,304,base,previous);
+ quad(0,408,640,72,previous,base);
  /* Logo is rendered after every panel. */
  switch(u->page){
  case PAGE_HOME:catalog(u,l,c,1);break;

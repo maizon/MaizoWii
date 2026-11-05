@@ -40,7 +40,7 @@ void config_load(Config*c){config_defaults(c);char p[80];snprintf(p,sizeof(p),"%
  if(!f)return;
  char key[64];unsigned val;
  while(fscanf(f," %63[^=]=%u",key,&val)==2) {
-  if(!strcmp(key,"theme"))c->theme=val%4;
+  if(!strcmp(key,"theme"))c->theme=val%6;
   else if(!strcmp(key,"wii_ios"))c->wii_ios=(val==58|| (val>=200&&val<=255))?val:249;
   else if(!strcmp(key,"wii_usb_port"))c->wii_usb_port=val>1?0:val;
   else if(!strcmp(key,"gc_mc_multi"))c->gc_mc_multi=!!val;

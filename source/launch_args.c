@@ -78,6 +78,9 @@ int maizo_build_args(const MaizoLaunchSpec *s,MaizoLaunchArgs *out,char*error,si
   if(!append(out,option))return fail(error,cap,"IOS excede limite");
   snprintf(option,sizeof(option),"-usbport=%u",s->wii_usb_port);
   if(!append(out,option))return fail(error,cap,"Porta excede limite");
+  /* USB Loader GX enhanced supports -sdmode=1 for SD games. */
+  if(!strncmp(s->path,"sd:/",4) && !append(out,"-sdmode=1"))
+   return fail(error,cap,"Modo SD excede limite");
  }else if(s->system==MAIZO_ARG_PS1){
   if(ext_is(s->path,".chd") || ext_is(s->path,".m3u"))
    return fail(error,cap,"WiiSXRX original nao suporta CHD/M3U");

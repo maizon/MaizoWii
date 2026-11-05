@@ -123,17 +123,17 @@ void maizo_video_rect(float x,float y,float w,float h,unsigned a,unsigned b){
    set_pair(dest,pair,x0,x1,color);
  }
 }
-void maizo_video_cover(const unsigned char *source,
+void maizo_video_cover(const unsigned char *source,unsigned tex_w,unsigned tex_h,
                        float x,float y,float w,float h){
- if(!mode||!source||w<=0||h<=0)return;
+ if(!mode||!source||tex_w!=128||(tex_h!=160&&tex_h!=176)||w<=0||h<=0)return;
  int x0,y0,x1,y1;
  rect_coords(x,y,w,h,&x0,&y0,&x1,&y1);
  if(x0>=x1||y0>=y1)return;
- /* MZG1 files store 128x160 RGBA8 in GX 4x4-tiled AR/GB planes.
+ /* MZG1 files store 128x160 (legacy) or 128x176 GX 4x4 tiles.
   * We decode directly to YUYV, so existing saved covers stay compatible. */
  for(int py=y0;py<y1;py++){
-  int ty=(py-y0)*160/(y1-y0);
-  if(ty>159)ty=159;
+  int ty=(py-y0)*(int)tex_h/(y1-y0);
+  if(ty>=(int)tex_h)ty=(int)tex_h-1;
   uint32_t *dest=(uint32_t *)((uint8_t *)buffers[back]+
                              (size_t)py*mode->fbWidth*2u);
   for(int pair=x0/2;pair<(x1+1)/2;pair++){

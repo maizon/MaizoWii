@@ -90,7 +90,7 @@ for marker in ("config_game_load(", "config_game_save(",
 for marker in ("config_game_load(&effective", "config_game_save(",
                "state.settings_for_game"):
     assert marker in main_source, marker
-assert "START: AJUSTES DESTE JOGO" in ui_source
+assert "START: CONFIGURACOES DO JOGO" in ui_source
 assert "game_profile.h" in config_source
 
 # Controller diagnostics are reached and exited solely by gamepad events.
@@ -107,8 +107,8 @@ for mark in ("DIAGNOSTICO USB HID", "BOT: %04X",
 
 # NeoStation-inspired optional graphite palette; no CRT mode switching.
 theme_settings=read("source/settings.c")
-assert '"GRAFITE"' in theme_settings and "lim=4" in theme_settings
-assert "c->theme=val%4" in config_source
+assert '"GRAFITE"' in theme_settings and "lim=6" in theme_settings
+assert "c->theme=val%6" in config_source
 assert "graphite=c->theme==3" in ui_source
 
 # Release is blocked if YAWM fails to compile, rather than showing a

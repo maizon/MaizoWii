@@ -2,7 +2,7 @@
 """Prepare the MaizoWii platform carousel from KyleBing's CC BY 4.0 icons.
 
 Downloads happen on CI or a PC, NEVER on the Wii rendering thread.
-Output is native MZG1/YUYV-compatible cache (128x160, GX tiled RGBA8).
+Output is native MZG1/YUYV-compatible cache (128x176, GX tiled RGBA8).
 All supplied icons retain their original proportions.
 """
 import argparse
@@ -11,7 +11,7 @@ from pathlib import Path
 import urllib.request
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
-from build_cover_cache import pack_rgba
+from build_cover_cache import pack_rgba, W, H
 
 REV = "b4facf0720a0bfaa8befc8234d714b29141f3b99"
 BASE = ("https://raw.githubusercontent.com/KyleBing/retro-game-console-icons/"
@@ -21,7 +21,6 @@ ICONS = {
     "IGC": "NGC", "IPS1": "PS", "ISNES": "SFC",
     "INES": "FC", "IGBA": "GBA", "IGB": "GB", "IMEDIA": "VIDEOS",
 }
-W, H = 128, 160
 
 def background():
     canvas = Image.new("RGBA", (W, H))
@@ -60,7 +59,7 @@ def portrait(name):
 def render_icon(code):
     canvas = background()
     original = portrait(code)
-    fitted = ImageOps.contain(original, (112, 132), Image.Resampling.LANCZOS)
+    fitted = ImageOps.contain(original, (112, 148), Image.Resampling.LANCZOS)
     canvas.alpha_composite(fitted, ((W - fitted.width)//2, (H - fitted.height)//2))
     return pack_rgba(canvas)
 

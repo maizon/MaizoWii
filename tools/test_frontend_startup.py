@@ -13,7 +13,7 @@ class WiiFrontendBootSafety(unittest.TestCase):
         main = source("source/main.c")
         boot = main[main.index("int main(int argc,char**argv){"):]
         self.assertLess(boot.index("ui_init()"), boot.index("mount_storage(1)"))
-        self.assertLess(boot.index('ui_boot_message("VIDEO VI OK")'),
+        self.assertLess(boot.index('ui_boot_message("VIDEO PREPARADO")'),
                         boot.index("mount_storage(1)"))
         self.assertLess(boot.index("ui_draw(&state"), boot.index("input_poll(&in)"))
         self.assertIn('fatMountSimple("usb",&__io_usbstorage)',main)
@@ -59,12 +59,13 @@ class WiiFrontendBootSafety(unittest.TestCase):
         self.assertNotIn("GX_InitTexObj",covers)
 
     def test_cover_gx_tile_offsets_never_exceed_image(self):
-        width,height=128,160
-        data_size=width*height*4
-        for y in range(height):
-            for x in range(width):
-                base=((y//4)*32+x//4)*64+(((y&3)*4+(x&3))*2)
-                self.assertLess(base+33,data_size)
+        width=128
+        for height in (160,176):
+            data_size=width*height*4
+            for y in range(height):
+                for x in range(width):
+                    base=((y//4)*32+x//4)*64+(((y&3)*4+(x&3))*2)
+                    self.assertLess(base+33,data_size)
 
 if __name__ == "__main__":
     unittest.main()

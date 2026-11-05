@@ -635,6 +635,15 @@ def patch_usbloader(root: Path):
     def change(s):
         s = replace_once(s,'#include "input.h"', '#include "input.h"\n#include "maizo_hid.inc"', "USBLoader")
         s = fix_pad_update(s, "\tWPAD_ScanPads();\n\tPAD_ScanPads();", False)
+        # A Wii without a paired Wiimote can return NULL from WPAD_Data.
+        # Never pass NULL to memcpy: HID-only users must reach the GX menu.
+        s = replace_once(s,
+            "memcpy(&userInput[i].wpad, WPAD_Data(i), sizeof(WPADData));",
+            "WPADData *maizo_remote = WPAD_Data(i);\n"
+            "\t\tif(maizo_remote)memcpy(&userInput[i].wpad, maizo_remote, sizeof(WPADData));\n"
+            "\t\telse memset(&userInput[i].wpad, 0, sizeof(WPADData));",
+            "USBLoader no-Wiimote input guard")
+
         for prop,fn in (("substickX","PAD_SubStickX"),("substickY","PAD_SubStickY")):
             shim = "maizo_hid_"+prop
             s = replace_once(s,f"userInput[i].pad.{prop} = {fn}(i);",

@@ -148,10 +148,11 @@ def main():
     for kind, game_root in pairs:
         if a.systems not in ("all", kind) or not game_root.is_dir():
             continue
+        (out / kind).mkdir(parents=True, exist_ok=True)
         for key in images(game_root, kind):
             if sum(stats.values()) >= a.limit:
                 break
-            target = out / (key + ".png")
+            target = out / kind / (key + ".png")
             if target.exists():
                 stats["existing"] += 1
                 continue
@@ -170,10 +171,11 @@ def main():
     for system, (repo, _, _) in LIBRETRO.items():
         if a.systems not in ("all", system):
             continue
+        (out / system).mkdir(parents=True, exist_ok=True)
         for key, title in named_roms(a.device, system):
             if sum(stats.values()) >= a.limit:
                 break
-            target = out / (key + ".png")
+            target = out / system / (key + ".png")
             if target.exists():
                 stats["existing"] += 1
                 continue

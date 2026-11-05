@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert downloaded PNG covers to native 128x160 tiled GX_RGBA8 for MAIZO Wii.
+"""Convert PNG artwork to aspect-safe 128x176 GX_RGBA8 portrait covers.
 Requires: python -m pip install pillow. All work happens on a PC/Android.
 """
 from pathlib import Path
@@ -7,9 +7,10 @@ import argparse,struct
 from PIL import ImageOps
 try: from PIL import Image
 except ImportError: raise SystemExit("Pillow required: python -m pip install pillow")
-W,H=128,160
+W,H=128,176
 def pack_rgba(im):
-    # Preserve original image proportions.
+    # Portrait cover slot: standard Wii/GC cases are approximately 0.72 W/H.
+    # Square jewel cases are letterboxed, NEVER stretched.
     im=ImageOps.contain(im.convert("RGBA"),(W,H),Image.Resampling.LANCZOS)
     canvas=Image.new("RGBA",(W,H),(19,24,33,255))
     canvas.alpha_composite(im,((W-im.width)//2,(H-im.height)//2))
@@ -28,7 +29,7 @@ def main():
     p.add_argument("covers",type=Path,help="maizo/covers directory")
     args=p.parse_args()
     count=0
-    for src in args.covers.glob("*.png"):
+    for src in args.covers.rglob("*.png"):
         dest=src.with_suffix(".gxt")
         try:
             with Image.open(src) as im: data=pack_rgba(im)

@@ -23,6 +23,7 @@ void library_begin(Library*);void library_step(Library*,int);void library_end(Li
 int library_visible(const Library*,System,const char*,int,int);int library_total(const Library*,System,const char*,int);
 const char* system_title(System);
 int settings_count(System);const char*settings_label(System,int);
+const char*settings_category(System,int);
 void settings_value(const Config*,System,int,char*,size_t);
 int settings_change(Config*,System,int,int);
 void config_defaults(Config*);void config_load(Config*);int config_save(const Config*);int config_has_settings(void);
@@ -33,6 +34,7 @@ void input_storage_ready(int);
 void input_hid_diagnostics(HidDiagnostics*);
 void module_refresh_available(void);
 int cover_draw(const Game*,float,float,float,float);
+unsigned cover_tint(const Game*);
 int ui_init(void);void ui_boot_message(const char*);
 void ui_draw(const State*,const Library*,const Config*,int);void ui_shutdown(void);
 void maizo_video_set_calibration(int,int,unsigned,unsigned);
