@@ -155,6 +155,58 @@ jobs:
     with:
       full_rebuild: ${{ inputs.full_rebuild || false }}
 
+  wiimc-dolphin-smoke:
+    # A screenshot/log is evidence, not a guarantee that HID devices work.
+    # A headless runner may have no hardware GPU or no Dolphin package.
+    needs: adapted
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    continue-on-error: true
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: MAIZO-ADAPTED-WiiMC
+          path: wiimc
+      - name: Install Dolphin and virtual display
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq dolphin-emu xvfb imagemagick python3-pil
+      - name: Run built WiiMC in headless Dolphin and capture startup
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s wiimc/apps/WiiMC/boot.dol
+          mkdir -p smoke
+          xvfb-run -a -s "-screen 0 1280x800x24" bash -c '
+            export LIBGL_ALWAYS_SOFTWARE=1
+            export QT_X11_NO_MITSHM=1
+            timeout 35s dolphin-emu --user="$PWD/smoke/dolphin-user" --exec="$PWD/wiimc/apps/WiiMC/boot.dol" > smoke/dolphin.log 2>&1 &
+            job=$!
+            sleep 23
+            import -display "$DISPLAY" -window root smoke/wiimc-startup.png || true
+            kill "$job" 2>/dev/null || true
+            wait "$job" 2>/dev/null || true
+          '
+          test -s smoke/wiimc-startup.png
+          python3 - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+          img=Image.open("smoke/wiimc-startup.png").convert("RGB")
+          w,h=img.size
+          pix=img.crop((w//4,h//4,3*w//4,3*h//4)).resize((128,128))
+          colors=pix.getcolors(maxcolors=16384)
+          bright=sum(1 for r,g,b in pix.getdata() if max(r,g,b)>32)
+          report=f"Dolphin startup screenshot center bright pixels: {bright}/16384; colors={len(colors) if colors else 'more than 16384'}\\n"
+          Path("smoke/report.txt").write_text(report)
+          print(report)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MAIZO-WIIMC-DOLPHIN-SMOKE
+          path: smoke/
+          retention-days: 14
+
   all-in-one:
     runs-on: ubuntu-latest
     needs: [frontend, adapted, launch-contracts, installer-hid]

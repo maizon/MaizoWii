@@ -84,6 +84,21 @@ def patch_wiimc(root: Path):
     def input_patch(s):
         s = replace_once(s,'#include "input.h"', '#include "input.h"\n#include "maizo_hid.inc"', "WiiMC")
         s = fix_pad_update(s, "PAD_ScanPads();", True)
+        # Never dereference a missing WPAD_Data() with no Wiimote paired.
+        # The original GuiTrigger embeds a zero-initialized WPADData.
+        s = replace_once(s,
+            "userInput[i].wpad = WPAD_Data(i);",
+            "WPADData *connected=WPAD_Data(i);\n"
+            "\t\tuserInput[i].wpad=connected?connected:&userInput[i].wpaddata;",
+            "WiiMC no-Wiimote NULL guard")
+        s = replace_once(s, "\tPAD_ScanPads();",
+            "\tPAD_ScanPads();\n"
+            "\tfor(int chan=0;chan<4;chan++){\n"
+            "\t\tWPADData *connected=WPAD_Data(chan);\n"
+            "\t\tif(!connected)memset(&userInput[chan].wpaddata,0,sizeof(WPADData));\n"
+            "\t\tuserInput[chan].wpad=connected?connected:&userInput[chan].wpaddata;\n"
+            "\t}",
+            "WiiMC refresh live Wiimote pointers safely")
         # Avoid USB device enumeration while MPlayer reads USB storage.
         # An attached controller is asynchronously updated by the HID driver;
         # playback only snapshots its already-open input report.
@@ -123,6 +138,33 @@ def patch_wiimc(root: Path):
             'snprintf(loadedFile, sizeof(loadedFile), "%s", argv[1]);',
             "WiiMC bounded Maizo file argument")
     patch_file(root, "source/wiimc.cpp", wiimc_argv)
+    # If the frontend passed a video and its FAT volume/partition is not
+    # available after upstream mounted devices, return to the stock file
+    # browser. Never continue to a permanently black autoplay screen.
+    # Nothing changes for normal boot, HTTP streams or playable files.
+    def media_preflight(t):
+        return replace_once(t,
+            "FindAppPath(); // Initialize SD and USB devices and look for apps/wiimc",
+            """FindAppPath(); // Initialize SD and USB devices and look for apps/wiimc
+    if(loadedFile[0] &&
+       (!strncmp(loadedFile,"usb",3) || !strncmp(loadedFile,"sd",2))) {
+        FILE *maizoMedia=fopen(loadedFile,"rb");
+        if(!maizoMedia && !strncmp(loadedFile,"usb1:/",6)) {
+            char requested[sizeof(loadedFile)];
+            snprintf(requested,sizeof(requested),"%s",loadedFile);
+            for(int v=2;v<=5 && !maizoMedia;v++){
+                snprintf(loadedFile,sizeof(loadedFile),"usb%d:/%s",v,requested+6);
+                maizoMedia=fopen(loadedFile,"rb");
+            }
+        }
+        if(!maizoMedia){
+            loadedFile[0]=0;
+            AutobootExit=false;
+            printf("MAIZO: missing media on mounted FAT, opening original browser\\n");
+        } else fclose(maizoMedia);
+    }""",
+            "WiiMC missing argv media falls back to stock browser")
+    patch_file(root,"source/wiimc.cpp",media_preflight)
     # Keep stock WiiMC playback, video, GUI, autoplay and MPlayer threads
     # byte-for-byte original. Only controller translation is changed.
     # Earlier versions altered these paths and crashed with DSI on real Wii.
@@ -378,6 +420,14 @@ def patch_wiimc(root: Path):
             "test -s source/mplayer/ffmpeg/libavutil/libavutil.a",
             "WiiMC ORIGINAL 3.0 media engine retained")
     patch_file(root, "Makefile", retain_original_mplayer)
+    # Historical WiiMC GUI code and 2010-era portlibs rely on GCC
+    # overflow/aliasing semantics that -O3 may invalidate on modern GCC.
+    # Do not recompile the original FFmpeg/MPlayer archives at all.
+    patch_file(root, "Makefile",
+               lambda t: replace_once(
+                   t, "CFLAGS\t\t=\t-g -O3 -Wall",
+                   "CFLAGS\t\t=\t-g -O2 -fno-strict-aliasing -fwrapv -Wall",
+                   "WiiMC conservative legacy GUI compiler semantics"))
     # Capture precise relocation/SDA placement from the final linker,
     # including failures; the link map is retained only inside CI.
     patch_file(root, "Makefile",

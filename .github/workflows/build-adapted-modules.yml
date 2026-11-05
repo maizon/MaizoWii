@@ -212,6 +212,18 @@ jobs:
               fi
               ;;
           esac
+      - name: Validate compiled WiiMC DOL structure and executable entry
+        if: steps.cached.outputs.cache-hit != 'true' && matrix.module == 'WiiMC' && steps.compilation.outcome == 'success'
+        run: python3 tools/verify_wiimc_dol.py upstream/wiimc.dol
+      - name: Save exact WiiMC PPC ELF, map and symbol table for crash diagnosis
+        if: steps.cached.outputs.cache-hit != 'true' && matrix.module == 'WiiMC' && steps.compilation.outcome == 'success'
+        run: |
+          test -s upstream/wiimc.elf
+          mkdir -p patched/debug/WiiMC
+          cp upstream/wiimc.elf patched/debug/WiiMC/wiimc.elf
+          if test -s /tmp/maizo_wiimc.map; then cp /tmp/maizo_wiimc.map patched/debug/WiiMC/linker.map; fi
+          powerpc-eabi-nm -n upstream/wiimc.elf > patched/debug/WiiMC/symbols.txt
+          powerpc-eabi-nm -n upstream/wiimc.elf | grep -E '(_start|main|__bss_start|__bss_end|_SDA_BASE_|__Arena1Lo|__Arena2Lo)' | tail -40
       - name: Inspect WiiMC exact SDA relocation and entrypoint
         if: steps.cached.outputs.cache-hit != 'true' && matrix.module == 'WiiMC'
         run: |

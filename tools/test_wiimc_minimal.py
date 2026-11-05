@@ -21,6 +21,8 @@ class WiiMCMinimalAdapter(unittest.TestCase):
   self.assertNotIn("AutobootExit = false",section)
   self.assertNotIn("controlledbygui=1",section)
   self.assertIn("source/input.cpp",section)
+  self.assertIn("WiiMC no-Wiimote NULL guard",section)
+  self.assertIn("WiiMC missing argv media falls back to stock browser",section)
   self.assertIn("snprintf(loadedFile, sizeof(loadedFile)",section)
   self.assertIn("WiiMC ORIGINAL 3.0 media engine retained",section)
   self.assertIn("maizo_hid_tick_attached();",section)
