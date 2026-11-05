@@ -58,6 +58,24 @@ void *__syscall_sbrk_r(struct _reent *r, ptrdiff_t incr)
    return (void*)-1;
 }
 
+/*
+ * IMPORTANT: newlib/libsysbase in recent devkitPPC requests more heap via
+ * _sbrk_r, not __syscall_sbrk_r.  Its weak _sbrk_r fallback uses the
+ * linker-end/stack-bounded heap instead of libogc's MEM1/MEM2 arenas.
+ * In the pinned WiiMC ELF this fallback was selected (W _sbrk_r), while
+ * __syscall_sbrk_r was discarded by --gc-sections. The fallback is far too
+ * small for WiiMC's two 720x576 XFBs: SYS_AllocateFramebuffer() returned
+ * NULL; WiiMC applied MEM_K0_TO_K1(NULL) -> 0x40000000 and then attempted
+ * 124736 invalid stores in __VIClearFramebuffer (Dolphin trace).
+ *
+ * Export a STRONG _sbrk_r and route it through the legacy libogc handler
+ * installed at SYS_Init.  Do not change MPlayer, FFmpeg, GX, or HID timing.
+ */
+void *_sbrk_r(struct _reent *r, ptrdiff_t incr)
+{
+   return __syscall_sbrk_r(r, incr);
+}
+
 /* Before SYS_Init there is one context and no lwp threads, so a
  * missing lock handler is a safe no-op, exactly as the old dispatch
  * behaved with a zeroed table. */

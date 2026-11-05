@@ -34,6 +34,14 @@ class WiiMC3RegressionTests(unittest.TestCase):
         self.assertNotIn("maizo_compat_gettime", patch)
         self.assertNotIn("maizo_compat_dcflush", patch)
         self.assertIn("WiiMC ORIGINAL 3.0 media engine retained",patch)
+    def test_wiimc_heap_bridge_overrides_weak_newlib_sbrk(self):
+        bridge=(ROOT/"integrations/wiimc_syscalls_compat.c").read_text()
+        self.assertIn("void *_sbrk_r(struct _reent *r, ptrdiff_t incr)", bridge)
+        self.assertIn("return __syscall_sbrk_r(r, incr);", bridge)
+        check=(ROOT/"tools/verify_wiimc_heap.py").read_text()
+        self.assertIn('"_sbrk_r": "T"', check)
+        workflow=(ROOT/".github/workflows/build-adapted-modules.yml").read_text()
+        self.assertIn("python3 tools/verify_wiimc_heap.py upstream/wiimc.elf", workflow)
     def test_ci_refuses_recompiled_audio_video_libraries(self):
         w=(ROOT/".github/workflows/build-adapted-modules.yml").read_text()
         self.assertGreaterEqual(w.count("verify_wiimc_engine.py"),2)

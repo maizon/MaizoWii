@@ -219,6 +219,9 @@ jobs:
         if: steps.cached.outputs.cache-hit != 'true' && matrix.module == 'WiiMC' && steps.compilation.outcome == 'success'
         run: |
           test -s upstream/wiimc.elf
+          # Fail CI if modern newlib links its stack-limited weak sbrk:
+          # the resulting NULL framebuffer produced the black-screen trace.
+          python3 tools/verify_wiimc_heap.py upstream/wiimc.elf
           mkdir -p patched/debug/WiiMC
           cp upstream/wiimc.elf patched/debug/WiiMC/wiimc.elf
           if test -s /tmp/maizo_wiimc.map; then cp /tmp/maizo_wiimc.map patched/debug/WiiMC/linker.map; fi
