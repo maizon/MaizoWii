@@ -66,10 +66,13 @@ def patch_wiimc(root: Path):
         s = replace_once(s, "u16 held = PAD_ButtonsHeld(cur_chan);",
                          "u16 held = PAD_ButtonsHeld(cur_chan) | maizo_hid_held(cur_chan);", "MPlayerInput")
         # Channel switching previously reverted to the native pad only.
-        if s.count("held = PAD_ButtonsDown(cur_chan);") != 2:
+        if (s.count("held = PAD_ButtonsDown(cur_chan);") != 2 or
+                s.count("down = PAD_ButtonsDown(cur_chan);") != 2):
             raise ValueError("Unexpected WiiMC channel switching layout")
         s = s.replace("held = PAD_ButtonsDown(cur_chan);",
                       "held = userInput[cur_chan].pad.btns_h;")
+        s = s.replace("down = PAD_ButtonsDown(cur_chan);",
+                      "down = userInput[cur_chan].pad.btns_d;")
         return s
     patch_file(root, "source/input.cpp", input_patch)
     def wiimc_autoplay(s):
@@ -257,7 +260,14 @@ def patch_wiimc(root: Path):
     (root/"source/utils/maizo_legacy_ctype.c").write_text(
         "/* Legacy newlib ABI for original mxml binary; ASCII classification. */\n"
         "static unsigned char maizo_ctype_table[257]={"+table+"};\n"
-        "char *__ctype_ptr__=(char *)maizo_ctype_table;\n",
+        "char *__ctype_ptr__=(char *)maizo_ctype_table;\n"
+        "/* Deprecated external udelay ABI used by pinned MPlayer archive. */\n"
+        "#include <ogc/lwp_watchdog.h>\n"
+        "void maizo_compat_udelay(unsigned us) __asm__(\"udelay\");\n"
+        "void maizo_compat_udelay(unsigned us){\n"
+        " u64 start=gettime();\n"
+        " while(diff_usec(start,gettime())<us){}\n"
+        "}\n",
         encoding="utf-8")
 
     # Pinned historical MPlayer has version.sh without its executable bit.
