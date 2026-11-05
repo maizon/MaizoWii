@@ -222,8 +222,14 @@ jobs:
           mkdir -p patched/debug/WiiMC
           cp upstream/wiimc.elf patched/debug/WiiMC/wiimc.elf
           if test -s /tmp/maizo_wiimc.map; then cp /tmp/maizo_wiimc.map patched/debug/WiiMC/linker.map; fi
-          powerpc-eabi-nm -n upstream/wiimc.elf > patched/debug/WiiMC/symbols.txt
-          powerpc-eabi-nm -n upstream/wiimc.elf | grep -E '(_start|main|__bss_start|__bss_end|_SDA_BASE_|__Arena1Lo|__Arena2Lo)' | tail -40
+          NM=/opt/devkitpro/devkitPPC/powerpc-eabi/bin/nm
+          if test -x "$NM"; then
+            "$NM" -n upstream/wiimc.elf > patched/debug/WiiMC/symbols.txt
+            grep -E '(_start|main|__bss_start|__bss_end|_SDA_BASE_|__Arena1Lo|__Arena2Lo)' patched/debug/WiiMC/symbols.txt | tail -40 || true
+          else
+            echo 'PPC nm unavailable, shipping ELF and linker map for offline addr2line'
+            printf 'PPC nm not installed at %s\\n' "$NM" > patched/debug/WiiMC/symbols.txt
+          fi
       - name: Inspect WiiMC exact SDA relocation and entrypoint
         if: steps.cached.outputs.cache-hit != 'true' && matrix.module == 'WiiMC'
         run: |
