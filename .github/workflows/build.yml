@@ -355,9 +355,7 @@ jobs:
           name: MAIZOWII-PREVIEW-USB-SD
           path: MAIZOWII-ALL-IN-ONE.zip
           retention-days: 14
-      # The generic preview contains an EXPERIMENTAL WAD for CI inspection.
-      # Always offer a second package for physical Wii testing with NO WAD.
-      - name: Create NAND-safe SD/USB QA archive
+      - name: Build a NAND-safe QA preview archive
         run: |
           set -euo pipefail
           mkdir -p safe-qa
@@ -367,110 +365,27 @@ jobs:
           from pathlib import Path
           root=Path("safe-qa")
           p=root/"maizo/MODULE_MANIFEST.json"
-          m=json.loads(p.read_text(encoding="utf-8"))
-          info=m.pop("channel",None)
-          if info:
-              wad=root/info["path"]
-              if not (wad.is_file() and wad.suffix.lower()==".wad"):
-                  raise SystemExit("Expected experimental WAD not found")
-              wad.unlink()
-          m["installer"]["channel_wad_included"]=False
-          (root/"wad/SHA256SUMS").unlink(missing_ok=True)
-          (root/"maizo/LEIA-PRIMEIRO.txt").write_text(
-              "MAIZO QA, ainda NAO e v1.0.0 estavel.\n"
-              "Copie este pacote para a raiz SD/USB FAT32.\n"
-              "Inicie apps/maizo/boot.dol via Homebrew Channel.\n"
-              "NENHUM WAD deve ser instalado na NAND.\n"
-              "WiiMC, HID e retorno precisam de teste real.\n",encoding="utf-8")
-          (root/"wad/LEIA-ANTES-DE-INSTALAR.txt").write_text(
-              "WAD experimental omitido por seguranca.\n",encoding="utf-8")
-          p.write_text(json.dumps(m,indent=2,sort_keys=True)+"\n",encoding="utf-8")
-          PY
-          python3 tools/verify_bundle.py safe-qa
-          (cd safe-qa && zip -q -r ../MAIZOWII-QA-SAFE.zip .)
-          if unzip -Z1 MAIZOWII-QA-SAFE.zip | grep -iE '\.wad
-
-  release-rc:
-    # Publish a PRE-RELEASE only after the source, compiler and bundle gates.
-    # Physical Wii tests remain open; NEVER label this build stable v1.0.0.
-    needs: [frontend, adapted, launch-contracts, installer-hid, all-in-one]
-    if: >-
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/main' &&
-      needs.frontend.result == 'success' &&
-      needs.adapted.result == 'success' &&
-      needs.launch-contracts.result == 'success' &&
-      needs.all-in-one.result == 'success'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: MAIZOWII-PREVIEW-USB-SD
-          path: preview/
-      - name: Verify final branch and avoid rewriting an existing tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          head="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
-          test "$head" = "$GITHUB_SHA" || { echo "main moved; refusing stale tag"; exit 1; }
-          if git ls-remote --exit-code --tags origin "refs/tags/v1.0.0-rc.1"; then
-            echo "RC tag already exists; not rewriting it"
-            exit 1
-          fi
-      - name: Exclude NAND WAD until a real Wii installation is validated
-        run: |
-          set -euo pipefail
-          mkdir -p public
-          unzip -q preview/MAIZOWII-ALL-IN-ONE.zip -d public
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          root=Path("public")
-          mfile=root/"maizo/MODULE_MANIFEST.json"
-          manifest=json.loads(mfile.read_text(encoding="utf-8"))
-          assert manifest["installer"]["channel_wad_included"] is True
+          manifest=json.loads(p.read_text(encoding="utf-8"))
           channel=manifest.pop("channel",None)
-          assert channel and channel.get("real_wii_verified") is False
-          target=root/channel["path"]
-          assert target.is_file() and target.suffix.lower()==".wad"
-          target.unlink()
+          if channel:
+              wad=root/channel["path"]
+              if not (wad.is_file() and wad.suffix.lower()==".wad"):
+                  raise SystemExit("Expected WAD absent or invalid")
+              wad.unlink()
           manifest["installer"]["channel_wad_included"]=False
           (root/"wad/SHA256SUMS").unlink(missing_ok=True)
           (root/"maizo/LEIA-PRIMEIRO.txt").write_text(
-              "Copie o conteudo do ZIP para a raiz FAT32 do SD/USB.\n"
-              "Teste apps/maizo/boot.dol pelo Homebrew Channel.\n"
-              "Este RC nao inclui WAD instalavel: instalacao NAND NAO validada.\n"
-              "HID, WiiMC e autoboot ainda precisam de testes no Wii real.\n",
-              encoding="utf-8")
+              "MaizoWii QA: ainda NAO e v1.0.0 estavel.\n"
+              "Copie o ZIP na raiz SD/USB e abra apps/maizo/boot.dol no HBC.\n"
+              "Nao instale WAD experimental na NAND.\n",encoding="utf-8")
           (root/"wad/LEIA-ANTES-DE-INSTALAR.txt").write_text(
-              "WAD omitido deste release candidate por falta de teste no Wii real.\n"
-              "NAO instale canais experimentais na NAND.\n",
-              encoding="utf-8")
-          mfile.write_text(json.dumps(manifest,indent=2,sort_keys=True)+"\n",encoding="utf-8")
+              "Canal WAD experimental omitido por seguranca.\n",encoding="utf-8")
+          p.write_text(json.dumps(manifest,indent=2,sort_keys=True)+"\n",encoding="utf-8")
           PY
-          python3 tools/verify_bundle.py public
-          (cd public && zip -q -r ../MAIZOWII-ULTIMATE-v1.0.0-rc.1.zip .)
-          if unzip -Z1 MAIZOWII-ULTIMATE-v1.0.0-rc.1.zip | grep -iE '\.wad$'; then
-            echo "Unsafe WAD unexpectedly present in release"; exit 1
-          fi
-          sha256sum MAIZOWII-ULTIMATE-v1.0.0-rc.1.zip > MAIZOWII-ULTIMATE-v1.0.0-rc.1.sha256
-      - name: Publish honest pre-release with exact tested SHA
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh release create v1.0.0-rc.1 \
-            MAIZOWII-ULTIMATE-v1.0.0-rc.1.zip \
-            MAIZOWII-ULTIMATE-v1.0.0-rc.1.sha256 \
-            --target "$GITHUB_SHA" --prerelease --latest=false \
-            --title "MAIZOWII ULTIMATE v1.0.0-rc.1 (testes no Wii pendentes)" \
-            --notes-file docs/RELEASE_1_0_RC1.md
-; then
-            echo "Unexpected WAD in QA archive"; exit 1
+          python3 tools/verify_bundle.py safe-qa
+          (cd safe-qa && zip -q -r ../MAIZOWII-QA-SAFE.zip .)
+          if unzip -Z1 MAIZOWII-QA-SAFE.zip | grep -iE '\\.wad$'; then
+            echo "WAD unexpectedly present"; exit 1
           fi
           sha256sum MAIZOWII-QA-SAFE.zip > MAIZOWII-QA-SAFE.sha256
       - uses: actions/upload-artifact@v4
