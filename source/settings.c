@@ -15,7 +15,7 @@ const char*settings_label(System s,int row){
  if(row==1)return "MODO DA BIBLIOTECA";
  if(row==settings_count(s)-1)return "VOLTAR";
  if(row==settings_count(s)-2)return "CALIBRAR TELA MAIZO";
- if(row==settings_count(s)-3)return "BAIXAR CAPAS FALTANTES";
+ if(row==settings_count(s)-3)return s==SYSTEM_MEDIA||s==SYSTEM_HB?"REINDEXAR BIBLIOTECA":"GERENCIAR CAPAS";
  if((s==SYSTEM_SNES||s==SYSTEM_PS1)&&row>=settings_count(s)-7&&row<settings_count(s)-3){
   static const char*labels[]={"JOGO 240P: HORIZONTAL","JOGO 480I: HORIZONTAL","JOGO 240P: LARGURA","JOGO 480I: LARGURA"};
   return labels[row-(settings_count(s)-7)];

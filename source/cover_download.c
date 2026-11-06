@@ -165,7 +165,7 @@ static int provider_url(const Game *g,int requested,char *url,size_t cap){
  int is_disc=(g->system==SYSTEM_WII||g->system==SYSTEM_GC)&&strlen(g->id)==6;
  int tdb_count=is_disc&&chosen_provider!=2?(chosen_region?3:7):0;
  if(requested<tdb_count){
-  static const char *regions[]={"US","EN","PT","FR","DE","ES","JP"};
+  static const char *regions[]={"US","EN","PT","FR","DE","ES","JA"};
   int order[7]={0,1,2,3,4,5,6};
   if(chosen_region==1){order[0]=2;order[1]=1;order[2]=0;}
   if(chosen_region==3){order[0]=1;order[1]=3;order[2]=4;}

@@ -115,10 +115,13 @@ static void prefetch_covers(void){
  }else if(state.page==PAGE_LIBRARY){
   /* After reindex/hotplug a cover_reset clears icons too. Refill pinned
    * console artwork in small slices without blocking frame rendering. */
-  if(round%18==0){
-   unsigned system=(round/18)%SYSTEM_COUNT;
+  if(round%9==0){
+   /* Both home portraits and transparent topbar sprites survive hotplug. */
+   unsigned icon_round=round/9;
+   unsigned system=icon_round%SYSTEM_COUNT;
    Game icon={0};icon.system=(System)system;
    snprintf(icon.id,sizeof(icon.id),"%s",icon_codes[system]);
+   if((icon_round/SYSTEM_COUNT)&1)icon.id[0]='T';
    cover_prefetch(&icon);
    return;
   }
@@ -345,6 +348,15 @@ static void handle(const Input*i){
   System scope=state.settings_global?SYSTEM_COUNT:state.system;
   if(!state.settings_for_game &&
      state.settings_row==settings_count(scope)-3 && (i->accept||i->right)){
+   if(!state.settings_global&&(state.system==SYSTEM_MEDIA||state.system==SYSTEM_HB)){
+    /* These modules do not expose public boxart providers. Offer a REAL
+     * rescan instead of a misleading or non-functional download control. */
+    library_begin(&library_state);
+    cover_reset();
+    state.selected=state.scroll=0;
+    state.page=PAGE_LIBRARY;
+    return;
+   }
    state.covers_row=0;
    state.covers_mask=state.settings_global?0x7fu:(1u<<state.system);
    state.covers_mode=0;
