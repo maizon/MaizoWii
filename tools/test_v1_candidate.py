@@ -57,6 +57,18 @@ class CandidateContracts(unittest.TestCase):
         self.assertIn("official_title(g->id)",lib)
         pack=code("tools/package_all.py")
         self.assertIn('out / "maizo/database/wiitdb-en.txt"',pack)
+    def test_nointro_importer_generates_real_aliases(self):
+        import importlib.util
+        import tempfile
+        from xml.etree import ElementTree as ET
+        spec=importlib.util.spec_from_file_location("metaimport",R/"tools/import_nointro_dat.py")
+        module=importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/"test.dat"
+            path.write_text('<datafile><game name="Official Name (USA)"><rom name="ROM filename (USA).sfc"/></game></datafile>',encoding="utf-8")
+            records=module.import_dat("SNES",path)
+            self.assertEqual(records[("SNES","ROM filename (USA)")][0],"Official Name (USA)")
     def test_release_acceptance_matrix_complete(self):
         doc=code("docs/RELEASE_V1_0_ACCEPTANCE.md")
         for i in range(1,81):

@@ -228,6 +228,7 @@ void maizo_cover_download_custom(const Library*library,unsigned mask,int update,
  chosen_region=region<0||region>4?0:region;
  chosen_mode=mode<0||mode>2?0:mode;
  chosen_index=index;cursor=0;current_index=-1;stop_transfer();
+ if(!network_ready)network_attempted=0;
  if(!library||library->scanning){
   snprintf(job.message,sizeof(job.message),"AGUARDE A INDEXACAO TERMINAR");
   return;

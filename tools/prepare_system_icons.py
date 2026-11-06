@@ -71,7 +71,22 @@ def transparent_pack(im):
 
 def render_icon(code, transparent=False):
     canvas = Image.new("RGBA",(W,H),(0,0,0,0)) if transparent else background()
-    original = portrait(code)
+    if transparent and code in ("IWII","IHB"):
+        # The home portraits keep their rounded cards, but the tiny topbar
+        # sprites are just the glyph silhouette: NO box baked into alpha.
+        original = Image.new("RGBA", (200,200), (0,0,0,0))
+        draw = ImageDraw.Draw(original)
+        word="Wii" if code=="IWII" else "HB"
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 72)
+        except OSError:
+            font = ImageFont.load_default()
+        box=draw.textbbox((0,0),word,font=font)
+        draw.text(((200-(box[2]-box[0]))//2-box[0],
+                   (200-(box[3]-box[1]))//2-box[1]),
+                  word,font=font,fill=(239,245,249,255))
+    else:
+        original = portrait(code)
     fitted = ImageOps.contain(original, (112, 148), Image.Resampling.LANCZOS)
     canvas.alpha_composite(fitted, ((W - fitted.width)//2, (H - fitted.height)//2))
     return transparent_pack(canvas) if transparent else pack_rgba(canvas)

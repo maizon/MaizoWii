@@ -26,10 +26,15 @@ static const struct { System system;const char *path; } roots[]={
  * library reindex and release memory after sorting; never read it in UI. */
 typedef struct {char id[7],title[112];} OfficialTitle;
 static OfficialTitle *titles=NULL;static size_t title_count=0;
+typedef struct {System sys;char key[112],title[112],region[12];unsigned short year;} LocalTitle;
+static LocalTitle *local_titles=NULL;static size_t local_count=0;
 static int by_id(const void*a,const void*b){
  return strncmp(((const OfficialTitle*)a)->id,((const OfficialTitle*)b)->id,6);
 }
-static void metadata_end(void){free(titles);titles=NULL;title_count=0;}
+static void metadata_end(void){
+ free(titles);titles=NULL;title_count=0;
+ free(local_titles);local_titles=NULL;local_count=0;
+}
 static void metadata_begin(void){
  metadata_end();
  const char *paths[]={
@@ -38,10 +43,10 @@ static void metadata_begin(void){
  };
  FILE *f=NULL;
  for(unsigned i=0;i<sizeof(paths)/sizeof(paths[0])&&!f;i++)f=fopen(paths[i],"rb");
- if(!f)return;
+ if(f){
  const size_t max_titles=13000;
  titles=(OfficialTitle*)calloc(max_titles,sizeof(*titles));
- if(!titles){fclose(f);return;}
+ if(titles){
  char line[320];
  while(fgets(line,sizeof(line),f) && title_count<max_titles){
   if(strlen(line)<10||line[6]!=' '||line[7]!='='||line[8]!=' ')continue;
@@ -54,8 +59,47 @@ static void metadata_begin(void){
   snprintf(t->title,sizeof(t->title),"%s",label);
   title_count++;
  }
+ }
  fclose(f);
- qsort(titles,title_count,sizeof(*titles),by_id);
+ }
+ if(titles)qsort(titles,title_count,sizeof(*titles),by_id);
+ /* Optional strict per-system aliases generated from No-Intro/Redump XML
+  * outside the Wii. No fuzzy matching or large ROM hashing on console. */
+ const char *alias_paths[]={"usb:/maizo/database/titles.tsv",
+                           "sd:/maizo/database/titles.tsv"};
+ FILE*alias=NULL;
+ for(unsigned j=0;j<2&&!alias;j++)alias=fopen(alias_paths[j],"rb");
+ if(alias){
+  const size_t max_aliases=3000;
+  local_titles=(LocalTitle*)calloc(max_aliases,sizeof(*local_titles));
+  if(local_titles){
+   char row[384];
+   while(fgets(row,sizeof(row),alias) && local_count<max_aliases){
+    if(row[0]=='#'||row[0]=='\n')continue;
+    char *save=NULL;
+    char *sys=strtok_r(row,"\t\r\n",&save);
+    char *key=strtok_r(NULL,"\t\r\n",&save);
+    char *title=strtok_r(NULL,"\t\r\n",&save);
+    char *year=strtok_r(NULL,"\t\r\n",&save);
+    char *region=strtok_r(NULL,"\t\r\n",&save);
+    if(!sys||!key||!title||!key[0]||!title[0])continue;
+    static const char*systems[]={"WII","GC","PS1","SNES","NES","GBA","GB"};
+    for(int system=0;system<7;system++)if(!strcmp(sys,systems[system])){
+     LocalTitle*entry=&local_titles[local_count++];
+     entry->sys=(System)system;
+     snprintf(entry->key,sizeof(entry->key),"%s",key);
+     snprintf(entry->title,sizeof(entry->title),"%s",title);
+     if(year){
+      unsigned y=(unsigned)strtoul(year,NULL,10);
+      if(y>=1970&&y<=2100)entry->year=(unsigned short)y;
+     }
+     if(region)snprintf(entry->region,sizeof(entry->region),"%s",region);
+     break;
+    }
+   }
+  }
+  fclose(alias);
+ }
 }
 static const char *official_title(const char *id){
  if(!titles||strlen(id)!=6)return NULL;
@@ -64,13 +108,24 @@ static const char *official_title(const char *id){
  return found?found->title:NULL;
 }
 static void metadata_apply(Game*g){
+ const char*official=NULL;
  if((g->system==SYSTEM_WII||g->system==SYSTEM_GC)&&strlen(g->id)==6){
-  const char *official=official_title(g->id);
+  official=official_title(g->id);
   if(official)snprintf(g->name,sizeof(g->name),"%s",official);
   char code=g->id[3];
   const char *region=code=='E'?"USA":code=='J'?"JAPAO":
     (code=='P'||code=='D'||code=='F'||code=='I'||code=='S')?"EUROPA":NULL;
   if(region)snprintf(g->region,sizeof(g->region),"%s",region);
+ }
+ for(size_t n=0;n<local_count;n++){
+  const LocalTitle*t=&local_titles[n];
+  if(t->sys!=g->system)continue;
+  /* Match by exact ID6 or exact original file/folder stem. */
+  if(strcmp(t->key,g->id)&&strcasecmp(t->key,g->name))continue;
+  if(!official)snprintf(g->name,sizeof(g->name),"%s",t->title);
+  if(t->region[0])snprintf(g->region,sizeof(g->region),"%s",t->region);
+  if(t->year)g->year=t->year;
+  break;
  }
 }
 static int ext(const char*s,const char*e){const char*d=strrchr(s,'.');return d&&!strcasecmp(d,e);}

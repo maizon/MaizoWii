@@ -309,7 +309,7 @@ static void carousel(const State*u,const Library*l,int home){
  clipped(320.0f-length*4.0f*scale,372,name,scale,ink,length);
  if(!home)game_metadata(game_at(u,l,home,focused),406);
  else{
-  char games[72];snprintf(games,sizeof(games),"Jogos Disponiveis: %d",library_total(l,(System)focused,"",0));
+  char games[72];snprintf(games,sizeof(games),"Jogos Disponíveis: %d",library_total(l,(System)focused,"",0));
   int chars=(int)strlen(games);
   clipped(320.0f-chars*4.0f,412,games,1.0f,muted,64);
  }
