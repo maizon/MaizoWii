@@ -137,7 +137,7 @@ static void tab_halo(int center_x,int center_y){
 static void topbar(const State*u,const Library*l,int hid){
  (void)l;(void)hid;
  static const char*codes[SYSTEM_COUNT]={
-  "IWII","IGC","IPS1","ISNES","INES","IGBA","IGB","IMEDIA","IHB"
+  "TWII","TGC","TPS1","TSNES","TNES","TGBA","TGB","TMEDIA","THB"
  };
  quad(0,0,640,62,0xff07090bu,0xff141b20u);
  label(25,23,"MAIZO",2.0f,ink);
@@ -148,7 +148,7 @@ static void topbar(const State*u,const Library*l,int hid){
   if(selected)tab_halo((int)x+22,31);
   Game icon={0};icon.system=(System)k;
   snprintf(icon.id,sizeof(icon.id),"%s",codes[k]);
-  if(!cover_draw(&icon,x+10,17,24,30)){
+  if(!cover_draw_icon(&icon,x+10,17,24,30)){
    const char *name=sys_short[k];int n=(int)strlen(name);
    float z=n>3?0.78f:0.88f;
    label(x+(44.0f-n*8.0f*z)*0.5f,28,name,z,selected?accent:ink);
@@ -160,11 +160,11 @@ static void footer(const State*u){
  rounded(19,446,602,26,surface);
  const char *msg="A ABRIR  B VOLTAR  L/R SISTEMA  START GERAIS";
  if(u->page==PAGE_LIBRARY)
-  msg="A ABRIR  Y DETALHES  B CONFIG. JOGO  START GERAIS";
+  msg="A ABRIR  Y DETALHES  B INICIO  START SISTEMA";
  else if(u->page==PAGE_HOME)
-  msg="A ENTRAR  L/R SISTEMA  START GERAIS  Z REINDEXAR";
+  msg="A ENTRAR  SETAS SISTEMAS  START GERAIS  Z REINDEXAR";
  else if(u->page==PAGE_DETAIL)
-  msg="A INICIAR  Y OPCOES DO JOGO  B VOLTAR  START GERAIS";
+  msg="A INICIAR  Y OPCOES DO JOGO  B VOLTAR  START SISTEMA";
  else if(u->page==PAGE_SETTINGS)
   msg="SETAS ALTERAM  A CONFIRMA  B SALVA  Z DIAGNOSTICO";
  else if(u->page==PAGE_COVER_PICK)
@@ -187,7 +187,9 @@ static void game_metadata(const Game *g,float y){
     (code=='P'||code=='D'||code=='F'||code=='I'||code=='S')?"PAL":NULL;
   if(value)snprintf(region,sizeof(region),"REGIAO: %s",value);
  }
- const char *values[]={sys_short[g->system],"JOGADORES: --","GENERO: --",region};
+ if(g->region[0])snprintf(region,sizeof(region),"REGIAO: %s",g->region);
+ char year[28]="ANO: --";if(g->year)snprintf(year,sizeof(year),"ANO: %u",(unsigned)g->year);
+ const char *values[]={sys_short[g->system],year,"GENERO: --",region};
  const float widths[]={96.0f,145.0f,141.0f,164.0f};
  float x=27;
  for(int k=0;k<4;k++){
@@ -306,6 +308,11 @@ static void carousel(const State*u,const Library*l,int home){
  float scale=length>27?0.95f:length>19?1.20f:1.48f;
  clipped(320.0f-length*4.0f*scale,372,name,scale,ink,length);
  if(!home)game_metadata(game_at(u,l,home,focused),406);
+ else{
+  char games[72];snprintf(games,sizeof(games),"Jogos Disponiveis: %d",library_total(l,(System)focused,"",0));
+  int chars=(int)strlen(games);
+  clipped(320.0f-chars*4.0f,412,games,1.0f,muted,64);
+ }
 }
 static void no_items(const State*u,const Library*l){
  rounded(44,140,552,270,surface);
@@ -395,19 +402,45 @@ static void hid_page(void){
  }
  label(43,413,"B OU START PARA VOLTAR",0.90f,muted);
 }
-static void cover_pick_ui(const State*u){
- label(38,83,"CENTRAL DE CAPAS",1.55f,ink);
- label(38,109,"MARQUE SISTEMAS PARA DOWNLOAD HTTPS",0.94f,muted);
- static const char *labels[]={"WII","GAMECUBE","PLAYSTATION 1","SNES","NES","GBA","GB / GBC",
-   "SELECIONAR TODOS","LIMPAR SELECAO","ATUALIZAR CAPAS EXISTENTES","INICIAR DOWNLOAD"};
- for(int row=0;row<11;row++){
-  int y=133+row*26;
-  rounded(39,y,552,24,u->covers_row==row?0xff425d61u:surface);
-  char mark[9]="";
+static void cover_pick_ui(const State*u,const Config*c){
+ label(38,80,"CENTRAL DE CAPAS",1.55f,ink);
+ static const char*systems[]={"WII","GAMECUBE","PLAYSTATION 1","SNES","NES","GBA","GB / GBC"};
+ static const char*names[]={
+  "WII","GAMECUBE","PLAYSTATION 1","SNES","NES","GBA","GB / GBC",
+  "SELECIONAR TODOS","LIMPAR SELECAO","ATUALIZAR EXISTENTES",
+  "FONTE PREFERIDA","TIPO DE IMAGEM","REGIAO PRIORITARIA",
+  "MODO DOWNLOAD","RECONSTRUIR CACHE RAM","INICIAR DOWNLOAD"
+ };
+ int sys=u->covers_row<7?u->covers_row:(int)u->system;
+ char stats[104];
+ if(sys>=0&&sys<7)
+  snprintf(stats,sizeof(stats),"%s: %d JOGOS  /  %d CAPAS  /  %d FALTANDO",
+    systems[sys],u->covers_total[sys],u->covers_ready[sys],
+    u->covers_total[sys]-u->covers_ready[sys]);
+ else snprintf(stats,sizeof(stats),"WII / GC / PS1 / SNES / NES / GBA / GB");
+ clipped(38,109,stats,0.93f,muted,78);
+ int top=u->covers_row>9?u->covers_row-9:0;
+ for(int row=top;row<16&&row<top+10;row++){
+  int y=137+(row-top)*27;
+  rounded(39,y,552,25,u->covers_row==row?0xff425d61u:surface);
+  char mark[52]="";
   if(row<7)snprintf(mark,sizeof(mark),"[%c]",(u->covers_mask&(1u<<row))?'X':' ');
   else if(row==9)snprintf(mark,sizeof(mark),"[%c]",u->covers_update?'X':' ');
-  clipped(52,y+8,mark,0.94f,accent,7);
-  clipped(91,y+8,labels[row],0.93f,ink,42);
+  else if(row==10){
+   const char*v[]={"AUTO","GAMETDB","LIBRETRO"};
+   snprintf(mark,sizeof(mark),"%s",v[c->cover_source%3]);
+  }else if(row==11){
+   const char*v[]={"FRONTAL","COMPLETA / SNAP","3D / TITULO"};
+   snprintf(mark,sizeof(mark),"%s",v[c->cover_art%3]);
+  }else if(row==12){
+   const char*v[]={"AUTO","BR/PT","USA","EUROPA","JAPAO"};
+   snprintf(mark,sizeof(mark),"%s",v[c->cover_region%5]);
+  }else if(row==13){
+   const char*v[]={"TODOS/FEITOS","JOGO SELECIONADO","REPETIR FALHAS"};
+   snprintf(mark,sizeof(mark),"%s",v[u->covers_mode%3]);
+  }
+  clipped(52,y+8,names[row],0.91f,ink,30);
+  clipped(389,y+8,mark,0.81f,accent,25);
  }
 }
 static void downloads_ui(void){
@@ -461,18 +494,21 @@ static void hid_note(void){
  clipped(38,414,s,0.82f,muted,80);
 }
 static void settings_ui(const State*u,const Config*c){
- label(39,83,u->settings_for_game?"OPCOES DESTE JOGO":"AJUSTES DO MAIZO",1.57f,ink);
+ label(39,83,u->settings_for_game?"OPCOES DESTE JOGO":u->settings_global?"CONFIGURACOES GERAIS":"CONFIGURACOES DO SISTEMA",1.44f,ink);
  char group[88];
- snprintf(group,sizeof(group),"%s  /  %s",system_title(u->system),settings_category(u->system,u->settings_row));
+ System scope=u->settings_global?SYSTEM_COUNT:u->system;
+ snprintf(group,sizeof(group),"%s / %s",u->settings_global?"MAIZO":system_title(u->system),settings_category(scope,u->settings_row));
  clipped(39,111,group,0.95f,muted,65);
- int n=settings_count(u->system);
+ int n=settings_count(scope);
  int top=u->settings_row-7;if(top<0)top=0;
  if(top>n-9)top=n>9?n-9:0;
- for(int i=top;i<n&&i<top+9;i++){
-  int y=139+(i-top)*29;
+ int shown=0;
+ for(int i=top;i<n&&shown<9;i++){
+  if(!u->settings_global&&!u->settings_for_game&&(i<2||i==n-2))continue;
+  int y=139+(shown++)*29;
   rounded(39,y,555,25,u->settings_row==i?0xff4b7479u:surface);
-  clipped(52,y+8,settings_label(u->system,i),0.99f,ink,35);
-  char val[56];settings_value(c,u->system,i,val,sizeof(val));
+  clipped(52,y+8,settings_label(scope,i),0.99f,ink,35);
+  char val[56];settings_value(c,scope,i,val,sizeof(val));
   clipped(454,y+8,val,0.92f,ink,18);
  }
  hid_note();
@@ -536,7 +572,7 @@ void ui_draw(const State*u,const Library*l,const Config*c,int hid){
  case PAGE_SEARCH:search_ui(u,l);break;
  case PAGE_SETTINGS:settings_ui(u,u->settings_for_game?&u->game_config:c);break;
  case PAGE_HID:hid_page();break;
-  case PAGE_COVER_PICK:cover_pick_ui(u);break;
+  case PAGE_COVER_PICK:cover_pick_ui(u,c);break;
   case PAGE_COVERS:downloads_ui();break;
  case PAGE_CALIBRATION:calibration_ui(u,c);break;
  case PAGE_WELCOME:welcome(c);break;
@@ -547,7 +583,7 @@ void ui_draw(const State*u,const Library*l,const Config*c,int hid){
   break;
  }
  footer(u);
- topbar(u,l,hid);
+ if(u->in_system)topbar(u,l,hid);
  maizo_video_present();
 }
 void ui_shutdown(void){maizo_video_shutdown();}

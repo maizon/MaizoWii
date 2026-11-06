@@ -86,6 +86,17 @@ static void retry_missing_storage(void){
  }
 }
 static int total(void){return library_total(&library_state,state.system,state.search,state.favorites);}
+static void inspect_cover_library(void){
+ memset(state.covers_total,0,sizeof(state.covers_total));
+ memset(state.covers_ready,0,sizeof(state.covers_ready));
+ for(int n=0;n<library_state.count;n++){
+  const Game *g=&library_state.games[n];
+  if(g->system>=SYSTEM_WII&&g->system<=SYSTEM_GB){
+   int sys=(int)g->system;state.covers_total[sys]++;
+   if(cover_on_disk(g))state.covers_ready[sys]++;
+  }
+ }
+}
 /* One cover file per cycle, never from ui_draw(). This is deliberate:
  * synchronous FAT access in the raster hot path caused frame stalls when
  * navigating between covers on real storage. */
@@ -148,7 +159,7 @@ static void close_settings(void){
    state.info_return=state.settings_return==PAGE_DETAIL?PAGE_DETAIL:PAGE_LIBRARY;state.page=PAGE_INFO;
   }
  }else{
-  if(config_save(&config))state.page=PAGE_HOME;
+  if(config_save(&config))state.page=state.settings_return;
   else{
    snprintf(state.info,sizeof(state.info),"NAO FOI POSSIVEL GRAVAR AJUSTES NO USB/SD");
    state.info_return=PAGE_SETTINGS;state.page=PAGE_INFO;
@@ -156,12 +167,13 @@ static void close_settings(void){
  }
 }
 static void option_change(int dir){
- if(state.settings_row>=settings_count(state.system)-1){
+ System scope=state.settings_global?SYSTEM_COUNT:state.system;
+ if(state.settings_row>=settings_count(scope)-1){
   close_settings();return;
  }
  if(state.settings_for_game && state.settings_row<2)return;
  Config*active=state.settings_for_game?&state.game_config:&config;
- if(settings_change(active,state.system,state.settings_row,dir) &&
+ if(settings_change(active,scope,state.settings_row,dir) &&
     !state.settings_for_game)config_save(&config);
 }
 static void adjust_calibration(int dir){
@@ -245,29 +257,41 @@ static void handle(const Input*i){
  }
  if(state.page==PAGE_COVERS){
   MaizoCoverDownloadStatus d=maizo_cover_download_status();
-  if(i->back||i->settings){maizo_cover_download_cancel();state.page=PAGE_COVER_PICK;}
-  else if(!d.active&&i->accept)state.page=PAGE_COVER_PICK;
+  if(i->back||i->settings){maizo_cover_download_cancel();inspect_cover_library();state.page=PAGE_COVER_PICK;}
+  else if(!d.active&&i->accept){inspect_cover_library();state.page=PAGE_COVER_PICK;}
   return;
  }
  if(state.page==PAGE_COVER_PICK){
   if(i->back||i->settings){state.page=PAGE_SETTINGS;return;}
   if(i->up&&state.covers_row>0)state.covers_row--;
-  if(i->down&&state.covers_row<10)state.covers_row++;
+  if(i->down&&state.covers_row<15)state.covers_row++;
   if(i->accept||i->left||i->right){
-   int row=state.covers_row;
+   int row=state.covers_row,dir=i->left?-1:1;
    if(row<7)state.covers_mask^=(1u<<row);
    else if(row==7)state.covers_mask=0x7fu;
    else if(row==8)state.covers_mask=0;
    else if(row==9)state.covers_update=!state.covers_update;
-   else if(row==10){
+   else if(row==10)config.cover_source=(config.cover_source+3+dir)%3;
+   else if(row==11)config.cover_art=(config.cover_art+3+dir)%3;
+   else if(row==12)config.cover_region=(config.cover_region+5+dir)%5;
+   else if(row==13)state.covers_mode=(state.covers_mode+3+dir)%3;
+   else if(row==14){
+    cover_reset();
+    snprintf(state.info,sizeof(state.info),
+         "CACHE DE MEMORIA LIMPO. CAPAS NO SD/USB PRESERVADAS.");
+    state.info_return=PAGE_COVER_PICK;state.page=PAGE_INFO;
+   }else if(row==15){
     if(!state.covers_mask){
      snprintf(state.info,sizeof(state.info),"SELECIONE PELO MENOS UM SISTEMA");
      state.info_return=PAGE_COVER_PICK;state.page=PAGE_INFO;
     }else{
-     maizo_cover_download_begin_filtered(&library_state,state.covers_mask,state.covers_update);
+     maizo_cover_download_custom(&library_state,state.covers_mask,state.covers_update,
+       (int)config.cover_source,(int)config.cover_art,(int)config.cover_region,
+       state.covers_mode,state.covers_single);
      state.page=PAGE_COVERS;
     }
    }
+   if(row>=10&&row<=12)config_save(&config);
   }
   return;
  }
@@ -276,7 +300,7 @@ static void handle(const Input*i){
   return;
  }
  if(!state.settings_for_game &&
-    (state.page==PAGE_HOME||state.page==PAGE_LIBRARY||state.page==PAGE_SEARCH)){
+    (state.page==PAGE_LIBRARY||state.page==PAGE_SEARCH)){
   if(i->tab_prev)change_system(-1);
   if(i->tab_next)change_system(1);
  }
@@ -290,7 +314,11 @@ static void handle(const Input*i){
   return;
  }
  if(i->settings && state.page!=PAGE_SETTINGS && state.page!=PAGE_SEARCH){
-  state.settings_for_game=0;state.settings_row=0;state.page=PAGE_SETTINGS;
+  state.settings_for_game=0;
+  state.settings_global=state.page==PAGE_HOME;
+  state.settings_return=state.page;
+  state.settings_row=state.settings_global?0:2;
+  state.page=PAGE_SETTINGS;
   return;
  }
  if(i->search && (state.page==PAGE_LIBRARY||state.page==PAGE_HOME)){state.page=PAGE_SEARCH;state.search_index=1;return;}
@@ -310,20 +338,27 @@ static void handle(const Input*i){
   if(i->left)change_system(-1);if(i->right)change_system(1);
   if(i->up)change_system(config.layout==0?-4:-1);
   if(i->down)change_system(config.layout==0?4:1);
-  if(i->accept){state.page=PAGE_LIBRARY;state.selected=state.scroll=0;}
+  if(i->accept){state.page=PAGE_LIBRARY;state.in_system=1;state.selected=state.scroll=0;}
   return;
  }
  if(state.page==PAGE_SETTINGS){
+  System scope=state.settings_global?SYSTEM_COUNT:state.system;
   if(!state.settings_for_game &&
-     state.settings_row==settings_count(state.system)-3 && (i->accept||i->right)){
-   state.covers_row=0;state.page=PAGE_COVER_PICK;return;
+     state.settings_row==settings_count(scope)-3 && (i->accept||i->right)){
+   state.covers_row=0;
+   state.covers_mask=state.settings_global?0x7fu:(1u<<state.system);
+   state.covers_mode=0;
+   state.covers_single=state.settings_global?-1:library_visible(&library_state,state.system,"",0,state.selected);
+   inspect_cover_library();state.page=PAGE_COVER_PICK;return;
   }
-  if(state.settings_row==settings_count(state.system)-2 && (i->accept||i->right)){
+  if(state.settings_global && state.settings_row==settings_count(scope)-2 && (i->accept||i->right)){
    state.calibration_row=0;state.page=PAGE_CALIBRATION;return;
   }
   if(i->refresh){state.page=PAGE_HID;return;}
-  if(i->up&&state.settings_row>0)state.settings_row--;
-  if(i->down&&state.settings_row<settings_count(state.system)-1)state.settings_row++;
+  if(i->up&&state.settings_row>(state.settings_global?0:2))state.settings_row--;
+  if(i->down&&state.settings_row<settings_count(scope)-1)state.settings_row++;
+  if(!state.settings_global&&!state.settings_for_game && state.settings_row==settings_count(scope)-2)
+   state.settings_row+=(i->up?-1:1);
   if(i->left)option_change(-1);
   if(i->right||i->accept)option_change(1);
   if(i->back)close_settings();
@@ -337,7 +372,7 @@ static void handle(const Input*i){
   if(i->up)state.search_index=(state.search_index+n-8)%n;
   if(i->down)state.search_index=(state.search_index+8)%n;
   if(i->accept){size_t len=strlen(state.search);if(len<sizeof(state.search)-2){state.search[len]=alphabet[state.search_index];state.search[len+1]=0;}}
-  if(i->back){size_t len=strlen(state.search);if(len)state.search[len-1]=0;else state.page=PAGE_LIBRARY;}
+  if(i->back){size_t len=strlen(state.search);if(len)state.search[len-1]=0;else state.page=state.in_system?PAGE_LIBRARY:PAGE_HOME;}
   if(i->settings){state.page=PAGE_LIBRARY;state.scroll=state.selected=0;}
   return;
  }
@@ -365,23 +400,16 @@ static void handle(const Input*i){
    int idx=library_visible(&library_state,state.system,state.search,0,state.selected);
    if(idx>=0)play_game(idx,PAGE_LIBRARY);
   }
-  if(i->back){
-   int idx=library_visible(&library_state,state.system,state.search,0,state.selected);
-   if(idx>=0){
-    state.detail=idx;
-    config_game_load(&state.game_config,&config,&library_state.games[idx]);
-    state.settings_for_game=1;state.settings_return=PAGE_LIBRARY;
-    state.settings_row=2;state.page=PAGE_SETTINGS;
-   }
+  if(i->back||i->refresh){
+   state.page=PAGE_HOME;state.in_system=0;state.search[0]=0;
   }
-  if(i->refresh){state.page=PAGE_HOME;state.search[0]=0;}
   return;
  }
  if(state.page==PAGE_DETAIL){
   if(i->back){state.page=PAGE_LIBRARY;return;}
   if(i->favorite && state.detail>=0 && state.detail<library_state.count){
    config_game_load(&state.game_config,&config,&library_state.games[state.detail]);
-   state.settings_for_game=1;state.settings_return=PAGE_DETAIL;
+   state.settings_for_game=1;state.settings_global=0;state.settings_return=PAGE_DETAIL;
    state.settings_row=2;state.page=PAGE_SETTINGS;return;
   }
   if(i->accept)play_game(state.detail,PAGE_DETAIL);
@@ -407,6 +435,8 @@ int main(int argc,char**argv){
  state.covers_mask=0x7fu;
  state.info_return=PAGE_HOME;
  state.settings_return=PAGE_HOME;
+ state.settings_global=1;
+ state.in_system=0;
  state.storage_usb=storage_usb;state.storage_sd=storage_sd;
  /* Start in the carousel, without the first-run wizard. */
   state.page=PAGE_HOME;
@@ -423,6 +453,7 @@ int main(int argc,char**argv){
    Game icon={0};icon.system=(System)system;
    snprintf(icon.id,sizeof(icon.id),"%s",icon_codes[system]);
    cover_prefetch(&icon);
+   icon.id[0]='T';cover_prefetch(&icon);
   }
  }
  ui_boot_message("DETECTANDO CONTROLES...");

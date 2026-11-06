@@ -41,6 +41,9 @@ void config_load(Config*c){config_defaults(c);char p[80];snprintf(p,sizeof(p),"%
  char key[64];unsigned val;
  while(fscanf(f," %63[^=]=%u",key,&val)==2) {
   if(!strcmp(key,"theme"))c->theme=val%6;
+  else if(!strcmp(key,"cover_source"))c->cover_source=val%3;
+  else if(!strcmp(key,"cover_art"))c->cover_art=val%3;
+  else if(!strcmp(key,"cover_region"))c->cover_region=val%5;
   else if(!strcmp(key,"wii_ios"))c->wii_ios=(val==58|| (val>=200&&val<=255))?val:249;
   else if(!strcmp(key,"wii_usb_port"))c->wii_usb_port=val>1?0:val;
   else if(!strcmp(key,"gc_mc_multi"))c->gc_mc_multi=!!val;
@@ -82,6 +85,7 @@ int config_save(const Config*c){const char*root=where();mkdir(root,0777);
  char p[80],tmp[80];snprintf(p,sizeof(p),"%s/settings.ini",root);snprintf(tmp,sizeof(tmp),"%s/settings.tmp",root);FILE*f=fopen(tmp,"wb");if(!f)return 0;
  fprintf(f,"theme=%u\nlayout=%u\nwii_ios=%u\nwii_usb_port=%u\ngc_mc_multi=%u\ngc_native_si=%u\ngc_rem_limit=%u\ngc_memcard=%u\ngc_wide=%u\ngc_cheats=%u\ngc_skip_ipl=%u\ngc_video=%u\nps1_interpreter=%u\nps1_frameskip=%u\nps1_audio=%u\nmedia_volume=%u\nps1_engine=%u\nps1_native=%u\nps1_video=%u\nps1_aspect=%u\nps1_deflicker=%u\nps1_dither=%u\nps1_fps=%u\nps1_limit=%u\ngc_scale=%u\ngc_offset=%u\nvideo_x=%u\nvideo_y=%u\nvideo_w=%u\nvideo_h=%u\nfrontend_video_mode=%u\ngame_x240=%u\ngame_x480=%u\ngame_w240=%u\ngame_w480=%u\nmedia_player=%u\nmedia_autoboot=%u\n",
  c->theme,c->layout,c->wii_ios,c->wii_usb_port,c->gc_mc_multi,c->gc_native_si,c->gc_rem_limit,c->gc_memcard,c->gc_wide,c->gc_cheats,c->gc_skip_ipl,c->gc_video,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio,c->media_volume,c->ps1_engine,c->ps1_native,c->ps1_video,c->ps1_aspect,c->ps1_deflicker,c->ps1_dither,c->ps1_fps,c->ps1_limit,c->gc_scale,c->gc_offset,c->video_x,c->video_y,c->video_w,c->video_h,c->frontend_video_mode,c->game_x240,c->game_x480,c->game_w240,c->game_w480,c->media_player,c->media_autoboot);
+ if(fprintf(f,"cover_source=%u\ncover_art=%u\ncover_region=%u\n",c->cover_source,c->cover_art,c->cover_region)<0){fclose(f);remove(tmp);return 0;}
  if(fclose(f)){remove(tmp);return 0;}
  return commit_file(tmp,p);
 }

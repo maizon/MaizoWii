@@ -7,6 +7,7 @@ All supplied icons retain their original proportions.
 """
 import argparse
 import io
+import struct
 from pathlib import Path
 import urllib.request
 
@@ -57,12 +58,23 @@ def portrait(name):
         source.load()
         return source.convert("RGBA")
 
-def render_icon(code):
-    canvas = background()
+def transparent_pack(im):
+    """GX RGBA8 tiles preserving alpha for true masked topbar icons."""
+    px=im.load()
+    output=bytearray(b"MZG1"+struct.pack(">HH",W,H))
+    for ty in range(0,H,4):
+        for tx in range(0,W,4):
+            data=[px[tx+x,ty+y] for y in range(4) for x in range(4)]
+            for r,g,b,a in data: output.extend((a,r))
+            for r,g,b,a in data: output.extend((g,b))
+    return bytes(output)
+
+def render_icon(code, transparent=False):
+    canvas = Image.new("RGBA",(W,H),(0,0,0,0)) if transparent else background()
     original = portrait(code)
     fitted = ImageOps.contain(original, (112, 148), Image.Resampling.LANCZOS)
     canvas.alpha_composite(fitted, ((W - fitted.width)//2, (H - fitted.height)//2))
-    return pack_rgba(canvas)
+    return transparent_pack(canvas) if transparent else pack_rgba(canvas)
 
 def main():
     p = argparse.ArgumentParser()
@@ -70,12 +82,14 @@ def main():
     args = p.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     for code in ("IWII", "IHB", *ICONS):
-        dest = args.out / (code + ".gxt")
-        data = render_icon(code)
-        tmp = dest.with_suffix(".part")
-        tmp.write_bytes(data)
-        tmp.replace(dest)
-        print("ICON", code, len(data))
+        for transparent in (False,True):
+            asset=("T" if transparent else "I")+code[1:]
+            dest = args.out / (asset + ".gxt")
+            data = render_icon(code,transparent)
+            tmp = dest.with_suffix(".part")
+            tmp.write_bytes(data)
+            tmp.replace(dest)
+            print("ICON", asset, len(data))
     license_file = args.out.parent / "SYSTEM_ICONS_CREDITS.txt"
     license_file.write_text(
         "MAIZO original UI adaptation of retro-game-console-icons by KyleBing.\n"

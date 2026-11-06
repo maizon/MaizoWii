@@ -6,7 +6,7 @@
  * The separate calibration screen modifies only the MAIZO frontend UI.
  * Do not imply that arbitrary DOLs consume frontend-only geometry. */
 int settings_count(System s){
- switch(s){case SYSTEM_WII:return 7;case SYSTEM_GC:return 15;
+ switch(s){case SYSTEM_COUNT:return 5;case SYSTEM_WII:return 7;case SYSTEM_GC:return 15;
  case SYSTEM_PS1:return 20;case SYSTEM_SNES:return 9;
  case SYSTEM_MEDIA:return 8;default:return 5;}
 }

@@ -90,7 +90,7 @@ for marker in ("config_game_load(", "config_game_save(",
 for marker in ("config_game_load(&effective", "config_game_save(",
                "state.settings_for_game"):
     assert marker in main_source, marker
-assert "A INICIAR  Y OPCOES DO JOGO  B VOLTAR  START GERAIS" in ui_source
+assert "A INICIAR  Y OPCOES DO JOGO  B VOLTAR  START SISTEMA" in ui_source
 assert "game_profile.h" in config_source
 
 # Controller diagnostics are reached and exited solely by gamepad events.

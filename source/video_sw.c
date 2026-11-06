@@ -196,6 +196,43 @@ void maizo_video_cover(const unsigned char *source,unsigned tex_w,unsigned tex_h
   }
  }
 }
+/* Small alpha-aware navigation sprites. Blend each source pixel with the
+ * current YUYV framebuffer, leaving transparent areas untouched. */
+void maizo_video_icon(const unsigned char *src,unsigned tw,unsigned th,
+                      float x,float y,float w,float h){
+ if(!mode||!src||tw!=128||(th!=160&&th!=176)||w<=0||h<=0)return;
+ int x0,y0,x1,y1;rect_coords(x,y,w,h,&x0,&y0,&x1,&y1);
+ if(x0>=x1||y0>=y1)return;
+ for(int py=y0;py<y1;py++){
+  int ty=(py-y0)*(int)th/(y1-y0);
+  uint32_t *line=(uint32_t*)((uint8_t*)buffers[back]+(size_t)py*mode->fbWidth*2u);
+  for(int pair=x0/2;pair<(x1+1)/2;pair++){
+   uint32_t bg=line[pair];
+   int u=(int)((bg>>16)&255)-128,v=(int)(bg&255)-128;
+   int rgb[2][3],changed=0;
+   for(int side=0;side<2;side++){
+    int px=pair*2+side,yv=(int)((bg>>(side?8:24))&255)-16;
+    if(yv<0)yv=0;
+    int old[3]={
+     limit8((298*yv+409*v+128)>>8),
+     limit8((298*yv-100*u-208*v+128)>>8),
+     limit8((298*yv+516*u+128)>>8)
+    };
+    rgb[side][0]=old[0];rgb[side][1]=old[1];rgb[side][2]=old[2];
+    if(px<x0||px>=x1)continue;
+    int tx=(px-x0)*(int)tw/(x1-x0);
+    int offset=((ty/4)*32+tx/4)*64+(((ty&3)*4+(tx&3))*2);
+    int alpha=src[offset];
+    if(alpha==0)continue;
+    changed=1;
+    const int col[3]={src[offset+1],src[offset+32],src[offset+33]};
+    for(int c=0;c<3;c++)rgb[side][c]=(col[c]*alpha+old[c]*(255-alpha)+127)/255;
+   }
+   if(changed)line[pair]=yuyv_pair(rgb[0][0],rgb[0][1],rgb[0][2],
+                                   rgb[1][0],rgb[1][1],rgb[1][2]);
+  }
+ }
+}
 void maizo_video_present(void){
  VIDEO_SetNextFramebuffer(buffers[back]);
  if(!visible){VIDEO_SetBlack(FALSE);visible=1;}

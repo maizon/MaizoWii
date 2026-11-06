@@ -7,6 +7,7 @@ int maizo_video_frontend_select(unsigned selection); /* frontend only */
 void maizo_video_clear(void);
 void maizo_video_rect(float,float,float,float,unsigned,unsigned);
 void maizo_video_cover(const unsigned char *,unsigned,unsigned,float,float,float,float);
+void maizo_video_icon(const unsigned char *,unsigned,unsigned,float,float,float,float);
 void maizo_video_present(void);
 void maizo_video_shutdown(void);
 #endif
