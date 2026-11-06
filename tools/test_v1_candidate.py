@@ -13,7 +13,7 @@ class CandidateContracts(unittest.TestCase):
         self.assertIn("state.settings_return=state.page",main)
         self.assertIn("settings_count(scope)",main)
         self.assertIn("state.page=PAGE_HOME;state.in_system=0",main)
-        self.assertIn("if(u->in_system)topbar(u,l,hid)",ui)
+        self.assertIn("if(u->in_system){if(topbar_phase<8)topbar_phase++;topbar(u,l,hid);}",ui)
         self.assertIn("CONFIGURACOES DO SISTEMA",ui)
         self.assertIn("CONFIGURACOES GERAIS",ui)
     def test_real_alpha_icons_preserve_home_portraits(self):

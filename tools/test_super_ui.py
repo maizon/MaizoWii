@@ -128,7 +128,7 @@ class UiIntegration(unittest.TestCase):
         self.assertNotIn("fopen(",ui)
         self.assertNotIn("USB OK",ui)
         self.assertNotIn("SD OK",ui)
-        self.assertIn('label(25,23,"MAIZO",2.0f,ink);',ui)
+        self.assertIn('label(25,23+dy,"MAIZO",2.0f,ink);',ui)
         self.assertIn("topbar(u,l,hid);",ui)
         self.assertIn("state.storage_usb=storage_usb",main)
         self.assertIn("state.storage_sd=storage_sd",main)
