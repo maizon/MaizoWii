@@ -181,6 +181,18 @@ def patch_wiimc(root: Path):
     }""",
             "WiiMC missing argv media falls back to stock browser")
     patch_file(root,"source/wiimc.cpp",media_preflight)
+    # WiiMC 3.0 file browser used sprintf(dst, "%s%s/", dst, name):
+    # reading and writing the same buffer is undefined behavior, and happens
+    # immediately when the user selects an SD/USB volume or folder.
+    # Keep the stock browser, mount logic and UI; change ONLY the unsafe
+    # append to bounded, non-overlapping strcat calls. Its preceding
+    # MAXPATHLEN check guarantees room for the two appends.
+    patch_file(root, "source/filebrowser.cpp",
+        lambda t: replace_once(
+            t, 'sprintf(browser.dir, "%s%s/",browser.dir, browser.selIndex->file);',
+            'strcat(browser.dir, browser.selIndex->file);\n'
+            '\t\t\tstrcat(browser.dir, "/");',
+            "WiiMC filesystem browser overlapping sprintf guard"))
     # Keep stock WiiMC playback, video, GUI, autoplay and MPlayer threads
     # byte-for-byte original. Only controller translation is changed.
     # Earlier versions altered these paths and crashed with DSI on real Wii.

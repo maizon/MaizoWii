@@ -23,6 +23,8 @@ class WiiMCMinimalAdapter(unittest.TestCase):
   self.assertIn("source/input.cpp",section)
   self.assertIn("WiiMC no-Wiimote NULL guard",section)
   self.assertIn("WiiMC missing argv media falls back to stock browser",section)
+  self.assertIn("WiiMC filesystem browser overlapping sprintf guard",section)
+  self.assertIn('source/filebrowser.cpp',section)
   self.assertIn("snprintf(loadedFile, sizeof(loadedFile)",section)
   self.assertIn("WiiMC ORIGINAL 3.0 media engine retained",section)
   self.assertIn("WiiMC argv-autoplay HID pre-attach",section)

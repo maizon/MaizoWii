@@ -115,7 +115,13 @@ class LaunchArgsTests(unittest.TestCase):
                          [b"usb:/apps/module/boot.dol"])
         self.assertIsNone(self.build(7, b"usb:/videos/movie.mp4",media_autoboot=2))
 
+    def test_homebrew_uses_selected_executable_and_rejects_mismatch(self):
+        target=b"sd:/apps/snes9xgx/boot.dol"
+        self.assertEqual(self.build(8,target,executable=target),[target])
+        self.assertIsNone(self.build(8,target,executable=b"sd:/apps/other/boot.dol"))
+
     def test_bad_paths_and_system(self):
+        self.assertIsNone(self.build(9, b"sd:/games/test.iso"))
         self.assertIsNone(self.build(8, b"sd:/games/test.iso"))
         self.assertIsNone(self.build(3, b"/host/absolute.sfc"))
         self.assertIsNone(self.build(3, b"sd:/roms/"))

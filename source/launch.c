@@ -46,7 +46,8 @@ static const char*paths[SYSTEM_COUNT][4]={
  {"usb:/apps/fceugx/boot.dol","sd:/apps/fceugx/boot.dol","usb:/maizo/modules/fceugx/boot.dol","sd:/maizo/modules/fceugx/boot.dol"},
  {"usb:/apps/vbagx/boot.dol","sd:/apps/vbagx/boot.dol","usb:/maizo/modules/vbagx/boot.dol","sd:/maizo/modules/vbagx/boot.dol"},
  {"usb:/apps/vbagx/boot.dol","sd:/apps/vbagx/boot.dol","usb:/maizo/modules/vbagx/boot.dol","sd:/maizo/modules/vbagx/boot.dol"},
- {"usb:/apps/WiiMC/boot.dol","sd:/apps/WiiMC/boot.dol","usb:/maizo/modules/wiimc/boot.dol","sd:/maizo/modules/wiimc/boot.dol"}
+ {"usb:/apps/WiiMC/boot.dol","sd:/apps/WiiMC/boot.dol","usb:/maizo/modules/wiimc/boot.dol","sd:/maizo/modules/wiimc/boot.dol"},
+  {NULL,NULL,NULL,NULL} /* HB path = executable. */
 };
 static const char*ps1_wiisx_paths[]={
  "usb:/apps/WiiSX/boot.dol","sd:/apps/WiiSX/boot.dol",
@@ -64,8 +65,8 @@ static const char*resolve_ps1_wiisx(void){
   if(file_exists(ps1_wiisx_paths[i]))return ps1_wiisx_paths[i];
  return NULL;
 }
-static const char*resolve(System sys){if(sys<0||sys>=SYSTEM_COUNT)return NULL;
- for(int i=0;i<4;i++)if(file_exists(paths[sys][i]))return paths[sys][i];return NULL;}
+static const char*resolve(System sys){if(sys<0||sys>=SYSTEM_COUNT||sys==SYSTEM_HB)return NULL;
+ for(int i=0;i<4;i++)if(paths[sys][i]&&file_exists(paths[sys][i]))return paths[sys][i];return NULL;}
 /* Availability is an explicit snapshot, NOT repeated fopen() operations
  * from every home card on every video frame (FAT/USB can block for ms). */
 static unsigned char modules_present[SYSTEM_COUNT];
@@ -73,7 +74,7 @@ static int modules_scanned=0;
 static int alternate_ps1=0,alternate_media=0;
 void module_refresh_available(void){
  for(int i=0;i<SYSTEM_COUNT;i++)
-  modules_present[i]=resolve((System)i)!=NULL;
+  modules_present[i]=i==SYSTEM_HB?1:resolve((System)i)!=NULL;
  alternate_ps1=resolve_ps1_wiisx()!=NULL;
  alternate_media=resolve_media_official()!=NULL;
  modules_scanned=1;
@@ -99,7 +100,7 @@ const char*system_title(System sys){
  case SYSTEM_WII:return "NINTENDO WII";case SYSTEM_GC:return "GAMECUBE";
  case SYSTEM_PS1:return "PLAYSTATION 1";case SYSTEM_SNES:return "SUPER NINTENDO";
  case SYSTEM_NES:return "NINTENDO NES";case SYSTEM_GBA:return "GAME BOY ADVANCE";
- case SYSTEM_GB:return "GAME BOY / COLOR";case SYSTEM_MEDIA:return "FILMES E MUSICAS";
+ case SYSTEM_GB:return "GAME BOY / COLOR";case SYSTEM_MEDIA:return "FILMES E MUSICAS";case SYSTEM_HB:return "HOMEBREWS";
  default:return "DESCONHECIDO";
  }
 }
@@ -108,10 +109,10 @@ const char*module_name(System sys){
  case SYSTEM_WII:return "USB LOADER GX";case SYSTEM_GC:return "NINTENDONT";
  case SYSTEM_PS1:return "WIISXRX / WIISX 4.2.2";case SYSTEM_SNES:return "SNES9X GX";
  case SYSTEM_NES:return "FCE ULTRA GX";case SYSTEM_GBA:case SYSTEM_GB:return "VBA GX";
- case SYSTEM_MEDIA:return "WIIMC-SSLC";default:return "SEM MODULO";
+ case SYSTEM_MEDIA:return "WIIMC-SSLC";case SYSTEM_HB:return "HOMEBREW CHANNEL";default:return "SEM MODULO";
  }
 }
-static int save_nincfg(const Game*g,const Config*c) {
+static int save_nincfg(const Game*g,const Config*c,NIN_CFG *out) {
  NIN_CFG n;memset(&n,0,sizeof(n));n.Magicbytes=NIN_CFG_MAGIC;n.Version=NIN_CFG_VERSION;
  n.Config=NIN_CFG_AUTO_BOOT|(c->gc_memcard?NIN_CFG_MEMCARDEMU:0)|(c->gc_wide?NIN_CFG_FORCE_WIDE:0)|
  (c->gc_cheats?NIN_CFG_CHEATS:0)|(c->gc_skip_ipl?NIN_CFG_SKIP_IPL:0)|
@@ -128,6 +129,7 @@ static int save_nincfg(const Game*g,const Config*c) {
  const char *relative=strchr(g->path,':');relative=relative?relative+1:g->path;
  snprintf(n.GamePath,sizeof(n.GamePath),"%s",relative);
  if(g->id[0])memcpy(&n.GameID,g->id,4);
+ if(out)*out=n;
  char dest[32];snprintf(dest,sizeof(dest),"%s:/nincfg.bin",(n.Config&NIN_CFG_USB)?"usb":"sd");
  char tmp[48],backup[48];snprintf(tmp,sizeof(tmp),"%s.tmp",dest);
  snprintf(backup,sizeof(backup),"%s.bak",dest);
@@ -206,7 +208,8 @@ static int valid_dol(const unsigned char*image,size_t len){
 int module_launch(const Game*g,const Config*c,char*error,size_t cap){
  if(!g||!c||!error||!cap)return 0;
  error[0]=0;
- const char*exe=(g->system==SYSTEM_PS1&&c->ps1_engine)?resolve_ps1_wiisx():
+ const char*exe=g->system==SYSTEM_HB?g->path:
+                (g->system==SYSTEM_PS1&&c->ps1_engine)?resolve_ps1_wiisx():
                 (g->system==SYSTEM_MEDIA&&c->media_player)?resolve_media_official():resolve(g->system);if(!exe){snprintf(error,cap,"DOL do %s nao encontrado",module_name(g->system));return 0;}
  if(g->system==SYSTEM_PS1){
   const char*e=strrchr(g->path,'.');
@@ -217,7 +220,7 @@ int module_launch(const Game*g,const Config*c,char*error,size_t cap){
  /* Fail before reboot when CUE tracks/PS1 image are missing or malformed. */
  if(g->system==SYSTEM_PS1 && !maizo_probe_ps1_image(g->path,error,cap))return 0;
  /* Construct arguments with the exact same portable code exercised in CI.
-  * Keep the Nintendont nincfg.bin contract separate from argv. */
+  * Nintendont additionally consumes the raw binary NIN_CFG as argv[1]. */
  MaizoLaunchSpec spec={0};
  spec.system=(int)g->system;spec.executable=exe;spec.path=g->path;spec.id=g->id;
  spec.wii_ios=c->wii_ios;spec.wii_usb_port=c->wii_usb_port;
@@ -237,8 +240,18 @@ int module_launch(const Game*g,const Config*c,char*error,size_t cap){
  unsigned char*image=(unsigned char*)0x92000000;
  if(fread(image,1,(size_t)size,f)!=(size_t)size){fclose(f);snprintf(error,cap,"Falha ao ler DOL");return 0;}fclose(f);
  if(!valid_dol(image,(size_t)size)){snprintf(error,cap,"DOL invalido: cabecalho/secoes");return 0;}
- if(g->system==SYSTEM_GC&&!save_nincfg(g,c)){
-  snprintf(error,cap,"Falha ao gravar nincfg.bin");return 0;
+ if(g->system==SYSTEM_GC){
+  NIN_CFG nin;
+  if(!save_nincfg(g,c,&nin)){snprintf(error,cap,"Falha ao gravar nincfg.bin");return 0;}
+  /* Nintendont loader/source/main.c reads argv[1] as the NIN_CFG
+   * binary. nincfg.bin alone does not provide reliable direct boot. */
+  const size_t count=sizeof(nin)+1;
+  if(command.length+count>sizeof(command.data)){
+   snprintf(error,cap,"Autoboot excede argv");return 0;
+  }
+  memcpy(command.data+command.length,&nin,sizeof(nin));
+  command.data[command.length+sizeof(nin)]=0;
+  command.length+=count;command.argc++;
  }
  save_launch_record(g,c);
  /* The stand-alone bootstub executes from MEM2 so its memory copy cannot

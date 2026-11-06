@@ -91,7 +91,7 @@ static int total(void){return library_total(&library_state,state.system,state.se
  * navigating between covers on real storage. */
 static unsigned cover_cycle=0;
 static const char *icon_codes[SYSTEM_COUNT]={
- "IWII","IGC","IPS1","ISNES","INES","IGBA","IGB","IMEDIA"
+ "IWII","IGC","IPS1","ISNES","INES","IGBA","IGB","IMEDIA","IHB"
 };
 static void prefetch_covers(void){
  if(!media_ready)return;
@@ -132,7 +132,7 @@ static void close_settings(void){
   int ok=idx>=0 && idx<library_state.count &&
          config_game_save(&state.game_config,&library_state.games[idx]);
   state.settings_for_game=0;
-  if(ok)state.page=PAGE_DETAIL;
+  if(ok)state.page=PAGE_LIBRARY;
   else {
    snprintf(state.info,sizeof(state.info),
             "FALHA AO SALVAR OPCOES DESTE JOGO");
@@ -236,9 +236,30 @@ static void handle(const Input*i){
  }
  if(state.page==PAGE_COVERS){
   MaizoCoverDownloadStatus d=maizo_cover_download_status();
-  if(i->back||i->settings){
-   maizo_cover_download_cancel();state.page=PAGE_SETTINGS;
-  }else if(!d.active&&i->accept)state.page=PAGE_SETTINGS;
+  if(i->back||i->settings){maizo_cover_download_cancel();state.page=PAGE_COVER_PICK;}
+  else if(!d.active&&i->accept)state.page=PAGE_COVER_PICK;
+  return;
+ }
+ if(state.page==PAGE_COVER_PICK){
+  if(i->back||i->settings){state.page=PAGE_SETTINGS;return;}
+  if(i->up&&state.covers_row>0)state.covers_row--;
+  if(i->down&&state.covers_row<10)state.covers_row++;
+  if(i->accept||i->left||i->right){
+   int row=state.covers_row;
+   if(row<7)state.covers_mask^=(1u<<row);
+   else if(row==7)state.covers_mask=0x7fu;
+   else if(row==8)state.covers_mask=0;
+   else if(row==9)state.covers_update=!state.covers_update;
+   else if(row==10){
+    if(!state.covers_mask){
+     snprintf(state.info,sizeof(state.info),"SELECIONE PELO MENOS UM SISTEMA");
+     state.info_return=PAGE_COVER_PICK;state.page=PAGE_INFO;
+    }else{
+     maizo_cover_download_begin_filtered(&library_state,state.covers_mask,state.covers_update);
+     state.page=PAGE_COVERS;
+    }
+   }
+  }
   return;
  }
  if(state.page==PAGE_INFO){
@@ -250,18 +271,12 @@ static void handle(const Input*i){
   if(i->tab_prev)change_system(-1);
   if(i->tab_next)change_system(1);
  }
- if(i->settings && state.page==PAGE_LIBRARY){
+ if(i->favorite && state.page==PAGE_LIBRARY){
   int idx=library_visible(&library_state,state.system,state.search,0,state.selected);
-  if(idx>=0){state.detail=idx;
+  if(idx>=0){
+   state.detail=idx;
    config_game_load(&state.game_config,&config,&library_state.games[idx]);
-   state.page=PAGE_DETAIL;}
-  return;
- }
- if(i->settings && state.page==PAGE_DETAIL){
-  if(state.detail>=0&&state.detail<library_state.count){
-   const Game*g=&library_state.games[state.detail];
-   config_game_load(&state.game_config,&config,g);
-   state.settings_for_game=1;state.settings_row=2;state.page=PAGE_SETTINGS;
+   state.page=PAGE_DETAIL;
   }
   return;
  }
@@ -290,9 +305,9 @@ static void handle(const Input*i){
   return;
  }
  if(state.page==PAGE_SETTINGS){
-  if(state.settings_row==settings_count(state.system)-3 && (i->accept||i->right)){
-   maizo_cover_download_begin(&library_state);
-   state.page=PAGE_COVERS;return;
+  if(!state.settings_for_game &&
+     state.settings_row==settings_count(state.system)-3 && (i->accept||i->right)){
+   state.covers_row=0;state.page=PAGE_COVER_PICK;return;
   }
   if(state.settings_row==settings_count(state.system)-2 && (i->accept||i->right)){
    state.calibration_row=0;state.page=PAGE_CALIBRATION;return;
@@ -341,7 +356,15 @@ static void handle(const Input*i){
    int idx=library_visible(&library_state,state.system,state.search,0,state.selected);
    if(idx>=0)play_game(idx,PAGE_LIBRARY);
   }
-  if(i->back){state.page=PAGE_HOME;state.search[0]=0;}
+  if(i->back){
+   int idx=library_visible(&library_state,state.system,state.search,0,state.selected);
+   if(idx>=0){
+    state.detail=idx;
+    config_game_load(&state.game_config,&config,&library_state.games[idx]);
+    state.settings_for_game=1;state.settings_row=2;state.page=PAGE_SETTINGS;
+   }
+  }
+  if(i->refresh){state.page=PAGE_HOME;state.search[0]=0;}
   return;
  }
  if(state.page==PAGE_DETAIL){
@@ -367,6 +390,7 @@ int main(int argc,char**argv){
  maizo_video_set_calibration((int)config.video_x-50,(int)config.video_y-50,config.video_w,config.video_h);
  memset(&state,0,sizeof(state));
  state.system=SYSTEM_GC;
+ state.covers_mask=0x7fu;
  state.info_return=PAGE_HOME;
  state.storage_usb=storage_usb;state.storage_sd=storage_sd;
  /* Start in the carousel, without the first-run wizard. */

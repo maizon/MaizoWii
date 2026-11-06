@@ -59,7 +59,7 @@ class PremiumUpdateContracts(unittest.TestCase):
     def test_direct_play_and_offline_error(self):
         main = source("source/main.c")
         self.assertIn("static void play_game(", main)
-        self.assertIn("if(i->settings && state.page==PAGE_LIBRARY)", main)
+        self.assertIn("if(i->favorite && state.page==PAGE_LIBRARY)", main)
         self.assertIn("if(idx>=0)play_game(idx,PAGE_LIBRARY)", main)
         self.assertIn("JOGO INDISPONIVEL.", main)
         self.assertIn("int old_usb=storage_usb,old_sd=storage_sd", main)

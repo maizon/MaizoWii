@@ -120,6 +120,8 @@ int maizo_build_args(const MaizoLaunchSpec *s,MaizoLaunchArgs *out,char*error,si
   char dir[512];const char*base=NULL;
   if(!split_path(s->path,dir,sizeof(dir),&base))return fail(error,cap,"Caminho ROM invalido");
   if(!append(out,dir)||!append(out,base))return fail(error,cap,"ROM excede limite");
+ }else if(s->system==MAIZO_ARG_HB){
+  if(strcmp(s->path,s->executable))return fail(error,cap,"Homebrew precisa apontar para o DOL selecionado");
  }else if(s->system==MAIZO_ARG_MEDIA){
   if(s->media_autoboot>1)return fail(error,cap,"Modo multimidia invalido");
   if(!s->media_autoboot)return 1; /* GUI original; no autoplay */

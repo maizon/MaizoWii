@@ -132,7 +132,7 @@ class UiIntegration(unittest.TestCase):
         self.assertIn("topbar(u,l,hid);",ui)
         self.assertIn("state.storage_usb=storage_usb",main)
         self.assertIn("state.storage_sd=storage_sd",main)
-        self.assertIn("if(u->page!=PAGE_HOME && u->page!=PAGE_LIBRARY)footer(u);",ui)
+        self.assertIn("footer(u);",ui)
 
 if __name__=="__main__":
     unittest.main()

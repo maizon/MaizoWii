@@ -22,6 +22,8 @@ typedef struct {unsigned char *bytes;size_t length;} Download;
 extern const unsigned char maizo_ca_bundle[],maizo_ca_bundle_end[];
 static MaizoCoverDownloadStatus job;
 static int network_attempted=0,network_ready=0;
+static unsigned selected_mask=0x7fu;
+static int update_existing=0,cursor=0;
 
 static size_t receive_image(char *source,size_t size,size_t count,void *user){
  Download *d=(Download*)user;
@@ -117,17 +119,25 @@ static int save_png_as_gxt(const Download *download,const char *dest){
  if(fclose(f))good=0;
  free(tiles);
  if(!good){remove(tmp);return 0;}
- if(rename(tmp,dest)!=0){remove(tmp);return 0;}
+ if(rename(tmp,dest)!=0){
+  /* libfat may not replace existing files via rename. Preserve the old
+   * artwork until the replacement has been fully downloaded and written. */
+  char backup[270];snprintf(backup,sizeof(backup),"%s.bak",dest);
+  remove(backup);
+  if(rename(dest,backup)!=0){remove(tmp);return 0;}
+  if(rename(tmp,dest)!=0){rename(backup,dest);remove(tmp);return 0;}
+  remove(backup);
+ }
  return 1;
 }
 static int provider_download(const Game *g,const char *output){
  Download image;
  char url[1024];int ok=0;
  if((g->system==SYSTEM_WII||g->system==SYSTEM_GC)&&strlen(g->id)==6){
-  for(int region=0;region<2&&!ok;region++){
+  for(int region=0;region<7&&!ok;region++){
    const char *system=g->system==SYSTEM_WII?"wii":"gc";
    snprintf(url,sizeof(url),"https://art.gametdb.com/%s/cover/%s/%s.png",
-            system,region==0?"US":"EN",g->id);
+            system,(const char*[]){"US","EN","JP","DE","FR","IT","ES"}[region],g->id);
    if(fetch_png(url,&image)){
     ok=save_png_as_gxt(&image,output);free(image.bytes);
    }
@@ -147,14 +157,19 @@ static int provider_download(const Game *g,const char *output){
   }
   char title[128];snprintf(title,sizeof(title),"%s",g->name);
   /* Respect Libretro's exact filenames first; then common region suffixes. */
-  for(int attempt=0;attempt<3&&!ok;attempt++){
+  for(int attempt=0;attempt<5&&!ok;attempt++){
    char candidate[160];snprintf(candidate,sizeof(candidate),"%s",title);
    if(attempt){
-    char *bracket=strchr(candidate,'[');if(bracket)*bracket=0;
+    /* Strip dump tags and existing region tags before trying alternatives. */
+    char *tag=strchr(candidate,'[');
+    char *region=strstr(candidate," (");
+    if(region&&(!tag||region<tag))tag=region;
+    if(tag)*tag=0;
     size_t len=strlen(candidate);
     while(len&&candidate[len-1]==' ')candidate[--len]=0;
-    if(attempt==1)strncat(candidate," (USA)",sizeof(candidate)-strlen(candidate)-1);
-    else strncat(candidate," (Europe)",sizeof(candidate)-strlen(candidate)-1);
+    const char *suffix=attempt==1?" (USA)":attempt==2?" (Europe)":
+                       attempt==3?" (Japan)":"";
+    strncat(candidate,suffix,sizeof(candidate)-strlen(candidate)-1);
    }
    CURL *escape_curl=curl_easy_init();
    if(!escape_curl)break;
@@ -172,16 +187,25 @@ static int provider_download(const Game *g,const char *output){
  }
  return ok;
 }
-void maizo_cover_download_begin(const Library *library){
+void maizo_cover_download_begin_filtered(const Library *library,unsigned mask,int update){
  memset(&job,0,sizeof(job));
+ selected_mask=mask&0x7fu;
+ update_existing=!!update;
+ cursor=0;network_attempted=0;network_ready=0;
  if(!library||library->scanning){
   snprintf(job.message,sizeof(job.message),"AGUARDE A VARREDURA USB/SD TERMINAR");
   return;
  }
- job.total=library->count;
+ for(int i=0;i<library->count;i++){
+  unsigned s=(unsigned)library->games[i].system;
+  if(s<7u&&(selected_mask&(1u<<s)))job.total++;
+ }
  job.active=job.total>0;
  snprintf(job.message,sizeof(job.message),job.active?
-          "PREPARANDO CONEXAO HTTPS...":"BIBLIOTECA VAZIA");
+          "PREPARANDO CONEXAO HTTPS...":"NENHUM JOGO NOS SISTEMAS MARCADOS");
+}
+void maizo_cover_download_begin(const Library *library){
+ maizo_cover_download_begin_filtered(library,0x7fu,0);
 }
 void maizo_cover_download_cancel(void){
  job.active=0;
@@ -199,16 +223,25 @@ void maizo_cover_download_step(const Library *library){
   job.active=0;snprintf(job.message,sizeof(job.message),
                        "SEM REDE OU TLS DISPONIVEL NO WII");return;
  }
- if(job.processed>=job.total||job.processed>=library->count){
+ if(job.processed>=job.total){
   job.active=0;snprintf(job.message,sizeof(job.message),"DOWNLOAD CONCLUIDO");return;
  }
- const Game *g=&library->games[job.processed++];
+ while(cursor<library->count){
+  unsigned sys=(unsigned)library->games[cursor].system;
+  if(sys<7u&&(selected_mask&(1u<<sys)))break;
+  cursor++;
+ }
+ if(cursor>=library->count){
+  job.active=0;snprintf(job.message,sizeof(job.message),"DOWNLOAD CONCLUIDO");return;
+ }
+ const Game *g=&library->games[cursor++];
+ job.processed++;
  snprintf(job.current,sizeof(job.current),"%s",g->name);
  if(g->system==SYSTEM_MEDIA){
   job.unavailable++;snprintf(job.message,sizeof(job.message),
     "MIDIA: ADICIONE POSTER LOCAL (SEM PROVEDOR PUBLICO)");return;
  }
- if(cover_on_disk(g)){
+ if(cover_on_disk(g)&&!update_existing){
   job.existing++;snprintf(job.message,sizeof(job.message),"CAPA EXISTENTE - IGNORADA");
  }else{
   char path[240];
@@ -220,7 +253,7 @@ void maizo_cover_download_step(const Library *library){
    snprintf(folder,sizeof(folder),"%s/maizo",device);mkdir(folder,0777);
    snprintf(folder,sizeof(folder),"%s/maizo/covers",device);mkdir(folder,0777);
    static const char *subdirs[SYSTEM_COUNT]={
-    "wii","gc","ps1","snes","nes","gba","gb","media"
+    "wii","gc","ps1","snes","nes","gba","gb","media","hb"
    };
    snprintf(folder,sizeof(folder),"%s/maizo/covers/%s",device,subdirs[g->system]);
    mkdir(folder,0777);

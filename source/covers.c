@@ -38,7 +38,7 @@ static Cache*lookup(const Game*g,int allow_io){
  memset(c,0,sizeof(*c));
  snprintf(c->key,sizeof(c->key),"%s",key);c->system=(int)g->system;c->last=clock_id;
  static const char*folders[SYSTEM_COUNT]={
-  "wii","gc","ps1","snes","nes","gba","gb","media"
+  "wii","gc","ps1","snes","nes","gba","gb","media","hb"
  };
  char p[220];FILE*f=NULL;
  /* Prefer the same device as the ROM, then the alternate storage.
@@ -120,7 +120,7 @@ void cover_reset(void){
 }
 
 /* Shared renderer/downloader cover locations and validation. */
-static const char *cover_folder[SYSTEM_COUNT]={"wii","gc","ps1","snes","nes","gba","gb","media"};
+static const char *cover_folder[SYSTEM_COUNT]={"wii","gc","ps1","snes","nes","gba","gb","media","hb"};
 int cover_destination(const Game*g,char*out,size_t cap){
  if(!g||!out||cap<2||g->system<0||g->system>=SYSTEM_COUNT)return 0;
  if(strncmp(g->path,"usb:/",5)&&strncmp(g->path,"sd:/",4))return 0;

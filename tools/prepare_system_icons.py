@@ -32,7 +32,7 @@ def background():
     return canvas
 
 def portrait(name):
-    if name == "IWII":
+    if name in ("IWII", "IHB"):
         im = Image.new("RGBA", (200, 200), (0, 0, 0, 0))
         draw = ImageDraw.Draw(im)
         try:
@@ -40,9 +40,10 @@ def portrait(name):
         except OSError:
             font = ImageFont.load_default()
         draw.rounded_rectangle((16, 17, 184, 183), radius=25, fill=(226, 233, 238, 255))
-        box = draw.textbbox((0, 0), "Wii", font=font)
+        box = draw.textbbox((0, 0), "Wii" if name == "IWII" else "HB", font=font)
         tw, th = box[2] - box[0], box[3] - box[1]
-        draw.text(((200 - tw)//2 - box[0], (200 - th)//2 - box[1]), "Wii",
+        draw.text(((200 - tw)//2 - box[0], (200 - th)//2 - box[1]),
+                  "Wii" if name == "IWII" else "HB",
                   fill=(44, 64, 88, 255), font=font)
         return im
     name = ICONS[name]
@@ -68,7 +69,7 @@ def main():
     p.add_argument("--out", type=Path, required=True, help="Output maizo/covers folder")
     args = p.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
-    for code in ("IWII", *ICONS):
+    for code in ("IWII", "IHB", *ICONS):
         dest = args.out / (code + ".gxt")
         data = render_icon(code)
         tmp = dest.with_suffix(".part")
@@ -83,7 +84,7 @@ def main():
         "Source images (all except Wii): CC BY 4.0; attribution required.\n"
         "https://creativecommons.org/licenses/by/4.0/\n"
         "Modified by Maizo: resized, padded, composited and packed to native MZG1.\n"
-        "Wii image: locally drawn fallback (not part of the original icon set).\n",
+        "Wii and HB images: locally drawn fallback icons (not in the source icon set).\n",
         encoding="utf-8",
     )
 

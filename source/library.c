@@ -19,10 +19,12 @@ static const struct { System system;const char *path; } roots[]={
  {SYSTEM_PS1,"usb:/ps1"},{SYSTEM_PS1,"sd:/ps1"},{SYSTEM_PS1,"usb:/wiisxrx/isos"},{SYSTEM_PS1,"sd:/wiisxrx/isos"},
  {SYSTEM_PS1,"usb:/roms/ps1"},{SYSTEM_PS1,"sd:/roms/ps1"},{SYSTEM_PS1,"usb:/PSXISOS"},{SYSTEM_PS1,"sd:/PSXISOS"},
  {SYSTEM_MEDIA,"usb:/videos"},{SYSTEM_MEDIA,"sd:/videos"},{SYSTEM_MEDIA,"usb:/movies"},{SYSTEM_MEDIA,"sd:/movies"},{SYSTEM_MEDIA,"usb:/music"},{SYSTEM_MEDIA,"sd:/music"},
- {SYSTEM_MEDIA,"usb:/media"},{SYSTEM_MEDIA,"sd:/media"}
+ {SYSTEM_MEDIA,"usb:/media"},{SYSTEM_MEDIA,"sd:/media"},
+  {SYSTEM_HB,"sd:/apps"},{SYSTEM_HB,"usb:/apps"}
 };
 static int ext(const char*s,const char*e){const char*d=strrchr(s,'.');return d&&!strcasecmp(d,e);}
 static int allowed(System s,const char*n){
+  if(s==SYSTEM_HB)return !strcasecmp(n,"boot.dol");
  if(s==SYSTEM_WII)return ext(n,".wbfs")||ext(n,".iso");
  if(s==SYSTEM_GC)return ext(n,".iso")||ext(n,".gcm")||ext(n,".ciso");
  if(s==SYSTEM_SNES)return ext(n,".sfc")||ext(n,".smc")||ext(n,".fig")||ext(n,".zip");
@@ -47,11 +49,30 @@ static void insert(Library*l,System sys,const char*path,const char*filename,cons
  for(int i=0;i<l->count;i++)if(!strcasecmp(path,l->games[i].path))return;
  Game*g=&l->games[l->count++];memset(g,0,sizeof(*g));g->system=sys;
  snprintf(g->path,sizeof(g->path),"%s",path);
- const char*n=(!strcasecmp(filename,"game.iso")||!strcasecmp(filename,"disc2.iso"))?parent:filename;
+ const char*n=sys==SYSTEM_HB?parent:(!strcasecmp(filename,"game.iso")||!strcasecmp(filename,"disc2.iso"))?parent:filename;
  snprintf(g->name,sizeof(g->name),"%s",n);
  char*d=strrchr(g->name,'.');if(d)*d=0;
  for(d=g->name;*d;d++)if(*d=='_')*d=' ';
- if(sys==SYSTEM_WII){
+ if(sys==SYSTEM_HB){
+   /* Read a bounded name from meta.xml once, not during rendering. */
+   char meta[MAIZO_PATH];
+   if(snprintf(meta,sizeof(meta),"%s",path)<(int)sizeof(meta)){
+    char *slash=strrchr(meta,'/');
+    if(slash){
+     snprintf(slash+1,(size_t)(meta+sizeof(meta)-(slash+1)),"meta.xml");
+     FILE *fp=fopen(meta,"rb");
+     if(fp){
+      char xml[4097];size_t got=fread(xml,1,sizeof(xml)-1,fp);fclose(fp);xml[got]=0;
+      char *start=strstr(xml,"<name>"),*end=start?strstr(start+6,"</name>"):NULL;
+      if(start&&end&&end>start+6){
+       size_t len=(size_t)(end-(start+6));
+       if(len<sizeof(g->name)){memcpy(g->name,start+6,len);g->name[len]=0;}
+      }
+     }
+    }
+   }
+  }
+  if(sys==SYSTEM_WII){
   const char*b=strrchr(parent,'[');const char*end=b?strchr(b,']'):NULL;
   if(b&&end&&end-b==7){int valid=1;for(int j=1;j<=6;j++)if(!isalnum((unsigned char)b[j]))valid=0;
    if(valid){memcpy(g->id,b+1,6);g->id[6]=0;}}
@@ -81,7 +102,7 @@ void library_step(Library*l,int budget){if(!l->scanning||!l->work)return;Work*w=
   struct stat st;if(stat(full,&st))continue;
   if(S_ISDIR(st.st_mode)){if(l->depth==MAIZO_DEPTH)continue;DIR*sub=opendir(full);if(!sub)continue;Dir*child=&w->dirs[l->depth++];child->fd=sub;snprintf(child->path,sizeof(child->path),"%s",full);continue;}
   System sys=roots[l->root-1].system;
-  if(S_ISREG(st.st_mode)&&allowed(sys,d->d_name)){const char*p=strrchr(top->path,'/');insert(l,sys,full,d->d_name,p?p+1:top->path);}
+  if(S_ISREG(st.st_mode)&&allowed(sys,d->d_name) && (sys!=SYSTEM_HB||l->depth==2)){const char*p=strrchr(top->path,'/');insert(l,sys,full,d->d_name,p?p+1:top->path);}
  }}
 static int match(const char*s,const char*q){if(!q||!*q)return 1;
  for(;*s;s++){const char*a=s,*b=q;while(*a&&*b&&tolower((unsigned char)*a)==tolower((unsigned char)*b)){a++;b++;}if(!*b)return 1;}return 0;}

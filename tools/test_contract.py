@@ -16,7 +16,7 @@ settings = read("source/settings.c")
 config = read("source/config.c")
 expected = (
     "SYSTEM_WII", "SYSTEM_GC", "SYSTEM_PS1", "SYSTEM_SNES",
-    "SYSTEM_NES", "SYSTEM_GBA", "SYSTEM_GB", "SYSTEM_MEDIA",
+    "SYSTEM_NES", "SYSTEM_GBA", "SYSTEM_GB", "SYSTEM_MEDIA", "SYSTEM_HB",
 )
 for name in expected:
     assert name in header and name in library and name in launch, name
@@ -57,7 +57,7 @@ assert "VIDEO_WaitVSync" in read("source/main.c")
 assert "VIDEO_WaitVSync" in read("source/video_sw.c")
 assert "SYS_AllocateFramebuffer" in read("source/video_sw.c")
 assert "0x40" in read("profiles/0079_0006.ini")
-print("PASS: 8 systems, module registry, UI, profiles, launch and cover contracts")
+print("PASS: 9 systems, module registry, UI, profiles, launch and cover contracts")
 
 # Nintendont-style MultiIn parsing is shared by all compiled HID adapters.
 hid = read("integrations/maizo_hid.inc")
@@ -90,7 +90,7 @@ for marker in ("config_game_load(", "config_game_save(",
 for marker in ("config_game_load(&effective", "config_game_save(",
                "state.settings_for_game"):
     assert marker in main_source, marker
-assert "START: CONFIGURACOES DO JOGO" in ui_source
+assert "B: VOLTAR  START: AJUSTES GERAIS" in ui_source
 assert "game_profile.h" in config_source
 
 # Controller diagnostics are reached and exited solely by gamepad events.
