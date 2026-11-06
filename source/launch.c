@@ -32,6 +32,8 @@ typedef struct {
  u8 MemCardBlocks; s8 VideoScale,VideoOffset;u8 NetworkProfile;
  u32 WiiUGamepadSlot;
 } NIN_CFG;
+/* Compile-time layout check against fix94/Nintendont CommonConfig.h v0x0B. */
+typedef char MaizoNinCfgSizeCheck[(sizeof(NIN_CFG)==548)?1:-1];
 typedef struct {
  u32 text_pos[7],data_pos[11],text_start[7],data_start[11];
  u32 text_size[7],data_size[11],bss_start,bss_size,entry_point;
@@ -126,8 +128,7 @@ static int save_nincfg(const Game*g,const Config*c,NIN_CFG *out) {
  n.VideoScale=(s8)(c->gc_scale>=40&&c->gc_scale<=120?c->gc_scale:0);
  n.VideoOffset=(s8)((int)(c->gc_offset<=40?c->gc_offset:20)-20);
  /* Nintendont expects a path relative to the selected root device. */
- const char *relative=strchr(g->path,':');relative=relative?relative+1:g->path;
- snprintf(n.GamePath,sizeof(n.GamePath),"%s",relative);
+ if(!maizo_gc_relative_path(g->path,n.GamePath,sizeof(n.GamePath)))return 0;
  if(g->id[0])memcpy(&n.GameID,g->id,4);
  if(out)*out=n;
  char dest[32];snprintf(dest,sizeof(dest),"%s:/nincfg.bin",(n.Config&NIN_CFG_USB)?"usb":"sd");
@@ -149,10 +150,10 @@ static void save_launch_record(const Game*g,const Config*c) {
  /* The frontend calibration is the baseline for games. Per-game mode
   * corrections are added, but frontend-only TV standard is never exported.
   * Clamp for malformed legacy settings before the game's renderer reads it. */
- int x240=(int)c->video_x+(int)c->game_x240-100;
- int x480=(int)c->video_x+(int)c->game_x480-100;
- unsigned w240=c->video_w*c->game_w240/100u;
- unsigned w480=c->video_w*c->game_w480/100u;
+ int x240=(int)c->game_x240-50;
+ int x480=(int)c->game_x480-50;
+ unsigned w240=c->game_w240;
+ unsigned w480=c->game_w480;
  if(x240< -50)x240=-50;if(x240>50)x240=50;
  if(x480< -50)x480=-50;if(x480>50)x480=50;
  if(w240<70)w240=70;if(w240>130)w240=130;
@@ -164,7 +165,7 @@ static void save_launch_record(const Game*g,const Config*c) {
  "game_w240=%u\ngame_w480=%u\ngame_h240=%u\ngame_h480=%u\n",
  g->system,g->path,module_name(g->system),
  c->media_volume,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio,c->ps1_engine,c->ps1_native,
- x240,x480,(int)c->video_y-50,(int)c->video_y-50,w240,w480,c->video_h,c->video_h);
+ x240,x480,0,0,w240,w480,100u,100u);
  fclose(f);
 }
 /* MEM2 bootstrap: do not copy target DOL sections over the running frontend.

@@ -37,6 +37,16 @@ static int storage_path(const char *p){
  }
  return 1;
 }
+int maizo_gc_relative_path(const char *absolute,char *relative,size_t cap){
+ if(!relative||cap<2||!storage_path(absolute))return 0;
+ const char *colon=strchr(absolute,':');
+ if(!colon)return 0;
+ const char *path=colon+1;
+ size_t n=strlen(path);
+ if(n<2||n>=cap)return 0;
+ memcpy(relative,path,n+1);
+ return 1;
+}
 static int id6(const char *id){
  if(!id || strlen(id)!=6)return 0;
  for(int i=0;i<6;i++)if(!isalnum((unsigned char)id[i]))return 0;
@@ -81,6 +91,10 @@ int maizo_build_args(const MaizoLaunchSpec *s,MaizoLaunchArgs *out,char*error,si
   /* USB Loader GX enhanced supports -sdmode=1 for SD games. */
   if(!strncmp(s->path,"sd:/",4) && !append(out,"-sdmode=1"))
    return fail(error,cap,"Modo SD excede limite");
+ }else if(s->system==MAIZO_ARG_GC){
+  char game_path[255];
+  if(!maizo_gc_relative_path(s->path,game_path,sizeof(game_path)))
+   return fail(error,cap,"Caminho GC excede NIN_CFG (254 bytes)");
  }else if(s->system==MAIZO_ARG_PS1){
   if(ext_is(s->path,".chd") || ext_is(s->path,".m3u"))
    return fail(error,cap,"WiiSXRX original nao suporta CHD/M3U");

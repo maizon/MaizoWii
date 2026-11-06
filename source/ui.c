@@ -107,20 +107,52 @@ static void art(const State*u,const Library*l,int home,int pos,
  float z=sys==SYSTEM_MEDIA?1.32f:sys==SYSTEM_SNES?1.46f:1.7f;
  clipped(x+14,y+h*.46f,sys_short[sys],z,ink,7);
 }
-/* Always draw the original MAIZO wordmark in the highest layer. */
-/* One compact top navigation shared by every frontend page. */
+/* Blend the accent into the OLED background: precomputed opaque pixels
+ * resemble transparent tint, even on the YUYV/CRT software framebuffer. */
+static unsigned mix_rgb(unsigned a,unsigned b,unsigned strength){
+ unsigned color=0xff000000u;
+ for(unsigned shift=0;shift<24;shift+=8){
+  unsigned aa=(a>>shift)&255u,bb=(b>>shift)&255u;
+  color|=((aa*(256u-strength)+bb*strength)>>8)<<shift;
+ }
+ return color;
+}
+/* Only the focused tab renders a two-tone circular halo. No textures,
+ * framebuffers, antialiasing or shader allocation are needed. */
+static void tab_halo(int center_x,int center_y){
+ const unsigned edge=mix_rgb(0xff10151au,accent,146);
+ const unsigned fill=mix_rgb(0xff10151au,accent,46);
+ for(int radius=21;radius>=19;radius-=2){
+  unsigned color=radius==21?edge:fill;
+  for(int dy=-radius;dy<=radius;dy++){
+   int span=radius;
+   while(span>0 && span*span+dy*dy>radius*radius)span--;
+   quad(center_x-span,center_y+dy,span*2+1,1,color,color);
+  }
+ }
+}
+/* One icon for every platform, with a soft accent halo on selection.
+ * Use the SAME pinned MZG1 console artwork as the home carousel.
+ * Falls back to a short label only if icon assets are missing. */
 static void topbar(const State*u,const Library*l,int hid){
  (void)l;(void)hid;
+ static const char*codes[SYSTEM_COUNT]={
+  "IWII","IGC","IPS1","ISNES","INES","IGBA","IGB","IMEDIA","IHB"
+ };
  quad(0,0,640,62,0xff07090bu,0xff141b20u);
  label(25,23,"MAIZO",2.0f,ink);
  label(145,28,"L",1.1f,muted);
  for(int k=0;k<SYSTEM_COUNT;k++){
   float x=164+k*46;
   int selected=(int)u->system==k;
-  rounded(x,18,44,31,selected?accent:surface);
-  const char *name=sys_short[k];
-  int n=(int)strlen(name);float z=n>3?0.90f:1.08f;
-  label(x+(44.0f-n*8.0f*z)*0.5f,29,name,z,selected?0xff071015u:ink);
+  if(selected)tab_halo((int)x+22,31);
+  Game icon={0};icon.system=(System)k;
+  snprintf(icon.id,sizeof(icon.id),"%s",codes[k]);
+  if(!cover_draw(&icon,x+10,17,24,30)){
+   const char *name=sys_short[k];int n=(int)strlen(name);
+   float z=n>3?0.78f:0.88f;
+   label(x+(44.0f-n*8.0f*z)*0.5f,28,name,z,selected?accent:ink);
+  }
  }
  label(592,28,"R",1.1f,muted);
 }
@@ -132,7 +164,7 @@ static void footer(const State*u){
  else if(u->page==PAGE_HOME)
   msg="A ENTRAR  L/R SISTEMA  START GERAIS  Z REINDEXAR";
  else if(u->page==PAGE_DETAIL)
-  msg="A INICIAR  B VOLTAR  START CONFIG. GERAIS";
+  msg="A INICIAR  Y OPCOES DO JOGO  B VOLTAR  START GERAIS";
  else if(u->page==PAGE_SETTINGS)
   msg="SETAS ALTERAM  A CONFIRMA  B SALVA  Z DIAGNOSTICO";
  else if(u->page==PAGE_COVER_PICK)
@@ -307,13 +339,15 @@ static void detail(const State*u,const Library*l,const Config*c){
   label(255,208,id,1.05f,muted);
  }
  clipped(255,244,g->path,0.87f,muted,48);
- label(255,280,"CHEATS E SAVES: CONFIGURAR NO NUCLEO",0.81f,muted);
- if(g->system==SYSTEM_MEDIA)
+ if(g->system==SYSTEM_HB && g->description[0])
+  clipped(255,280,g->description,0.87f,muted,45);
+ else if(g->system==SYSTEM_MEDIA)
   label(255,280,u->game_config.media_player?"WIIMC ORIGINAL":"WIIMC HID",0.93f,muted);
+ else label(255,280,"OPCOES AVANCADAS NO MODULO",0.81f,muted);
  int can=module_variant_available(g->system,&u->game_config);
  rounded(255,317,322,52,can?0xff40675bu:0xff754d4du);
  label(279,334,can?"A   INICIAR":"MODULO NAO INSTALADO",1.26f,ink);
- label(256,392,"B: VOLTAR  START: AJUSTES GERAIS",0.95f,muted);
+ game_metadata(g,393);
 }
 static void search_ui(const State*u,const Library*l){
  const char*alphabet=" ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-";

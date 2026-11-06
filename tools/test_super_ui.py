@@ -101,12 +101,12 @@ class UiIntegration(unittest.TestCase):
         self.assertNotIn("storage_ready&&!config_has_settings()",main)
         self.assertIn("config_load(&config)",main)
         self.assertIn("c->layout=2;",config)
-        self.assertIn("c->theme=3",config)
+        self.assertIn("c->theme=4",config)
 
     def test_info_returns_to_relevant_context(self):
         main=self.read("source/main.c")
         self.assertIn("state.page=state.info_return",main)
-        self.assertIn("state.info_return=PAGE_DETAIL",main)
+        self.assertIn("state.info_return=state.settings_return==PAGE_DETAIL?PAGE_DETAIL:PAGE_LIBRARY",main)
         self.assertIn("state.info_return=PAGE_SETTINGS",main)
 
     def test_media_official_and_hid_builds_are_separate(self):

@@ -102,6 +102,15 @@ static void prefetch_covers(void){
   snprintf(icon.id,sizeof(icon.id),"%s",icon_codes[system]);
   cover_prefetch(&icon);
  }else if(state.page==PAGE_LIBRARY){
+  /* After reindex/hotplug a cover_reset clears icons too. Refill pinned
+   * console artwork in small slices without blocking frame rendering. */
+  if(round%18==0){
+   unsigned system=(round/18)%SYSTEM_COUNT;
+   Game icon={0};icon.system=(System)system;
+   snprintf(icon.id,sizeof(icon.id),"%s",icon_codes[system]);
+   cover_prefetch(&icon);
+   return;
+  }
   int n=total();if(n<=0)return;
   static const int offsets[]={0,-1,1,-2,2,-3,3};
   int pos=state.selected;
@@ -132,11 +141,11 @@ static void close_settings(void){
   int ok=idx>=0 && idx<library_state.count &&
          config_game_save(&state.game_config,&library_state.games[idx]);
   state.settings_for_game=0;
-  if(ok)state.page=PAGE_LIBRARY;
+  if(ok)state.page=state.settings_return;
   else {
    snprintf(state.info,sizeof(state.info),
             "FALHA AO SALVAR OPCOES DESTE JOGO");
-   state.info_return=PAGE_DETAIL;state.page=PAGE_INFO;
+   state.info_return=state.settings_return==PAGE_DETAIL?PAGE_DETAIL:PAGE_LIBRARY;state.page=PAGE_INFO;
   }
  }else{
   if(config_save(&config))state.page=PAGE_HOME;
@@ -361,7 +370,8 @@ static void handle(const Input*i){
    if(idx>=0){
     state.detail=idx;
     config_game_load(&state.game_config,&config,&library_state.games[idx]);
-    state.settings_for_game=1;state.settings_row=2;state.page=PAGE_SETTINGS;
+    state.settings_for_game=1;state.settings_return=PAGE_LIBRARY;
+    state.settings_row=2;state.page=PAGE_SETTINGS;
    }
   }
   if(i->refresh){state.page=PAGE_HOME;state.search[0]=0;}
@@ -369,7 +379,11 @@ static void handle(const Input*i){
  }
  if(state.page==PAGE_DETAIL){
   if(i->back){state.page=PAGE_LIBRARY;return;}
-  
+  if(i->favorite && state.detail>=0 && state.detail<library_state.count){
+   config_game_load(&state.game_config,&config,&library_state.games[state.detail]);
+   state.settings_for_game=1;state.settings_return=PAGE_DETAIL;
+   state.settings_row=2;state.page=PAGE_SETTINGS;return;
+  }
   if(i->accept)play_game(state.detail,PAGE_DETAIL);
  }
 }
@@ -392,6 +406,7 @@ int main(int argc,char**argv){
  state.system=SYSTEM_GC;
  state.covers_mask=0x7fu;
  state.info_return=PAGE_HOME;
+ state.settings_return=PAGE_HOME;
  state.storage_usb=storage_usb;state.storage_sd=storage_sd;
  /* Start in the carousel, without the first-run wizard. */
   state.page=PAGE_HOME;

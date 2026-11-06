@@ -25,4 +25,7 @@ typedef struct {
 } MaizoLaunchArgs;
 /* Returns 1 on success, 0 on rejection. Error is always set on failure if cap>0. */
 int maizo_build_args(const MaizoLaunchSpec*, MaizoLaunchArgs*, char*error, size_t cap);
+/* Nintendont v0x0B stores device-relative paths in char GamePath[255].
+ * Validate before loading the DOL; never silently truncate its ISO path. */
+int maizo_gc_relative_path(const char *absolute,char *relative,size_t cap);
 #endif

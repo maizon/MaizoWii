@@ -68,6 +68,19 @@ static void insert(Library*l,System sys,const char*path,const char*filename,cons
        size_t len=(size_t)(end-(start+6));
        if(len<sizeof(g->name)){memcpy(g->name,start+6,len);g->name[len]=0;}
       }
+      /* Parse optional Homebrew Channel description only during indexing. */
+      start=strstr(xml,"<short_description>");
+      end=start?strstr(start+19,"</short_description>"):NULL;
+      if(start&&end&&end>start+19){
+       const char *value=start+19;
+       while(value<end&&(*value==' '||*value=='\n'||*value=='\r'||*value=='\t'))value++;
+       size_t len=(size_t)(end-value);
+       if(len>=sizeof(g->description))len=sizeof(g->description)-1;
+       memcpy(g->description,value,len);g->description[len]=0;
+       for(size_t j=0;j<len;j++)
+        if(g->description[j]=='\n'||g->description[j]=='\r'||g->description[j]=='\t')
+         g->description[j]=' ';
+      }
      }
     }
    }

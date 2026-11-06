@@ -80,6 +80,10 @@ class LaunchArgsTests(unittest.TestCase):
     def test_gamecube_config_file_contract_not_fake_argv(self):
         self.assertEqual(self.build(1, b"sd:/games/Zelda/game.iso"),
                          [b"usb:/apps/module/boot.dol"])
+        # Nintendont has 255 bytes including the terminating NUL.
+        self.assertEqual(self.build(1, b"sd:/" + b"z" * 253),
+                         [b"usb:/apps/module/boot.dol"])
+        self.assertIsNone(self.build(1, b"sd:/" + b"z" * 254))
 
     def test_ps1_argv_and_invalid_format(self):
         self.assertEqual(self.build(2, b"usb:/ps1/Crash Bandicoot.cue"),

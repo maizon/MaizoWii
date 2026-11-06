@@ -187,12 +187,29 @@ def patch_wiimc(root: Path):
     # Keep the stock browser, mount logic and UI; change ONLY the unsafe
     # append to bounded, non-overlapping strcat calls. Its preceding
     # MAXPATHLEN check guarantees room for the two appends.
-    patch_file(root, "source/filebrowser.cpp",
-        lambda t: replace_once(
-            t, 'sprintf(browser.dir, "%s%s/",browser.dir, browser.selIndex->file);',
+    def wiimc_browser_guard(t):
+        t=replace_once(t, 'sprintf(browser.dir, "%s%s/",browser.dir, browser.selIndex->file);',
             'strcat(browser.dir, browser.selIndex->file);\n'
             '\t\t\tstrcat(browser.dir, "/");',
-            "WiiMC filesystem browser overlapping sprintf guard"))
+            "WiiMC filesystem browser overlapping sprintf guard")
+        t=replace_once(t,
+            'static int UpdateDirName()\n{\n\tif(!browser.first || !browser.selIndex)',
+            'static int UpdateDirName()\n{\n'
+            '\t/* Invalid device entry: do not dereference while mounting FAT. */\n'
+            '\tif(browser.selIndex && !browser.selIndex->file){\n'
+            '\t\tbrowser.dir[0]=0;\n'
+            '\t\tBrowserHistoryClear();\n'
+            '\t\treturn -1;\n'
+            '\t}\n'
+            '\tif(!browser.first || !browser.selIndex)',
+            "WiiMC browser null device entry guard")
+        t=replace_once(t,
+            'char *GetParentDir()\n{\n\tint size = strlen(browser.dir);',
+            'char *GetParentDir()\n{\n\tint size = strlen(browser.dir);\n'
+            '\tif(size==0){ parentdir[0]=0; return parentdir; }',
+            "WiiMC browser empty-parent underflow guard")
+        return t
+    patch_file(root, "source/filebrowser.cpp", wiimc_browser_guard)
     # Keep stock WiiMC playback, video, GUI, autoplay and MPlayer threads
     # byte-for-byte original. Only controller translation is changed.
     # Earlier versions altered these paths and crashed with DSI on real Wii.
@@ -473,6 +490,11 @@ def patch_wiimc(root: Path):
                             'strstr(path, "../") != NULL',
                             "WiiMC pointer comparison")
     patch_file(root, "source/fileop.cpp", fileop_compat)
+    patch_file(root, "source/fileop.cpp",
+        lambda t: replace_once(
+            t, "if(!file || file[strlen(file)-1] == '/')",
+            "if(!file || !*file || file[strlen(file)-1] == '/')",
+            "WiiMC empty media filename GetExt guard"))
 
     def vf_scale_compat(t):
         t = replace_once(t, "src2[1]= pal2;",
