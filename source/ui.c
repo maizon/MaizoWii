@@ -134,27 +134,29 @@ static void tab_halo(int center_x,int center_y){
 /* One icon for every platform, with a soft accent halo on selection.
  * Use the SAME pinned MZG1 console artwork as the home carousel.
  * Falls back to a short label only if icon assets are missing. */
+static int topbar_phase=0;
 static void topbar(const State*u,const Library*l,int hid){
  (void)l;(void)hid;
  static const char*codes[SYSTEM_COUNT]={
   "TWII","TGC","TPS1","TSNES","TNES","TGBA","TGB","TMEDIA","THB"
  };
- quad(0,0,640,62,0xff07090bu,0xff141b20u);
- label(25,23,"MAIZO",2.0f,ink);
- label(145,28,"L",1.1f,muted);
+ const int dy=(8-topbar_phase)*-6;
+ quad(0,0,640,(float)(62*topbar_phase)/8,0xff07090bu,0xff141b20u);
+ label(25,23+dy,"MAIZO",2.0f,ink);
+ label(145,28+dy,"L",1.1f,muted);
  for(int k=0;k<SYSTEM_COUNT;k++){
   float x=164+k*46;
   int selected=(int)u->system==k;
-  if(selected)tab_halo((int)x+22,31);
+  if(selected)tab_halo((int)x+22,31+dy);
   Game icon={0};icon.system=(System)k;
   snprintf(icon.id,sizeof(icon.id),"%s",codes[k]);
-  if(!cover_draw_icon(&icon,x+10,17,24,30)){
+  if(!cover_draw_icon(&icon,x+10,17+dy,24,30)){
    const char *name=sys_short[k];int n=(int)strlen(name);
    float z=n>3?0.78f:0.88f;
-   label(x+(44.0f-n*8.0f*z)*0.5f,28,name,z,selected?accent:ink);
+   label(x+(44.0f-n*8.0f*z)*0.5f,28+dy,name,z,selected?accent:ink);
   }
  }
- label(592,28,"R",1.1f,muted);
+ label(592,28+dy,"R",1.1f,muted);
 }
 static void footer(const State*u){
  rounded(19,446,602,26,surface);
@@ -583,7 +585,8 @@ void ui_draw(const State*u,const Library*l,const Config*c,int hid){
   break;
  }
  footer(u);
- if(u->in_system)topbar(u,l,hid);
+ if(u->in_system){if(topbar_phase<8)topbar_phase++;topbar(u,l,hid);}
+ else topbar_phase=0;
  maizo_video_present();
 }
 void ui_shutdown(void){maizo_video_shutdown();}
