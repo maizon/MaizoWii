@@ -54,9 +54,9 @@ static Cache*lookup(const Game*g,int allow_io){
  /* Prefer the same device as the ROM, then the alternate storage.
   * Scoped artwork avoids collisions between equally named systems.
   * Legacy flat folders are still accepted for existing users. */
- const char *first=!strncmp(g->path,"sd:/",4)?"sd":"usb";
- const char *other=!strcmp(first,"sd")?"usb":"sd";
- const char *devices[2]={first,other};
+ const char *preferred_device=!strncmp(g->path,"sd:/",4)?"sd":"usb";
+ const char *other=!strcmp(preferred_device,"sd")?"usb":"sd";
+ const char *devices[2]={preferred_device,other};
  for(int root=0;root<2&&!f;root++){
   const char *device=devices[root];
   for(int scoped=1;scoped>=0&&!f;scoped--){
