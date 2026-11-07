@@ -1075,7 +1075,8 @@ void WiiInputDriver::readChannel(int channel, InputPadData & pad) {
             'static GXRModeObj maizo_game_vi;\n'
             '\tmemcpy(&maizo_game_vi,rmode,sizeof(maizo_game_vi));\n'
             '\trmode=&maizo_game_vi;\n'
-            '\tif(maizo_game_force_vi704())maizo_video_adjust_vi(rmode,1);\n'
+            '\tif(maizo_game_force_vi704())\n'
+            '\t\tmaizo_video_adjust_vi(rmode,rmode->xfbHeight<=288);\n'
             '\tvideoDriver->setupVideoMode(rmode); // reconfigure VI',
             "NES/GBA game VI 704")
         return s
