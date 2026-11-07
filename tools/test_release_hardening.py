@@ -18,12 +18,15 @@ class FirstReleaseRegression(unittest.TestCase):
         self.assertIn("WiiMC browser empty-parent underflow guard",p)
         self.assertIn("WiiMC empty media filename GetExt guard",p)
         self.assertIn("WiiMC ORIGINAL 3.0 media engine retained",p)
-    def test_frontend_geometry_is_not_injected_into_game_profiles(self):
+    def test_global_crt_calibration_is_inherited_by_games(self):
         launch=src("source/launch.c")
-        self.assertIn("int x240=(int)c->game_x240-50;",launch)
-        self.assertIn("unsigned w480=c->game_w480;",launch)
-        self.assertNotIn("c->video_w*c->game_w480",launch)
-        self.assertNotIn("c->video_x+(int)c->game_x240",launch)
+        self.assertIn("int x240=(int)c->video_x-50+(int)c->game_x240-50;",launch)
+        self.assertIn("unsigned w480=c->video_w*c->game_w480/100u;",launch)
+        self.assertIn("int y=(int)c->video_y-50;",launch)
+        self.assertIn("n.VideoScale=(s8)scale",launch)
+        self.assertIn("n.VideoOffset=(s8)x",launch)
+        # The frontend VI TV standard is never exported blindly.
+        self.assertNotIn("frontend_video_mode=",launch)
     def test_nine_resident_icons_and_visible_selection_ring(self):
         ui=src("source/ui.c")
         cover=src("source/covers.c")
