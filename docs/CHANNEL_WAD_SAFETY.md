@@ -1,31 +1,5 @@
-# Canal Maizo Wii (WAD) — cuidado com a NAND
+# WAD padrao do MaizoWii
 
-O frontend principal fica em **sd:/apps/maizo/boot.dol** ou
-**usb:/apps/maizo/boot.dol**. O canal forwarder apenas procura esse executável.
-Este WAD destina-se ao **Wii original** e não ao vWii de Wii U.
+**Apenas** `Maizo-Frontend-MIZN-SD-USB.wad` (Title ID MIZN) e o canal autorizado pelo usuario. A copia enviada por ele foi inspecionada localmente com SHA-256 `048df39a5b4bbb4ba77da8ea1fc6066061d77fcdf712199e939aa38ed731e96c`, ID `00010001-4D495A4E`, IOS58 e tres conteudos. Nenhum teste em Wii fisico foi feito.
 
-O workflow de WAD experimental compila o forwarder, reutiliza layout de
-banner/ícone e animação do HBC-Reborn (não altera as dimensões do BRLYT),
-altera somente a textura do título para MAIZO, e empacota com WadPakk:
-- Title ID: `00010001-4D5A494F` (`MZIO`)
-- IOS de inicialização: 58
-- Tipo: canal de usuário, não altera System Menu ou IOS
-- Implementação: comex loader, depois DOL forwarder do Maizo
-- Teste automático: estrutura, Title ID, IOS58, quantidade de conteúdos
-- **Ainda não validado em Wii real ou em Dolphin com NAND do System Menu.**
-
-**Nunca é possível garantir "sem risco de brick" com um WAD gerado
-recentemente.** Banner inválido pode travar o Menu Wii permanentemente
-até recuperação. O verificador do WAD não detecta todos os erros visuais.
-
-**Antes de considerar instalação**, teste no Dolphin com NAND Wii Menu,
-verifique que Priiloader inicia segurando RESET ao ligar o Wii, mantenha
-backup da NAND feito pelo BootMii e um meio de executar o instalador pela
-recuperação. Se não possui controle compatível para navegar no YAWM ou
-no Priiloader, não instale. A ausência dessas condições bloqueia o ensaio
-no aparelho real. Não rode WADs de procedência duvidosa.
-
-Créditos: fonte base dos layouts do banner de
-[Monsterray/hbc-reborn](https://github.com/Monsterray/hbc-reborn), derivado
-do Homebrew Channel. Empacotador externo
-[davi-x86/WadPakk](https://github.com/davi-x86/WadPakk).
+O arquivo binario ainda NAO foi enviado ao GitHub; o workflow so o inclui quando o mesmo arquivo tiver sido adicionado em `channel/standard/`. Nunca gere canal alternativo MZIO, nunca instale WAD automaticamente e nao recomende instalar na NAND sem teste e backup recuperavel.

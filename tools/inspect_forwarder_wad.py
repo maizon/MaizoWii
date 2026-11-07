@@ -32,7 +32,7 @@ def verify(path):
     # and 0x18c in TMD. Their agreement prevents accidental title overwrite.
     ticket=data[offsets["tik"][0]:offsets["tik"][0]+tik]
     title=data[offsets["tmd"][0]:offsets["tmd"][0]+tmd]
-    expected=bytes.fromhex("000100014D5A494F") # 00010001-MZIO
+    expected=bytes.fromhex("000100014D495A4E") # 00010001-MIZN
     assert ticket[0x1dc:0x1e4]==expected, "Wrong ticket Title ID"
     assert title[0x18c:0x194]==expected, "Wrong TMD Title ID"
     # IOS58 is 0x00000001-0000003a. This must NOT overwrite it.
@@ -41,7 +41,9 @@ def verify(path):
     boot_index=struct.unpack_from(">H",title,0x1e0)[0]
     assert total_titles in (2,3),f"Unexpected number of contents {total_titles}"
     assert boot_index in range(total_titles),"Invalid boot index"
-    print(f"PASS WAD header, sections, title 00010001-MZIO, IOS58, {total_titles} contents, boot={boot_index}")
+    digest = hashlib.sha256(data).hexdigest()
+    assert digest == "048df39a5b4bbb4ba77da8ea1fc6066061d77fcdf712199e939aa38ed731e96c", "WAD nao corresponde ao padrao MIZN fornecido pelo usuario"
+    print(f"PASS WAD header, sections, title 00010001-MIZN, IOS58, {total_titles} contents, boot={boot_index}")
     print(f"SHA-256: {hashlib.sha256(data).hexdigest()}")
     print("NOT A GUARANTEE: test the channel in a Dolphin Wii NAND before installing.")
 

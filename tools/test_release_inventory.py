@@ -17,13 +17,13 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(len({x[1] for x in rows}),63)
         self.assertGreater(sum(x[2]!="implementado" for x in rows),0)
         self.assertIn("NÃO É UMA RELEASE",doc)
-    def test_only_prerelease_after_verified_bundle(self):
+    def test_one_package_not_duplicate_qa_zips(self):
         build=(ROOT/".github/workflows/build.yml").read_text()
-        self.assertIn("MAIZOWII-PREVIEW-USB-SD",build)
-        self.assertIn("gh release create v1.0.0-rc.1",build)
-        self.assertIn("--prerelease",build)
-        self.assertIn("needs.all-in-one.result == 'success'",build)
-        self.assertIn('manifest["installer"]["channel_wad_included"]=False',build)
-        self.assertIn("Unsafe WAD unexpectedly present in release",build)
+        self.assertIn("name: MAIZOWII-ALL-IN-ONE", build)
+        self.assertNotIn("MAIZOWII-QA-SAFE-NO-WAD",build)
+        self.assertNotIn("MAIZOWII-PREVIEW-USB-SD",build)
+        self.assertNotIn("-id MZIO",build)
+        self.assertIn("channel/standard/Maizo-Frontend-MIZN-SD-USB.wad",build)
+        self.assertIn("if: false",build)
 if __name__=="__main__":
     unittest.main()

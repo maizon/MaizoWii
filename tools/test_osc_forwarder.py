@@ -30,12 +30,15 @@ class OSCForwarderTests(unittest.TestCase):
         self.assertIn('fatMountSimple(name,disk)',source)
         self.assertNotIn("fatInitDefault(",source.replace(
             "/* Unlike fatInitDefault(),","/* Unlike default init"))
-    def test_wad_uses_explicit_replacement_name(self):
+    def test_only_approved_mizn_wad_is_allowed(self):
         w=(ROOT/".github/workflows/forwarder-wad.yml").read_text()
-        self.assertIn("MAIZOWII-FORWARDER-OSC-FIX94-v6-MZIO-EXPERIMENTAL.wad",w)
-        self.assertIn("-id MZIO",w)
-        self.assertIn("-ios 58",w)
-        self.assertIn("MAIZO FIX94-COMPAT FORWARDER v6",w)
+        build=(ROOT/".github/workflows/build.yml").read_text()
+        inspector=(ROOT/"tools/inspect_forwarder_wad.py").read_text()
+        self.assertIn("Maizo-Frontend-MIZN-SD-USB.wad",w)
+        self.assertIn("Maizo-Frontend-MIZN-SD-USB.wad",build)
+        self.assertNotIn("MZIO-EXPERIMENTAL.wad",w)
+        self.assertNotIn("-id MZIO",build)
+        self.assertIn("000100014D495A4E",inspector)
 
 if __name__=="__main__":
     unittest.main()

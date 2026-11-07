@@ -65,14 +65,16 @@ if manager:
     if manager["channel_wad_included"]:
         channel = manifest.get("channel")
         assert isinstance(channel, dict), "channel provenance missing"
-        assert channel.get("title_id") == "MZIO", "wrong channel title ID"
+        assert channel.get("title_id") == "MIZN", "wrong channel title ID"
         assert channel.get("ios") == 58, "unexpected channel IOS"
         assert channel.get("real_wii_verified") is False, "unverified Wii claim"
         rel = channel.get("path")
-        assert rel == "wad/MAIZOWII-FORWARDER-MZIO-EXPERIMENTAL.wad"
+        assert rel == "wad/Maizo-Frontend-MIZN-SD-USB.wad"
         wad = root / rel
         assert wad.is_file() and wad.stat().st_size >= 1024, "missing channel WAD"
-        assert hashlib.sha256(wad.read_bytes()).hexdigest() == channel.get("sha256"), "channel WAD SHA mismatch"
+        digest=hashlib.sha256(wad.read_bytes()).hexdigest()
+        assert digest == channel.get("sha256"), "channel WAD SHA mismatch"
+        assert digest == "048df39a5b4bbb4ba77da8ea1fc6066061d77fcdf712199e939aa38ed731e96c", "unapproved MIZN WAD"
     else:
         assert not list((root / "wad").glob("*.wad")), "untracked WAD in bundle"
     exe = root / "apps/maizo-installer/boot.dol"

@@ -32,7 +32,7 @@ int config_has_settings(void){
  struct stat st;
  return stat(p,&st)==0 || stat(backup,&st)==0;
 }
-void config_defaults(Config*c){memset(c,0,sizeof(*c));c->theme=4;c->layout=2;c->media_player=1;c->wii_ios=249;c->wii_usb_port=0;c->gc_memcard=1;c->gc_skip_ipl=1;c->ps1_audio=1;c->media_volume=75;c->gc_offset=20;c->media_autoboot=1;c->video_x=50;c->video_y=50;c->video_w=100;c->video_h=100;c->game_x240=c->game_x480=50;c->game_w240=c->game_w480=100;}
+void config_defaults(Config*c){memset(c,0,sizeof(*c));c->theme=4;c->layout=2;c->media_player=1;c->wii_ios=249;c->wii_usb_port=0;c->gc_memcard=1;c->gc_skip_ipl=1;c->ps1_audio=1;c->media_volume=75;c->gc_offset=20;c->media_autoboot=1;c->video_x=50;c->video_y=50;c->video_w=100;c->video_h=100;c->game_x240=c->game_x480=50;c->game_w240=c->game_w480=100;for(unsigned i=0;i<MAIZO_WIIMC_OPTION_COUNT;i++)c->wiimc_opts[i]=maizo_wiimc_options[i].default_value;}
 void config_load(Config*c){config_defaults(c);char p[80];snprintf(p,sizeof(p),"%s/settings.ini",where());FILE*f=fopen(p,"rb");if(!f){
   char backup[100];snprintf(backup,sizeof(backup),"%s.bak",p);
   f=fopen(backup,"rb");
@@ -41,6 +41,9 @@ void config_load(Config*c){config_defaults(c);char p[80];snprintf(p,sizeof(p),"%
  char key[64];unsigned val;
  while(fscanf(f," %63[^=]=%u",key,&val)==2) {
   if(!strcmp(key,"theme"))c->theme=val%6;
+  else if(!strcmp(key,"cover_source"))c->cover_source=val%3;
+  else if(!strcmp(key,"cover_art"))c->cover_art=val%3;
+  else if(!strcmp(key,"cover_region"))c->cover_region=val%5;
   else if(!strcmp(key,"wii_ios"))c->wii_ios=(val==58|| (val>=200&&val<=255))?val:249;
   else if(!strcmp(key,"wii_usb_port"))c->wii_usb_port=val>1?0:val;
   else if(!strcmp(key,"gc_mc_multi"))c->gc_mc_multi=!!val;
@@ -58,6 +61,7 @@ void config_load(Config*c){config_defaults(c);char p[80];snprintf(p,sizeof(p),"%
   else if(!strcmp(key,"media_volume"))c->media_volume=val>100?100:val;
   else if(!strcmp(key,"media_player"))c->media_player=val%2;
   else if(!strcmp(key,"media_autoboot"))c->media_autoboot=val%2;
+   else if(!strcmp(key,"wiimc_apply"))c->wiimc_apply=val%2;
   else if(!strcmp(key,"ps1_engine"))c->ps1_engine=val%2;
   else if(!strcmp(key,"ps1_native"))c->ps1_native=val%2;
   else if(!strcmp(key,"ps1_video"))c->ps1_video=val%4;
@@ -77,11 +81,20 @@ void config_load(Config*c){config_defaults(c);char p[80];snprintf(p,sizeof(p),"%
   else if(!strcmp(key,"video_y"))c->video_y=val<=100?val:50;
   else if(!strcmp(key,"video_w"))c->video_w=(val>=70&&val<=130)?val:100;
   else if(!strcmp(key,"video_h"))c->video_h=(val>=70&&val<=130)?val:100;
+   else if(!strncmp(key,"wiimc_",6)){
+    for(unsigned i=0;i<MAIZO_WIIMC_OPTION_COUNT;i++){
+     const MaizoWiiMCOption*o=&maizo_wiimc_options[i];
+     if(!strcmp(key+6,o->key)&&val>=o->min&&val<=o->max){c->wiimc_opts[i]=val;break;}
+    }
+   }
  }fclose(f);}
 int config_save(const Config*c){const char*root=where();mkdir(root,0777);
  char p[80],tmp[80];snprintf(p,sizeof(p),"%s/settings.ini",root);snprintf(tmp,sizeof(tmp),"%s/settings.tmp",root);FILE*f=fopen(tmp,"wb");if(!f)return 0;
  fprintf(f,"theme=%u\nlayout=%u\nwii_ios=%u\nwii_usb_port=%u\ngc_mc_multi=%u\ngc_native_si=%u\ngc_rem_limit=%u\ngc_memcard=%u\ngc_wide=%u\ngc_cheats=%u\ngc_skip_ipl=%u\ngc_video=%u\nps1_interpreter=%u\nps1_frameskip=%u\nps1_audio=%u\nmedia_volume=%u\nps1_engine=%u\nps1_native=%u\nps1_video=%u\nps1_aspect=%u\nps1_deflicker=%u\nps1_dither=%u\nps1_fps=%u\nps1_limit=%u\ngc_scale=%u\ngc_offset=%u\nvideo_x=%u\nvideo_y=%u\nvideo_w=%u\nvideo_h=%u\nfrontend_video_mode=%u\ngame_x240=%u\ngame_x480=%u\ngame_w240=%u\ngame_w480=%u\nmedia_player=%u\nmedia_autoboot=%u\n",
  c->theme,c->layout,c->wii_ios,c->wii_usb_port,c->gc_mc_multi,c->gc_native_si,c->gc_rem_limit,c->gc_memcard,c->gc_wide,c->gc_cheats,c->gc_skip_ipl,c->gc_video,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio,c->media_volume,c->ps1_engine,c->ps1_native,c->ps1_video,c->ps1_aspect,c->ps1_deflicker,c->ps1_dither,c->ps1_fps,c->ps1_limit,c->gc_scale,c->gc_offset,c->video_x,c->video_y,c->video_w,c->video_h,c->frontend_video_mode,c->game_x240,c->game_x480,c->game_w240,c->game_w480,c->media_player,c->media_autoboot);
+ if(fprintf(f,"cover_source=%u\ncover_art=%u\ncover_region=%u\nwiimc_apply=%u\n",c->cover_source,c->cover_art,c->cover_region,c->wiimc_apply)<0){fclose(f);remove(tmp);return 0;}
+ for(unsigned i=0;i<MAIZO_WIIMC_OPTION_COUNT;i++)
+  if(fprintf(f,"wiimc_%s=%u\n",maizo_wiimc_options[i].key,c->wiimc_opts[i])<0){fclose(f);remove(tmp);return 0;}
  if(fclose(f)){remove(tmp);return 0;}
  return commit_file(tmp,p);
 }
@@ -159,6 +172,13 @@ void config_game_load(Config*out,const Config*defaults,const Game*g){
    if(!strcmp(key,"media_volume")&&value<=100)out->media_volume=value;
    else if(!strcmp(key,"media_player"))out->media_player=value%2;
    else if(!strcmp(key,"media_autoboot"))out->media_autoboot=value%2;
+    else if(!strcmp(key,"wiimc_apply"))out->wiimc_apply=value%2;
+    else if(!strncmp(key,"wiimc_",6)){
+     for(unsigned i=0;i<MAIZO_WIIMC_OPTION_COUNT;i++){
+      const MaizoWiiMCOption*o=&maizo_wiimc_options[i];
+      if(!strcmp(key+6,o->key)&&value>=o->min&&value<=o->max){out->wiimc_opts[i]=value;break;}
+     }
+    }
   }
  }
  fclose(f);
@@ -193,10 +213,13 @@ int config_game_save(const Config*c,const Game*g){
     c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio,c->ps1_engine,c->ps1_native,c->ps1_video,c->ps1_aspect,c->ps1_deflicker,c->ps1_dither,c->ps1_fps,c->ps1_limit)>0;
    break;
   case SYSTEM_MEDIA:
-   ok &= fprintf(f,"media_volume=%u\nmedia_player=%u\nmedia_autoboot=%u\n",c->media_volume,c->media_player,c->media_autoboot)>0;
+   ok &= fprintf(f,"media_volume=%u\nmedia_player=%u\nmedia_autoboot=%u\nwiimc_apply=%u\n",c->media_volume,c->media_player,c->media_autoboot,c->wiimc_apply)>0;
    break;
   default:break;
  }
+ if(g->system==SYSTEM_MEDIA)
+  for(unsigned i=0;i<MAIZO_WIIMC_OPTION_COUNT;i++)
+   if(fprintf(f,"wiimc_%s=%u\n",maizo_wiimc_options[i].key,c->wiimc_opts[i])<0)ok=0;
  if(fclose(f)!=0)ok=0;
  if(!ok){remove(tmp);return 0;}
  /* Same-volume rename, never overwrite or create files outside /maizo. */
