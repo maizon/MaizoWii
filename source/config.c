@@ -32,7 +32,7 @@ int config_has_settings(void){
  struct stat st;
  return stat(p,&st)==0 || stat(backup,&st)==0;
 }
-void config_defaults(Config*c){memset(c,0,sizeof(*c));c->theme=4;c->layout=2;c->media_player=1;c->wii_ios=249;c->wii_usb_port=0;c->gc_memcard=1;c->gc_skip_ipl=1;c->ps1_audio=1;c->media_volume=75;c->gc_offset=20;c->media_autoboot=1;c->video_x=50;c->video_y=50;c->video_w=100;c->video_h=100;c->game_x240=c->game_x480=50;c->game_w240=c->game_w480=100;for(unsigned i=0;i<MAIZO_WIIMC_OPTION_COUNT;i++)c->wiimc_opts[i]=maizo_wiimc_options[i].default_value;}
+void config_defaults(Config*c){memset(c,0,sizeof(*c));c->theme=4;c->layout=2;c->media_player=1;c->wii_ios=249;c->wii_usb_port=0;c->gc_memcard=1;c->gc_skip_ipl=1;c->ps1_audio=1;c->media_volume=75;c->gc_offset=20;c->media_autoboot=1;c->video_x=50;c->video_y=50;c->video_w=100;c->video_h=100;c->game_x240=c->game_x480=50;c->game_w240=c->game_w480=100;c->force_vi704=0;for(unsigned i=0;i<MAIZO_WIIMC_OPTION_COUNT;i++)c->wiimc_opts[i]=maizo_wiimc_options[i].default_value;}
 void config_load(Config*c){config_defaults(c);char p[80];snprintf(p,sizeof(p),"%s/settings.ini",where());FILE*f=fopen(p,"rb");if(!f){
   char backup[100];snprintf(backup,sizeof(backup),"%s.bak",p);
   f=fopen(backup,"rb");
@@ -74,6 +74,7 @@ void config_load(Config*c){config_defaults(c);char p[80];snprintf(p,sizeof(p),"%
   else if(!strcmp(key,"gc_offset"))c->gc_offset=val<=40?val:20;
   else if(!strcmp(key,"video_x"))c->video_x=val<=100?val:50;
   else if(!strcmp(key,"frontend_video_mode"))c->frontend_video_mode=val<=2?val:0;
+  else if(!strcmp(key,"force_vi704"))c->force_vi704=!!val;
   else if(!strcmp(key,"game_x240"))c->game_x240=val<=100?val:50;
   else if(!strcmp(key,"game_x480"))c->game_x480=val<=100?val:50;
   else if(!strcmp(key,"game_w240"))c->game_w240=val>=70&&val<=130?val:100;
@@ -90,8 +91,8 @@ void config_load(Config*c){config_defaults(c);char p[80];snprintf(p,sizeof(p),"%
  }fclose(f);}
 int config_save(const Config*c){const char*root=where();mkdir(root,0777);
  char p[80],tmp[80];snprintf(p,sizeof(p),"%s/settings.ini",root);snprintf(tmp,sizeof(tmp),"%s/settings.tmp",root);FILE*f=fopen(tmp,"wb");if(!f)return 0;
- fprintf(f,"theme=%u\nlayout=%u\nwii_ios=%u\nwii_usb_port=%u\ngc_mc_multi=%u\ngc_native_si=%u\ngc_rem_limit=%u\ngc_memcard=%u\ngc_wide=%u\ngc_cheats=%u\ngc_skip_ipl=%u\ngc_video=%u\nps1_interpreter=%u\nps1_frameskip=%u\nps1_audio=%u\nmedia_volume=%u\nps1_engine=%u\nps1_native=%u\nps1_video=%u\nps1_aspect=%u\nps1_deflicker=%u\nps1_dither=%u\nps1_fps=%u\nps1_limit=%u\ngc_scale=%u\ngc_offset=%u\nvideo_x=%u\nvideo_y=%u\nvideo_w=%u\nvideo_h=%u\nfrontend_video_mode=%u\ngame_x240=%u\ngame_x480=%u\ngame_w240=%u\ngame_w480=%u\nmedia_player=%u\nmedia_autoboot=%u\n",
- c->theme,c->layout,c->wii_ios,c->wii_usb_port,c->gc_mc_multi,c->gc_native_si,c->gc_rem_limit,c->gc_memcard,c->gc_wide,c->gc_cheats,c->gc_skip_ipl,c->gc_video,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio,c->media_volume,c->ps1_engine,c->ps1_native,c->ps1_video,c->ps1_aspect,c->ps1_deflicker,c->ps1_dither,c->ps1_fps,c->ps1_limit,c->gc_scale,c->gc_offset,c->video_x,c->video_y,c->video_w,c->video_h,c->frontend_video_mode,c->game_x240,c->game_x480,c->game_w240,c->game_w480,c->media_player,c->media_autoboot);
+ fprintf(f,"theme=%u\nlayout=%u\nwii_ios=%u\nwii_usb_port=%u\ngc_mc_multi=%u\ngc_native_si=%u\ngc_rem_limit=%u\ngc_memcard=%u\ngc_wide=%u\ngc_cheats=%u\ngc_skip_ipl=%u\ngc_video=%u\nps1_interpreter=%u\nps1_frameskip=%u\nps1_audio=%u\nmedia_volume=%u\nps1_engine=%u\nps1_native=%u\nps1_video=%u\nps1_aspect=%u\nps1_deflicker=%u\nps1_dither=%u\nps1_fps=%u\nps1_limit=%u\ngc_scale=%u\ngc_offset=%u\nvideo_x=%u\nvideo_y=%u\nvideo_w=%u\nvideo_h=%u\nfrontend_video_mode=%u\ngame_x240=%u\ngame_x480=%u\ngame_w240=%u\ngame_w480=%u\nmedia_player=%u\nmedia_autoboot=%u\nforce_vi704=%u\n",
+ c->theme,c->layout,c->wii_ios,c->wii_usb_port,c->gc_mc_multi,c->gc_native_si,c->gc_rem_limit,c->gc_memcard,c->gc_wide,c->gc_cheats,c->gc_skip_ipl,c->gc_video,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio,c->media_volume,c->ps1_engine,c->ps1_native,c->ps1_video,c->ps1_aspect,c->ps1_deflicker,c->ps1_dither,c->ps1_fps,c->ps1_limit,c->gc_scale,c->gc_offset,c->video_x,c->video_y,c->video_w,c->video_h,c->frontend_video_mode,c->game_x240,c->game_x480,c->game_w240,c->game_w480,c->media_player,c->media_autoboot,c->force_vi704);
  if(fprintf(f,"cover_source=%u\ncover_art=%u\ncover_region=%u\nwiimc_apply=%u\n",c->cover_source,c->cover_art,c->cover_region,c->wiimc_apply)<0){fclose(f);remove(tmp);return 0;}
  for(unsigned i=0;i<MAIZO_WIIMC_OPTION_COUNT;i++)
   if(fprintf(f,"wiimc_%s=%u\n",maizo_wiimc_options[i].key,c->wiimc_opts[i])<0){fclose(f);remove(tmp);return 0;}

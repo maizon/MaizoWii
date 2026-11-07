@@ -130,7 +130,7 @@ static int save_nincfg(const Game*g,const Config*c,NIN_CFG *out) {
   * calibrated frontend width is inherited when the user enlarges it.
   * Shrinking below 640 is NOT supported by this Nintendont mechanism. */
  unsigned width_pct=c->video_w*c->game_w480/100u;
- int scale=(c->gc_scale>=40&&c->gc_scale<=120)?(int)c->gc_scale:0;
+ int scale=c->force_vi704?104:((c->gc_scale>=40&&c->gc_scale<=120)?(int)c->gc_scale:0);
  if(!scale&&width_pct>100u){
   scale=40+(int)(width_pct-100u)*4;
   if(scale>120)scale=120;
@@ -184,10 +184,10 @@ static void save_launch_record(const Game*g,const Config*c) {
  "media_volume=%u\nps1_interpreter=%u\nps1_frameskip=%u\n"
  "ps1_audio=%u\nps1_engine=%u\nps1_native=%u\n"
  "game_x240=%d\ngame_x480=%d\ngame_y240=%d\ngame_y480=%d\n"
- "game_w240=%u\ngame_w480=%u\ngame_h240=%u\ngame_h480=%u\n",
+ "game_w240=%u\ngame_w480=%u\ngame_h240=%u\ngame_h480=%u\nforce_vi704=%u\n",
  g->system,g->path,module_name(g->system),
  c->media_volume,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio,c->ps1_engine,c->ps1_native,
- x240,x480,y,y,w240,w480,h,h);
+ x240,x480,y,y,w240,w480,h,h,c->force_vi704?1u:0u);
  if(g->system==SYSTEM_MEDIA&&c->wiimc_apply){
   fprintf(f,"wiimc_apply=1\n");
   for(unsigned i=0;i<MAIZO_WIIMC_OPTION_COUNT;i++)

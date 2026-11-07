@@ -174,7 +174,11 @@ static void option_change(int dir){
  if(state.settings_for_game && state.settings_row<2)return;
  Config*active=state.settings_for_game?&state.game_config:&config;
  if(settings_change(active,scope,state.settings_row,dir) &&
-    !state.settings_for_game)config_save(&config);
+    !state.settings_for_game){
+   if(scope==SYSTEM_COUNT && state.settings_row==2)
+    maizo_video_force_vi704(config.force_vi704);
+   config_save(&config);
+  }
 }
 static void adjust_calibration(int dir){
  unsigned *p=NULL,low=0,high=100,step=1;
@@ -437,6 +441,7 @@ int main(int argc,char**argv){
   (storage_usb?"USB MONTADO - CARREGANDO DADOS":"SD MONTADO - CARREGANDO DADOS"):
   "ERRO USB E SD - REINSIRA, START/SELECT REVER");
  config_load(&config);
+ maizo_video_force_vi704(config.force_vi704);
  maizo_video_frontend_select(config.frontend_video_mode);
  maizo_video_set_calibration((int)config.video_x-50,(int)config.video_y-50,config.video_w,config.video_h);
  memset(&state,0,sizeof(state));

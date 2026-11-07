@@ -44,7 +44,7 @@ const MaizoWiiMCOption maizo_wiimc_options[MAIZO_WIIMC_OPTION_COUNT]={
  * The separate calibration screen modifies only the MAIZO frontend UI.
  * Do not imply that arbitrary DOLs consume frontend-only geometry. */
 int settings_count(System s){
- switch(s){case SYSTEM_COUNT:return 5;case SYSTEM_WII:return 7;case SYSTEM_GC:return 15;
+ switch(s){case SYSTEM_COUNT:return 6;case SYSTEM_WII:return 7;case SYSTEM_GC:return 15;
  case SYSTEM_PS1:return 20;case SYSTEM_SNES:return 9;
  case SYSTEM_MEDIA:return 8+MAIZO_WIIMC_OPTION_COUNT;default:return 5;}
 }
@@ -53,6 +53,7 @@ const char*settings_label(System s,int row){
  if(s==SYSTEM_MEDIA&&row>=5&&row<5+MAIZO_WIIMC_OPTION_COUNT)
   return maizo_wiimc_options[row-5].label;
  if(row==1)return "MODO DA BIBLIOTECA";
+ if(s==SYSTEM_COUNT&&row==2)return "FORCAR VI 704 - MODULOS COMPATIVEIS";
  if(row==settings_count(s)-1)return "VOLTAR";
  if(row==settings_count(s)-2)return "CALIBRAR TELA MAIZO";
  if(row==settings_count(s)-3)return s==SYSTEM_MEDIA||s==SYSTEM_HB?"REINDEXAR BIBLIOTECA":"GERENCIAR CAPAS";
@@ -74,6 +75,7 @@ const char*settings_label(System s,int row){
 }
 static unsigned get(const Config*c,System s,int row){
  if(row==0)return c->theme;if(row==1)return c->layout;
+ if(s==SYSTEM_COUNT&&row==2)return c->force_vi704;
  if(s==SYSTEM_WII)return row==2?c->wii_ios:c->wii_usb_port;
  if(s==SYSTEM_GC)switch(row){
  case 2:return c->gc_memcard;case 3:return c->gc_wide;
@@ -120,6 +122,7 @@ void settings_value(const Config*c,System s,int row,char*dest,size_t cap){
  }
  if(row==0){const char*themes[]={"VIOLETA","TURQUESA","CORAL","GRAFITE","OLED","CLASSICO"};snprintf(dest,cap,"%s",themes[v%6]);return;}
  if(row==1){const char *layouts[]={"GRADE","LISTA","CARROSSEL"};snprintf(dest,cap,"%s",layouts[v%3]);return;}
+ if(s==SYSTEM_COUNT&&row==2){snprintf(dest,cap,"%s",v?"LIGADO":"DESLIGADO");return;}
  if(s==SYSTEM_WII){if(row==2)snprintf(dest,cap,"IOS %u",v);
   else snprintf(dest,cap,"USB %u",v);return;}
  if(s==SYSTEM_GC){
@@ -142,6 +145,7 @@ void settings_value(const Config*c,System s,int row,char*dest,size_t cap){
 }
 int settings_change(Config*c,System s,int row,int dir){
  if(row>=settings_count(s)-3||row<0)return 0;
+ if(s==SYSTEM_COUNT&&row==2){c->force_vi704=!c->force_vi704;return 1;}
  if((s==SYSTEM_SNES||s==SYSTEM_PS1)&&row>=settings_count(s)-7&&row<settings_count(s)-3){
   unsigned *p=row==settings_count(s)-7?&c->game_x240:row==settings_count(s)-6?&c->game_x480:
              row==settings_count(s)-5?&c->game_w240:&c->game_w480;
@@ -197,6 +201,7 @@ int settings_change(Config*c,System s,int row,int dir){
 
 /* Category headers reflect actual supported parameters, not fake sliders. */
 const char*settings_category(System s,int row){
+ if(s==SYSTEM_COUNT&&row==2)return "VIDEO CRT GLOBAL";
  if(row==0||row==1)return "APARENCIA";
  if(row>=settings_count(s)-3)return "GERAL";
  if((s==SYSTEM_SNES||s==SYSTEM_PS1)&&row>=settings_count(s)-7&&row<settings_count(s)-3)return "VIDEO JOGO";

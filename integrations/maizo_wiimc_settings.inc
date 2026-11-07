@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+/* Defined in the adapted WiiMC video.cpp; never modifies the system VI. */
+void MaizoForceVI704(int enabled);
 static const char *const maizo_wiimc_keys[]={
  "videoZoomHor",
  "videoZoomVert",
@@ -54,7 +56,7 @@ static void maizo_wiimc_apply_profile(void){
   if(!f)continue;
   char line[256]={0};
   if(!fgets(line,sizeof(line),f)||strncmp(line,"MAIZO-LAUNCH/3",14)){fclose(f);continue;}
-  int correct_system=0,correct_device=0,enabled=0,volume=-1;
+  int correct_system=0,correct_device=0,enabled=0,force704=0,volume=-1;
   int values[35]={0},found[35]={0};
   while(fgets(line,sizeof(line),f)){
    if(!strncmp(line,"system=",7))correct_system=atoi(line+7)==7;
@@ -63,6 +65,7 @@ static void maizo_wiimc_apply_profile(void){
                    (root==1&&!strncmp(line+5,"sd:/",4));
    }
    else if(!strncmp(line,"wiimc_apply=",12))enabled=atoi(line+12)==1;
+   else if(!strncmp(line,"force_vi704=",12))force704=atoi(line+12)==1;
    else if(!strncmp(line,"media_volume=",13)){
     int v=atoi(line+13);if(v>=0&&v<=100)volume=v;
    }else if(!strncmp(line,"wiimc_",6)){
@@ -75,7 +78,9 @@ static void maizo_wiimc_apply_profile(void){
    }
   }
   fclose(f);
-  if(!correct_system||!correct_device||!enabled)continue;
+  if(!correct_system||!correct_device)continue;
+  if(force704)MaizoForceVI704(1);
+  if(!enabled)break;
   if(volume>=0)WiiSettings.volume=volume;
   if(found[0]){int v=values[0];WiiSettings.videoZoomHor=v/100.0f;}
   if(found[1]){int v=values[1];WiiSettings.videoZoomVert=v/100.0f;}
