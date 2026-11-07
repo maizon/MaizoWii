@@ -467,8 +467,8 @@ static void downloads_ui(void){
  label(38,417,d.active?"B INTERROMPER DOWNLOAD":"A OU B VOLTAR",1.0f,ink);
 }
 static void calibration_ui(const State*u,const Config*c){
- label(38,83,"CALIBRACAO DO FRONTEND",1.56f,ink);
- clipped(38,111,"VI HORIZONTAL + AJUSTE DE CONTEUDO; NAO ALTERA EMULADORES",0.94f,muted,77);
+ label(38,83,"CALIBRACAO DE VIDEO CRT",1.56f,ink);
+ clipped(38,111,"VI 704 EM GERAIS: MODULOS ADAPTADOS; NAO QUALQUER HOMEBREW",0.94f,muted,77);
  const char*names[]={"CENTRO HORIZONTAL","CENTRO VERTICAL","LARGURA / VI","ALTURA DO CONTEUDO","MODO VIDEO SO FRONTEND","RESTAURAR PADRAO","SALVAR E VOLTAR"};
  const int vals[]={((int)c->video_x-50),((int)c->video_y-50),
                    (int)c->video_w,(int)c->video_h};

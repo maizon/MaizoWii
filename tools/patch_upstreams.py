@@ -97,6 +97,30 @@ def patch_wiimc(root: Path):
             "WiiMC apply Maizo options after XML load")
         return t
     patch_file(root, "source/settings.cpp", wiimc_settings)
+    def wiimc_vi704(s):
+        marker='GXRModeObj *vmode; // Menu video mode'
+        insertion='''GXRModeObj *vmode; // Menu video mode
+static bool maizo_vi704_active=false;
+static void maizo_apply_video_width(void){
+    if(!maizo_vi704_active || !vmode)return;
+    vmode->viWidth=704;
+    vmode->viXOrigin=8;
+}
+void MaizoForceVI704(int enabled){
+    maizo_vi704_active=enabled==1;
+    if(maizo_vi704_active&&vmode){
+        maizo_apply_video_width();
+        VIDEO_Configure(vmode);
+        VIDEO_Flush();
+    }
+}
+'''
+        s=replace_once(s,marker,insertion,"WiiMC VI helper")
+        # Internal mode transitions must retain the forced 704 VI window.
+        s=s.replace('VIDEO_Configure(vmode);',
+          'maizo_apply_video_width();\n\tVIDEO_Configure(vmode);')
+        return s
+    patch_file(root,"source/video.cpp",wiimc_vi704)
     # Libretro's old libogc/newlib runtime bridge; needed for the matched
     # precompiled WiiMC player to use memory, threads and FAT on GCC 2026.
     shutil.copyfile(SOURCE.parent / "wiimc_syscalls_compat.c",
@@ -686,6 +710,43 @@ static int maizo_ftp_fstat(struct _reent*r,void*fd,struct stat*st){
 
 def patch_usbloader(root: Path):
     install_inc(root, "source")
+    shutil.copyfile(SOURCE.parent / "maizo_wii_vi704.inc",
+                    root / "source/patches/maizo_wii_vi704.inc")
+    shutil.copyfile(SOURCE.parent / "maizo_usbloader_menu_vi704.inc",
+                    root / "source/maizo_usbloader_menu_vi704.inc")
+    def wii_menu_video(t):
+        t=replace_once(t,'#include "gecko.h"',
+          '#include "gecko.h"\n#include "maizo_usbloader_menu_vi704.inc"',
+          "USB Loader GX VI menu helper")
+        mark='static void ResetVideo_Menu()'
+        start=t.index(mark)
+        end=t.index('void InitVideo()',start)
+        chunk=t[start:end]
+        before='\tVIDEO_Configure(vmode);'
+        if chunk.count(before)!=1:raise ValueError("USB GX menu VI call changed")
+        chunk=chunk.replace(before,
+            '\tif(maizo_loader_menu_vi704_requested()){\n'
+            '\t\tvmode->viWidth=704;vmode->viXOrigin=8;\n'
+            '\t}\n\tVIDEO_Configure(vmode);',1)
+        return t[:start]+chunk+t[end:]
+    patch_file(root,"source/video.cpp",wii_menu_video)
+    def wii_game_modes(s):
+        s=replace_once(s,
+            'extern GXRModeObj *rmode;',
+            'extern GXRModeObj *rmode;\n'
+            'static void maizo_patch_game_vi704(u8 *dst,int len);\n'
+            'static int maizo_wii_vi704_requested(void);',
+            "USB Loader GX VI scan declaration")
+        s=replace_once(s,'VideoModePatcher(dst, len, videoSelected, videoPatchDol);',
+            'VideoModePatcher(dst, len, videoSelected, videoPatchDol);\n'
+            '        if(maizo_wii_vi704_requested())maizo_patch_game_vi704(dst,len);',
+            "USB Loader GX 704 game video patch")
+        s=replace_once(s,'static bool compare_videomodes_rvl(GXRModeObj *mode1, GXRModeObjRVL *mode2)',
+           '#include "maizo_wii_vi704.inc"\n'
+           'static bool compare_videomodes_rvl(GXRModeObj *mode1, GXRModeObjRVL *mode2)',
+           "Wii game VI matching helper")
+        return s
+    patch_file(root,"source/patches/gamepatches.c",wii_game_modes)
     def change(s):
         s = replace_once(s,'#include "input.h"', '#include "input.h"\n#include "maizo_hid.inc"', "USBLoader")
         s = fix_pad_update(s, "\tWPAD_ScanPads();\n\tPAD_ScanPads();", False)
@@ -981,7 +1042,29 @@ static uint32_t MaizoHidToGeneric(uint32_t b) {
 }
 '''
 
+def patch_gx_vi704(root: Path):
+    """Optional 704 VI window for GX menus and game renderers.
+    Preserve fbWidth, vertical timing and 240p line count.
+    """
+    install_game_video(root, "source/drivers/ogc")
+    def driver(s):
+        s=replace_once(s,'#include "OgcVideoDriver.h"',
+            '#include "OgcVideoDriver.h"\n#include "maizo_game_video.inc"',
+            "GX menu VI 704 include")
+        a=s.index('GXRModeObj* OgcVideoDriver::findVideoMode()')
+        b=s.index('void OgcVideoDriver::startMenuVideo()',a)
+        original=s[a:b]
+        probe='\treturn mode;'
+        if original.count(probe)!=1:
+            raise ValueError("GX findVideoMode final return not found exactly once")
+        revised=original.replace(probe,
+            '\tif(maizo_game_force_vi704())maizo_video_adjust_vi(mode,0);\n'
+            '\treturn mode;',1)
+        return s[:a]+revised+s[b:]
+    patch_file(root,"source/drivers/ogc/OgcVideoDriver.cpp",driver)
+
 def patch_gx(root: Path):
+    patch_gx_vi704(root)
     install_inc(root,"source/drivers/ogc/wii")
     def change(s):
         s=replace_once(s,'#include "WiiInputDriver.h"',
@@ -1002,8 +1085,23 @@ void WiiInputDriver::readChannel(int channel, InputPadData & pad) {
 '''
         return replace_once(s, marker, inject, "GX channel")
     patch_file(root,"source/drivers/ogc/wii/WiiInputDriver.cpp", change)
+    def nes_gba_video(s):
+        s=replace_once(s,'#include "OgcEmulatorVideo.h"',
+             '#include "OgcEmulatorVideo.h"\n#include "maizo_game_video.inc"',
+             "NES/GBA gameplay VI")
+        s=replace_once(s,'videoDriver->setupVideoMode(rmode); // reconfigure VI',
+            'static GXRModeObj maizo_game_vi;\n'
+            '\tmemcpy(&maizo_game_vi,rmode,sizeof(maizo_game_vi));\n'
+            '\trmode=&maizo_game_vi;\n'
+            '\tif(maizo_game_force_vi704())\n'
+            '\t\tmaizo_video_adjust_vi(rmode,rmode->xfbHeight<=288);\n'
+            '\tvideoDriver->setupVideoMode(rmode); // reconfigure VI',
+            "NES/GBA game VI 704")
+        return s
+    patch_file(root,"source/drivers/ogc/OgcEmulatorVideo.cpp",nes_gba_video)
 
 def patch_snes(root: Path):
+    patch_gx_vi704(root)
     install_inc(root,"source/drivers/ogc/wii/input")
     def change(s):
         s=replace_once(s,'#include "usbinput.h"', '#include "usbinput.h"\n#include "maizo_hid.inc"', "SNES")
@@ -1034,6 +1132,8 @@ def patch_snes(root: Path):
           '\trmode=&maizo_game_vi;\n'
           '\tif(EmuSettings.videoMode == VIDEOMODE_ORIGINAL_240P)\n'
           '\t\tmaizo_video_adjust_vi(rmode,1);\n'
+          '\telse if(maizo_game_force_vi704())\n'
+          '\t\tmaizo_video_adjust_vi(rmode,0);\n'
           '\tvideoDriver->setupVideoMode(rmode); // reconfigure VI',
           "SNES centered hardware VI for 240p")
         s=replace_once(s,'xscale *= EmuSettings.videoZoomHor;',

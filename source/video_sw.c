@@ -18,6 +18,7 @@ static void *buffers[2];
 static int back=0, visible=0;
 static int cal_x=0,cal_y=0;
 static unsigned cal_w=100,cal_h=100;
+static int force_vi704=0;
 static void apply_vi_geometry(void);
 /* Frontend output only. Other DOLs reconfigure the VI on their own. */
 int maizo_video_frontend_select(unsigned selection){
@@ -45,7 +46,7 @@ int maizo_video_frontend_select(unsigned selection){
  * Other DOLs reconfigure VI themselves and are NOT affected. */
 static void apply_vi_geometry(void){
  if(!mode)return;
- unsigned width=original_vi_width*cal_w/100u;
+ unsigned width=force_vi704?704u:original_vi_width*cal_w/100u;
  if(width<512u)width=512u;
  if(width>704u)width=704u; /* <= Wii VI 720 active-pixel ceiling */
  int center=(int)original_vi_x+(int)original_vi_width/2;
@@ -56,6 +57,10 @@ static void apply_vi_geometry(void){
  mode->viXOrigin=(u16)x;
  VIDEO_Configure(mode);
  VIDEO_Flush();
+}
+void maizo_video_force_vi704(int enabled){
+ force_vi704=!!enabled;
+ apply_vi_geometry();
 }
 void maizo_video_set_calibration(int x,int y,unsigned w,unsigned h){
  cal_x=x<-50?-50:x>50?50:x;
