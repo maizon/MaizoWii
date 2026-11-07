@@ -38,6 +38,8 @@ class Force704Tests(unittest.TestCase):
         self.assertIn("MaizoForceVI704",code("integrations/maizo_wiimc_settings.inc"))
         self.assertIn('maizo_patch_game_vi704(dst,len)',patch)
         self.assertIn("GXRModeObjRVL",code("integrations/maizo_wii_vi704.inc"))
+        self.assertIn("maizo_usbloader_menu_vi704.inc",patch)
+        self.assertIn("maizo_loader_menu_vi704_requested()",patch)
     def test_untouched_unadapted_modules(self):
         doc=code("docs/CRT_VI704.md")
         self.assertIn("não",doc.lower())

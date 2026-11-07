@@ -712,6 +712,24 @@ def patch_usbloader(root: Path):
     install_inc(root, "source")
     shutil.copyfile(SOURCE.parent / "maizo_wii_vi704.inc",
                     root / "source/patches/maizo_wii_vi704.inc")
+    shutil.copyfile(SOURCE.parent / "maizo_usbloader_menu_vi704.inc",
+                    root / "source/maizo_usbloader_menu_vi704.inc")
+    def wii_menu_video(t):
+        t=replace_once(t,'#include "gecko.h"',
+          '#include "gecko.h"\n#include "maizo_usbloader_menu_vi704.inc"',
+          "USB Loader GX VI menu helper")
+        mark='static void ResetVideo_Menu()'
+        start=t.index(mark)
+        end=t.index('void InitVideo()',start)
+        chunk=t[start:end]
+        before='\tVIDEO_Configure(vmode);'
+        if chunk.count(before)!=1:raise ValueError("USB GX menu VI call changed")
+        chunk=chunk.replace(before,
+            '\tif(maizo_loader_menu_vi704_requested()){\n'
+            '\t\tvmode->viWidth=704;vmode->viXOrigin=8;\n'
+            '\t}\n\tVIDEO_Configure(vmode);',1)
+        return t[:start]+chunk+t[end:]
+    patch_file(root,"source/video.cpp",wii_menu_video)
     def wii_game_modes(s):
         s=replace_once(s,
             'extern GXRModeObj *rmode;',

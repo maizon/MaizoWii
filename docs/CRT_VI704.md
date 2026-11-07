@@ -23,7 +23,7 @@ janela horizontal VI passa a 704 amostras. O 480i mantém sua cadência.
   do registro; algumas rotas antigas do motor podem ignorar ajustes.
 - WiiMC-SSLC adaptado: aplica 704 após montar armazenamento e ler perfil,
   inclusive após mudanças internas de modo de vídeo. WiiMC oficial não.
-- USB Loader GX adaptado: faz patch **best effort** das estruturas
+- USB Loader GX adaptado: tenta configurar a propria interface em 704 nos\n  pontos de reinicializacao de video quando o arquivo do Maizo esta acessivel.\n  Tambem faz patch **best effort** das estruturas
   GXRModeObjRVL reconhecidas no DOL dos jogos Wii, somente quando o
   usuário habilita a opção. Jogos que geram modos dinamicamente ou não
   usam essas estruturas podem ignorar; patch em memória ainda exige
