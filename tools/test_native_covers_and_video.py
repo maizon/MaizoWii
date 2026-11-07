@@ -10,10 +10,10 @@ def read(path):
 class NativeCoverAndVideoTests(unittest.TestCase):
     def test_covers_cover_every_game_platform_without_modifying_games(self):
         downloader=read("source/cover_download.c")
-        for provider in ("art.gametdb.com", "libretro-thumbnails",
-                         "Sony_-_PlayStation","Nintendo_-_Super_Nintendo_Entertainment_System",
-                         "Nintendo_-_Nintendo_Entertainment_System",
-                         "Nintendo_-_Game_Boy_Advance", "Nintendo_-_Game_Boy_Color"):
+        for provider in ("art.gametdb.com", "thumbnails.libretro.com",
+                         "Sony - PlayStation","Nintendo - Super Nintendo Entertainment System",
+                         "Nintendo - Nintendo Entertainment System",
+                         "Nintendo - Game Boy Advance", "Nintendo - Game Boy Color"):
             self.assertIn(provider,downloader)
         self.assertIn("png_image_finish_read",downloader)
         self.assertIn("ART_WIDTH 128",downloader)
@@ -21,8 +21,8 @@ class NativeCoverAndVideoTests(unittest.TestCase):
         self.assertIn("CURLOPT_SSL_VERIFYPEER,1L",downloader)
         self.assertIn("CURLOPT_SSL_VERIFYHOST,2L",downloader)
         self.assertNotIn("system(",downloader)
-        self.assertIn("cover_forget(g)",downloader)
-        self.assertIn("cover_on_disk(g)",downloader)
+        self.assertIn("cover_forget(&current_game)",downloader)
+        self.assertIn("cover_on_disk(&current_game)",downloader)
         self.assertIn("maizo_cover_download_step(&library_state)",read("source/main.c"))
         self.assertNotIn("fetch_png(",read("source/ui.c"))
 

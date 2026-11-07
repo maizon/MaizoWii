@@ -22,6 +22,112 @@ static const struct { System system;const char *path; } roots[]={
  {SYSTEM_MEDIA,"usb:/media"},{SYSTEM_MEDIA,"sd:/media"},
   {SYSTEM_HB,"sd:/apps"},{SYSTEM_HB,"usb:/apps"}
 };
+/* The GameTDB Wii/GC ID->title index is shipped locally. Load it once on
+ * library reindex and release memory after sorting; never read it in UI. */
+typedef struct {char id[7],title[112];} OfficialTitle;
+static OfficialTitle *titles=NULL;static size_t title_count=0;
+typedef struct {System sys;char key[112],title[112],region[12];unsigned short year;} LocalTitle;
+static LocalTitle *local_titles=NULL;static size_t local_count=0;
+static int by_id(const void*a,const void*b){
+ return strncmp(((const OfficialTitle*)a)->id,((const OfficialTitle*)b)->id,6);
+}
+static void metadata_end(void){
+ free(titles);titles=NULL;title_count=0;
+ free(local_titles);local_titles=NULL;local_count=0;
+}
+static void metadata_begin(void){
+ metadata_end();
+ const char *paths[]={
+  "usb:/maizo/database/wiitdb-en.txt",
+  "sd:/maizo/database/wiitdb-en.txt"
+ };
+ FILE *f=NULL;
+ for(unsigned i=0;i<sizeof(paths)/sizeof(paths[0])&&!f;i++)f=fopen(paths[i],"rb");
+ if(f){
+ const size_t max_titles=13000;
+ titles=(OfficialTitle*)calloc(max_titles,sizeof(*titles));
+ if(titles){
+ char line[320];
+ while(fgets(line,sizeof(line),f) && title_count<max_titles){
+  if(strlen(line)<10||line[6]!=' '||line[7]!='='||line[8]!=' ')continue;
+  int valid=1;for(int i=0;i<6;i++)if(!isalnum((unsigned char)line[i]))valid=0;
+  if(!valid)continue;
+  OfficialTitle *t=&titles[title_count];
+  memcpy(t->id,line,6);t->id[6]=0;
+  char *label=line+9;label[strcspn(label,"\r\n")]=0;
+  if(!*label)continue;
+  snprintf(t->title,sizeof(t->title),"%s",label);
+  title_count++;
+ }
+ }
+ fclose(f);
+ }
+ if(titles)qsort(titles,title_count,sizeof(*titles),by_id);
+ /* Optional strict per-system aliases generated from No-Intro/Redump XML
+  * outside the Wii. No fuzzy matching or large ROM hashing on console. */
+ const char *alias_paths[]={"usb:/maizo/database/titles.tsv",
+                           "sd:/maizo/database/titles.tsv"};
+ FILE*alias=NULL;
+ for(unsigned j=0;j<2&&!alias;j++)alias=fopen(alias_paths[j],"rb");
+ if(alias){
+  const size_t max_aliases=3000;
+  local_titles=(LocalTitle*)calloc(max_aliases,sizeof(*local_titles));
+  if(local_titles){
+   char row[384];
+   while(fgets(row,sizeof(row),alias) && local_count<max_aliases){
+    if(row[0]=='#'||row[0]=='\n')continue;
+    char *save=NULL;
+    char *sys=strtok_r(row,"\t\r\n",&save);
+    char *key=strtok_r(NULL,"\t\r\n",&save);
+    char *title=strtok_r(NULL,"\t\r\n",&save);
+    char *year=strtok_r(NULL,"\t\r\n",&save);
+    char *region=strtok_r(NULL,"\t\r\n",&save);
+    if(!sys||!key||!title||!key[0]||!title[0])continue;
+    static const char*systems[]={"WII","GC","PS1","SNES","NES","GBA","GB"};
+    for(int system=0;system<7;system++)if(!strcmp(sys,systems[system])){
+     LocalTitle*entry=&local_titles[local_count++];
+     entry->sys=(System)system;
+     snprintf(entry->key,sizeof(entry->key),"%s",key);
+     snprintf(entry->title,sizeof(entry->title),"%s",title);
+     if(year){
+      unsigned y=(unsigned)strtoul(year,NULL,10);
+      if(y>=1970&&y<=2100)entry->year=(unsigned short)y;
+     }
+     if(region)snprintf(entry->region,sizeof(entry->region),"%s",region);
+     break;
+    }
+   }
+  }
+  fclose(alias);
+ }
+}
+static const char *official_title(const char *id){
+ if(!titles||strlen(id)!=6)return NULL;
+ OfficialTitle key={0};memcpy(key.id,id,6);
+ OfficialTitle *found=bsearch(&key,titles,title_count,sizeof(*titles),by_id);
+ return found?found->title:NULL;
+}
+static void metadata_apply(Game*g){
+ const char*official=NULL;
+ if((g->system==SYSTEM_WII||g->system==SYSTEM_GC)&&strlen(g->id)==6){
+  official=official_title(g->id);
+  if(official)snprintf(g->name,sizeof(g->name),"%s",official);
+  char code=g->id[3];
+  const char *region=code=='E'?"USA":code=='J'?"JAPAO":
+    (code=='P'||code=='D'||code=='F'||code=='I'||code=='S')?"EUROPA":NULL;
+  if(region)snprintf(g->region,sizeof(g->region),"%s",region);
+ }
+ for(size_t n=0;n<local_count;n++){
+  const LocalTitle*t=&local_titles[n];
+  if(t->sys!=g->system)continue;
+  /* Match by exact ID6 or exact original file/folder stem. */
+  if(strcmp(t->key,g->id)&&strcasecmp(t->key,g->name))continue;
+  if(!official)snprintf(g->name,sizeof(g->name),"%s",t->title);
+  if(t->region[0])snprintf(g->region,sizeof(g->region),"%s",t->region);
+  if(t->year)g->year=t->year;
+  break;
+ }
+}
 static int ext(const char*s,const char*e){const char*d=strrchr(s,'.');return d&&!strcasecmp(d,e);}
 static int allowed(System s,const char*n){
   if(s==SYSTEM_HB)return !strcasecmp(n,"boot.dol");
@@ -32,7 +138,7 @@ static int allowed(System s,const char*n){
  if(s==SYSTEM_GBA)return ext(n,".gba");
  if(s==SYSTEM_GB)return ext(n,".gb")||ext(n,".gbc")||ext(n,".sgb");
  if(s==SYSTEM_PS1)return ext(n,".cue")||ext(n,".chd")||ext(n,".pbp")||ext(n,".iso")||ext(n,".img")||ext(n,".bin")||ext(n,".m3u");
- const char*e[]={".avi",".mp4",".mkv",".m4v",".mov",".flv",".mpg",".mpeg",".vob",".wmv",".mp3",".ogg",".flac",".wav",".aac",".m4a"};
+ const char*e[]={".avi",".mp4",".mkv",".m4v",".mov",".flv",".mpg",".mpeg",".vob",".iso",".wmv",".mp3",".ogg",".flac",".wav",".aac",".m4a"};
  for(unsigned i=0;i<sizeof(e)/sizeof(e[0]);i++)if(ext(n,e[i]))return 1;return 0;
 }
 static void insert(Library*l,System sys,const char*path,const char*filename,const char*parent) {
@@ -97,17 +203,18 @@ static void insert(Library*l,System sys,const char*path,const char*filename,cons
   if(!g->id[0])maizo_wii_id_from_file(path,g->id);
  }
  if(sys==SYSTEM_GC){FILE*f=fopen(path,"rb");if(f){char id[6];if(fread(id,1,6,f)==6){int ok=1;for(int j=0;j<6;j++)if(!isalnum((unsigned char)id[j]))ok=0;if(ok){memcpy(g->id,id,6);g->id[6]=0;}}fclose(f);}}
+ metadata_apply(g);
 }
 static int sort_games(const void*a,const void*b){const Game*x=a,*y=b;return x->system!=y->system?(int)x->system-(int)y->system:strcasecmp(x->name,y->name);}
-void library_end(Library*l){Work*w=(Work*)l->work;if(w){for(int i=0;i<l->depth;i++)if(w->dirs[i].fd)closedir(w->dirs[i].fd);free(w);}l->work=NULL;l->depth=0;l->scanning=0;}
-void library_begin(Library*l){library_end(l);memset(l,0,sizeof(*l));l->work=calloc(1,sizeof(Work));l->scanning=l->work!=NULL;snprintf(l->status,sizeof(l->status),"Procurando arquivos...");}
+void library_end(Library*l){metadata_end();Work*w=(Work*)l->work;if(w){for(int i=0;i<l->depth;i++)if(w->dirs[i].fd)closedir(w->dirs[i].fd);free(w);}l->work=NULL;l->depth=0;l->scanning=0;}
+void library_begin(Library*l){library_end(l);metadata_begin();memset(l,0,sizeof(*l));l->work=calloc(1,sizeof(Work));l->scanning=l->work!=NULL;snprintf(l->status,sizeof(l->status),"Procurando arquivos...");}
 static int open_root(Library*l){Work*w=(Work*)l->work;
  while(l->root<(int)(sizeof(roots)/sizeof(roots[0]))){int n=l->root++;DIR*d=opendir(roots[n].path);if(!d)continue;
  l->depth=1;w->dirs[0].fd=d;snprintf(w->dirs[0].path,sizeof(w->dirs[0].path),"%s",roots[n].path);
  snprintf(l->status,sizeof(l->status),"Lendo %s",roots[n].path);return 1;}return 0;}
 void library_step(Library*l,int budget){if(!l->scanning||!l->work)return;Work*w=(Work*)l->work;
  while(budget-->0){
-  if(!l->depth){if(!open_root(l)){l->scanning=0;qsort(l->games,l->count,sizeof(Game),sort_games);favorites_load(l);snprintf(l->status,sizeof(l->status),"%d arquivos encontrados",l->count);free(l->work);l->work=NULL;return;}continue;}
+  if(!l->depth){if(!open_root(l)){l->scanning=0;qsort(l->games,l->count,sizeof(Game),sort_games);favorites_load(l);metadata_end();snprintf(l->status,sizeof(l->status),"%d arquivos encontrados",l->count);free(l->work);l->work=NULL;return;}continue;}
   Dir*top=&w->dirs[l->depth-1];struct dirent*d=readdir(top->fd);
   if(!d){closedir(top->fd);top->fd=NULL;l->depth--;continue;}
   if(d->d_name[0]=='.')continue;l->entries++;

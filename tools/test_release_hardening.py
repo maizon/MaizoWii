@@ -27,10 +27,10 @@ class FirstReleaseRegression(unittest.TestCase):
     def test_nine_resident_icons_and_visible_selection_ring(self):
         ui=src("source/ui.c")
         cover=src("source/covers.c")
-        self.assertIn("tab_halo((int)x+22,31)",ui)
-        self.assertIn("cover_draw(&icon,x+10,17,24,30)",ui)
-        self.assertIn("static Cache cache[18]",cover)
-        self.assertIn("const int first=platform_icon(g)?0:9",cover)
+        self.assertIn("tab_halo((int)x+22,31+dy)",ui)
+        self.assertIn("cover_draw_icon(&icon,x+10,17+dy,24,30)",ui)
+        self.assertIn("static Cache cache[27]",cover)
+        self.assertIn("const int first=kind==1?0:kind==2?9:18",cover)
         self.assertNotIn("fopen(",ui)
     def test_homebrew_details_show_meta_description_and_per_game_options(self):
         lib=src("source/library.c")

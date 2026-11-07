@@ -65,11 +65,11 @@ if manager:
     if manager["channel_wad_included"]:
         channel = manifest.get("channel")
         assert isinstance(channel, dict), "channel provenance missing"
-        assert channel.get("title_id") == "MZIO", "wrong channel title ID"
+        assert channel.get("title_id") == "MIZN", "wrong channel title ID"
         assert channel.get("ios") == 58, "unexpected channel IOS"
         assert channel.get("real_wii_verified") is False, "unverified Wii claim"
         rel = channel.get("path")
-        assert rel == "wad/MAIZOWII-FORWARDER-MZIO-EXPERIMENTAL.wad"
+        assert rel == "wad/Maizo-Frontend-MIZN-SD-USB.wad"
         wad = root / rel
         assert wad.is_file() and wad.stat().st_size >= 1024, "missing channel WAD"
         assert hashlib.sha256(wad.read_bytes()).hexdigest() == channel.get("sha256"), "channel WAD SHA mismatch"

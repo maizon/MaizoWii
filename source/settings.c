@@ -1,27 +1,67 @@
 #include "app.h"
 #include <stdio.h>
 #include <string.h>
+const MaizoWiiMCOption maizo_wiimc_options[MAIZO_WIIMC_OPTION_COUNT]={
+ {"videoZoomHor","ZOOM HORIZONTAL",80,120,2,100,MAIZO_WIIMC_PERCENT},
+ {"videoZoomVert","ZOOM VERTICAL",80,120,2,100,MAIZO_WIIMC_PERCENT},
+ {"videoXshift","POSICAO HORIZONTAL",0,80,1,40,MAIZO_WIIMC_SIGNED},
+ {"videoYshift","POSICAO VERTICAL",0,80,1,40,MAIZO_WIIMC_SIGNED},
+ {"frameDropping","QUEDA DE QUADROS",0,2,1,1,MAIZO_WIIMC_NUMBER},
+ {"cacheFill","CACHE DE VIDEO",5,90,5,30,MAIZO_WIIMC_PERCENT},
+ {"audioDelay","ATRASO DO AUDIO",0,80,1,40,MAIZO_WIIMC_TENTHS},
+ {"autoResume","RETOMAR VIDEO",0,1,1,1,MAIZO_WIIMC_BOOL},
+ {"autoPlayNextVideo","REPRODUCAO SEGUINTE",0,4,1,0,MAIZO_WIIMC_NUMBER},
+ {"skipBackward","VOLTAR SEGUNDOS",5,60,5,10,MAIZO_WIIMC_NUMBER},
+ {"skipForward","AVANCAR SEGUNDOS",5,120,5,30,MAIZO_WIIMC_NUMBER},
+ {"videoFull","VIDEO TELA CHEIA",0,1,1,0,MAIZO_WIIMC_BOOL},
+ {"audioNorm","NORMALIZAR AUDIO",0,1,1,0,MAIZO_WIIMC_BOOL},
+ {"videoDf","DEFLICKER VIDEO",0,1,1,0,MAIZO_WIIMC_BOOL},
+ {"viWidth","VI LARGURA MAXIMA",0,1,1,0,MAIZO_WIIMC_BOOL},
+ {"skipLoop","PULAR DEBLOCK",0,1,1,0,MAIZO_WIIMC_BOOL},
+ {"interlaceHandle","ENTRELACAMENTO",0,2,1,1,MAIZO_WIIMC_NUMBER},
+ {"dvdMenu","MENU DVD",0,1,1,1,MAIZO_WIIMC_BOOL},
+ {"dvdDisabled","DESABILITAR DVD",0,1,1,0,MAIZO_WIIMC_BOOL},
+ {"subtitleVisibility","MOSTRAR LEGENDAS",0,1,1,1,MAIZO_WIIMC_BOOL},
+ {"subtitleDelay","ATRASO LEGENDAS",0,80,1,40,MAIZO_WIIMC_TENTHS},
+ {"subtitleSize","TAMANHO LEGENDAS",10,50,1,25,MAIZO_WIIMC_TENTHS_POS},
+ {"bold","LEGENDAS EM NEGRITO",0,1,1,0,MAIZO_WIIMC_BOOL},
+ {"monofont","FONTE MONOESPACADA",0,1,1,0,MAIZO_WIIMC_BOOL},
+ {"doubleStrike","MODO DOUBLE STRIKE",0,1,1,0,MAIZO_WIIMC_BOOL},
+ {"tiledRender","RENDERIZACAO TILED",0,2,1,0,MAIZO_WIIMC_NUMBER},
+ {"saveExit","SALVAR AO SAIR",0,1,1,1,MAIZO_WIIMC_BOOL},
+ {"hideExtensions","OCULTAR EXTENSOES",0,1,1,1,MAIZO_WIIMC_BOOL},
+ {"libass","USAR RENDER ASS",0,1,1,1,MAIZO_WIIMC_BOOL},
+ {"force576p","FORCAR 576P",0,1,1,0,MAIZO_WIIMC_BOOL},
+ {"playOrder","ORDEM DAS MUSICAS",0,4,1,0,MAIZO_WIIMC_NUMBER},
+ {"nativeLoops","LOOPS NATIVOS",0,8,1,1,MAIZO_WIIMC_NUMBER},
+ {"onlineCacheFill","CACHE ONLINE",5,90,5,20,MAIZO_WIIMC_PERCENT},
+ {"screensaverArt","CAPAS NA PROTECAO",0,4,1,0,MAIZO_WIIMC_NUMBER},
+ {"rumble","VIBRACAO WIIMOTE",0,1,1,1,MAIZO_WIIMC_BOOL},
+};
+
 
 /* Values here correspond to NIN_CFG or WiiSX 4.2.2 OPTIONS argv.
  * The separate calibration screen modifies only the MAIZO frontend UI.
  * Do not imply that arbitrary DOLs consume frontend-only geometry. */
 int settings_count(System s){
- switch(s){case SYSTEM_WII:return 7;case SYSTEM_GC:return 15;
+ switch(s){case SYSTEM_COUNT:return 5;case SYSTEM_WII:return 7;case SYSTEM_GC:return 15;
  case SYSTEM_PS1:return 20;case SYSTEM_SNES:return 9;
- case SYSTEM_MEDIA:return 8;default:return 5;}
+ case SYSTEM_MEDIA:return 8+MAIZO_WIIMC_OPTION_COUNT;default:return 5;}
 }
 const char*settings_label(System s,int row){
  if(row==0)return "TEMA";
+ if(s==SYSTEM_MEDIA&&row>=5&&row<5+MAIZO_WIIMC_OPTION_COUNT)
+  return maizo_wiimc_options[row-5].label;
  if(row==1)return "MODO DA BIBLIOTECA";
  if(row==settings_count(s)-1)return "VOLTAR";
  if(row==settings_count(s)-2)return "CALIBRAR TELA MAIZO";
- if(row==settings_count(s)-3)return "BAIXAR CAPAS FALTANTES";
+ if(row==settings_count(s)-3)return s==SYSTEM_MEDIA||s==SYSTEM_HB?"REINDEXAR BIBLIOTECA":"GERENCIAR CAPAS";
  if((s==SYSTEM_SNES||s==SYSTEM_PS1)&&row>=settings_count(s)-7&&row<settings_count(s)-3){
   static const char*labels[]={"JOGO 240P: HORIZONTAL","JOGO 480I: HORIZONTAL","JOGO 240P: LARGURA","JOGO 480I: LARGURA"};
   return labels[row-(settings_count(s)-7)];
  }
  static const char*wii[]={"IOS INICIAL DO LOADER","PORTA USB"};
- static const char*gc[]={"MEMORY CARD EMULADA","WIDESCREEN","CHEATS","SKIP IPL","VIDEO GAMECUBE","MEMCARD MULTI","CONTROLE GC NATIVO","REMOVE LIMIT","LARGURA GC (NINTENDONT)","POSICAO VERTICAL GC"};
+ static const char*gc[]={"MEMORY CARD EMULADA","WIDESCREEN","CHEATS","SKIP IPL","VIDEO GAMECUBE","MEMCARD MULTI","CONTROLE GC NATIVO","REMOVE LIMIT","LARGURA GC (NINTENDONT)","POSICAO HORIZONTAL GC"};
  static const char*ps[]={"NUCLEO PS1","CPU (INTERP/DYNAREC)","FRAME SKIP","AUDIO","SAIDA NATIVA 240P","MODO DE VIDEO","PROPORCAO","DEFLICKER","DITHERING","MOSTRAR FPS","LIMITAR FPS"};
  int n=row-2;
  if(s==SYSTEM_WII&&n>=0&&n<2)return wii[n];
@@ -53,6 +93,7 @@ static unsigned get(const Config*c,System s,int row){
  if(s==SYSTEM_MEDIA&&row==2)return c->media_volume;
  if(s==SYSTEM_MEDIA&&row==3)return c->media_player;
  if(s==SYSTEM_MEDIA&&row==4)return c->media_autoboot;
+ if(s==SYSTEM_MEDIA&&row>=5&&row<5+MAIZO_WIIMC_OPTION_COUNT)return c->wiimc_opts[row-5];
  return 0;
 }
 void settings_value(const Config*c,System s,int row,char*dest,size_t cap){
@@ -66,6 +107,17 @@ void settings_value(const Config*c,System s,int row,char*dest,size_t cap){
   return;
  }
  unsigned v=get(c,s,row);
+ if(s==SYSTEM_MEDIA&&row>=5&&row<5+MAIZO_WIIMC_OPTION_COUNT){
+  const MaizoWiiMCOption *o=&maizo_wiimc_options[row-5];
+  unsigned value=c->wiimc_opts[row-5];
+  if(o->type==MAIZO_WIIMC_BOOL)snprintf(dest,cap,"%s",value?"SIM":"NAO");
+  else if(o->type==MAIZO_WIIMC_PERCENT)snprintf(dest,cap,"%u%%",value);
+  else if(o->type==MAIZO_WIIMC_SIGNED)snprintf(dest,cap,"%+d",(int)value-40);
+  else if(o->type==MAIZO_WIIMC_TENTHS)snprintf(dest,cap,"%+.1f",((int)value-40)/10.0);
+  else if(o->type==MAIZO_WIIMC_TENTHS_POS)snprintf(dest,cap,"%.1f",value/10.0);
+  else snprintf(dest,cap,"%u",value);
+  return;
+ }
  if(row==0){const char*themes[]={"VIOLETA","TURQUESA","CORAL","GRAFITE","OLED","CLASSICO"};snprintf(dest,cap,"%s",themes[v%6]);return;}
  if(row==1){const char *layouts[]={"GRADE","LISTA","CARROSSEL"};snprintf(dest,cap,"%s",layouts[v%3]);return;}
  if(s==SYSTEM_WII){if(row==2)snprintf(dest,cap,"IOS %u",v);
@@ -98,6 +150,14 @@ int settings_change(Config*c,System s,int row,int dir){
   else *p=*p>=hi?hi:*p+1;
   return 1;
  }
+ if(s==SYSTEM_MEDIA&&row>=5&&row<5+MAIZO_WIIMC_OPTION_COUNT){
+  const MaizoWiiMCOption *o=&maizo_wiimc_options[row-5];
+  unsigned *v=&c->wiimc_opts[row-5];
+  c->wiimc_apply=1;
+  if(dir<0)*v=*v<=o->min+o->step-1?o->min:*v-o->step;
+  else *v=*v>=o->max-o->step+1?o->max:*v+o->step;
+  return 1;
+ }
  unsigned*v=NULL,lim=2;
  if(row==0){v=&c->theme;lim=6;}
  else if(row==1){v=&c->layout;lim=3;}
@@ -127,7 +187,7 @@ int settings_change(Config*c,System s,int row,int dir){
  case 12:v=&c->ps1_limit;break;
  }
  else if(s==SYSTEM_MEDIA&&row==2){
-  c->media_volume=dir<0?(c->media_volume>=5?c->media_volume-5:0):(c->media_volume<=95?c->media_volume+5:100);return 1;
+  c->media_volume=dir<0?(c->media_volume>=5?c->media_volume-5:0):(c->media_volume<=95?c->media_volume+5:100);c->wiimc_apply=1;return 1;
  }
  else if(s==SYSTEM_MEDIA&&row==3)v=&c->media_player;
  else if(s==SYSTEM_MEDIA&&row==4)v=&c->media_autoboot;
@@ -153,6 +213,17 @@ const char*settings_category(System s,int row){
   if(row>=6)return "VIDEO / QUALIDADE";
   return "EMULACAO";
  }
- if(s==SYSTEM_MEDIA)return row==2?"AUDIO":"REPRODUCAO";
+ if(s==SYSTEM_MEDIA){
+  if(row==2)return "AUDIO";
+  if(row>=5&&row<5+MAIZO_WIIMC_OPTION_COUNT){
+   int i=row-5;
+   if(i<=6)return "VIDEO E AUDIO";
+   if(i<=16)return "REPRODUCAO";
+   if(i<=18)return "DVD";
+   if(i<=23)return "LEGENDAS";
+   return "AVANCADO WIIMC";
+  }
+  return "REPRODUCAO";
+ }
  return "EMULACAO";
 }

@@ -12,13 +12,13 @@
 typedef struct { char key[120]; void *pixels; int valid; int system; unsigned last; unsigned height,tint; } Cache;
 /* Nine resident icons are isolated from nine LRU game covers so changing
  * games never evicts the top navigation artwork. No FAT IO during draw. */
-static Cache cache[18];static unsigned clock_id=0;
+static Cache cache[27];static unsigned clock_id=0;
 static int platform_icon(const Game*g){
  static const char*keys[SYSTEM_COUNT]={
   "IWII","IGC","IPS1","ISNES","INES","IGBA","IGB","IMEDIA","IHB"
  };
  return g && !g->name[0] && g->system>=0 && g->system<SYSTEM_COUNT &&
-        strcmp(g->id,keys[g->system])==0;
+        (strcmp(g->id,keys[g->system])==0 || (g->id[0]=='T' && !strcmp(g->id+1,keys[g->system]+1)));
 }
 static void key_for(const Game*g,char*key,size_t cap){
  if(g->id[0]){snprintf(key,cap,"%s",g->id);return;}
@@ -34,7 +34,8 @@ static void key_for(const Game*g,char*key,size_t cap){
 static Cache*lookup(const Game*g,int allow_io){
  if(!g||g->system<0||g->system>=SYSTEM_COUNT)return NULL;
  char key[120];key_for(g,key,sizeof(key));if(!*key)return NULL;
- const int first=platform_icon(g)?0:9,stop=platform_icon(g)?9:18;
+ const int kind=platform_icon(g)?(g->id[0]=='T'?2:1):0;
+ const int first=kind==1?0:kind==2?9:18,stop=first+9;
  clock_id++;
  for(int j=first;j<stop;j++)if(cache[j].key[0]&&cache[j].system==(int)g->system&&!strcmp(cache[j].key,key)){
   cache[j].last=clock_id;return cache[j].valid?&cache[j]:NULL;
@@ -91,6 +92,12 @@ static Cache*lookup(const Game*g,int allow_io){
  c->valid=1;return c;
 }
 /* The UI can always render a placeholder without blocking on FAT. */
+int cover_draw_icon(const Game*g,float x,float y,float w,float h){
+ Cache*c=lookup(g,0);
+ if(!c)return 0;
+ maizo_video_icon((const unsigned char*)c->pixels,COV_W,c->height,x,y,w,h);
+ return 1;
+}
 int cover_draw(const Game*g,float x,float y,float w,float h){
  Cache*c=lookup(g,0);
  if(!c)return 0;

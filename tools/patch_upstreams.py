@@ -83,6 +83,20 @@ def patch_wiimc(root: Path):
         "    mh_buttons[i]=mh_live[i]?mh_report_buttons[i]:0;\n"
         "  }\n"
         "}\n",encoding="utf-8")
+    # WiiMC settings are not a universal argv interface. Apply only the
+    # numeric options that were validated against SWiiSettings after the
+    # original settings.xml was loaded; leave credentials/text fields alone.
+    shutil.copyfile(SOURCE.parent / "maizo_wiimc_settings.inc",
+                    root / "source/maizo_wiimc_settings.inc")
+    def wiimc_settings(t):
+        t=replace_once(t, '#include "settings.h"',
+            '#include "settings.h"\n#include "maizo_wiimc_settings.inc"',
+            "WiiMC options bridge declaration")
+        t=replace_once(t,'settingsLoaded = true; // attempted to load settings',
+            'settingsLoaded = true; // attempted to load settings\n\tmaizo_wiimc_apply_profile();',
+            "WiiMC apply Maizo options after XML load")
+        return t
+    patch_file(root, "source/settings.cpp", wiimc_settings)
     # Libretro's old libogc/newlib runtime bridge; needed for the matched
     # precompiled WiiMC player to use memory, threads and FAT on GCC 2026.
     shutil.copyfile(SOURCE.parent / "wiimc_syscalls_compat.c",
@@ -1010,11 +1024,24 @@ def patch_snes(root: Path):
         s=replace_once(s,'#include "OgcEmulatorVideo.h"',
           '#include "OgcEmulatorVideo.h"\n#include "maizo_game_video.inc"',
           "SNES game-only video profile")
+        # The original 240p path uses a 512px EFB and a VI window of
+        # ~644 physical samples. Moving its GX quad cannot correct
+        # asymmetric CRT border/overscan. Adjust the *VI* only for 240p;
+        # retain the upstream pixel/line geometry and 480i quad controls.
+        s=replace_once(s, 'videoDriver->setupVideoMode(rmode); // reconfigure VI',
+          'static GXRModeObj maizo_game_vi;\n'
+          '\tmemcpy(&maizo_game_vi,rmode,sizeof(maizo_game_vi));\n'
+          '\trmode=&maizo_game_vi;\n'
+          '\tif(EmuSettings.videoMode == VIDEOMODE_ORIGINAL_240P)\n'
+          '\t\tmaizo_video_adjust_vi(rmode,1);\n'
+          '\tvideoDriver->setupVideoMode(rmode); // reconfigure VI',
+          "SNES centered hardware VI for 240p")
         s=replace_once(s,'xscale *= EmuSettings.videoZoomHor;',
           'MaizoGameVideo cal=maizo_game_video(EmuSettings.videoMode == VIDEOMODE_ORIGINAL_240P);\n'
-          '\t\txscale = xscale * (int)cal.w / 100;\n'
+          '\t\tif(EmuSettings.videoMode != VIDEOMODE_ORIGINAL_240P)\n'
+          '\t\t\txscale = xscale * (int)cal.w / 100;\n'
           '\t\tyscale = yscale * (int)cal.h / 100;\n'
-          '\t\tint maizo_x=cal.x * (int)vmode->fbWidth / 640;\n'
+          '\t\tint maizo_x=EmuSettings.videoMode == VIDEOMODE_ORIGINAL_240P?0:cal.x * (int)vmode->fbWidth / 640;\n'
           '\t\tint maizo_y=cal.y * (int)vmode->efbHeight / 480;\n'
           '\t\txscale *= EmuSettings.videoZoomHor;',
           "SNES game geometry video mode")

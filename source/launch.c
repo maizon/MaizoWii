@@ -125,8 +125,24 @@ static int save_nincfg(const Game*g,const Config*c,NIN_CFG *out) {
  if(c->gc_video==2)n.VideoMode=0x00010000u|4u; /* force NTSC */
  if(c->gc_video==3)n.VideoMode=0x00010000u|1u; /* force PAL50 */
  n.Language=0xFFFFFFFFu;n.MaxPads=4;n.MemCardBlocks=2;
- n.VideoScale=(s8)(c->gc_scale>=40&&c->gc_scale<=120?c->gc_scale:0);
- n.VideoOffset=(s8)((int)(c->gc_offset<=40?c->gc_offset:20)-20);
+ /* Nintendont's kernel/Patch.c applies VideoScale as 600+value pixels:
+  * native range 640..720; 0 preserves the game's automatic mode. The
+  * calibrated frontend width is inherited when the user enlarges it.
+  * Shrinking below 640 is NOT supported by this Nintendont mechanism. */
+ unsigned width_pct=c->video_w*c->game_w480/100u;
+ int scale=(c->gc_scale>=40&&c->gc_scale<=120)?(int)c->gc_scale:0;
+ if(!scale&&width_pct>100u){
+  scale=40+(int)(width_pct-100u)*4;
+  if(scale>120)scale=120;
+  if(scale&1)scale--;
+ }
+ n.VideoScale=(s8)scale;
+ /* VideoOffset is HORIZONTAL in Nintendont, not vertical. Combine
+  * frontend, individual game and Nintendont offsets without overflow. */
+ int x=(int)c->video_x-50+(int)c->game_x480-50+
+       (int)(c->gc_offset<=40?c->gc_offset:20)-20;
+ if(x< -20)x=-20;if(x>20)x=20;
+ n.VideoOffset=(s8)x;
  /* Nintendont expects a path relative to the selected root device. */
  if(!maizo_gc_relative_path(g->path,n.GamePath,sizeof(n.GamePath)))return 0;
  if(g->id[0])memcpy(&n.GameID,g->id,4);
@@ -150,10 +166,16 @@ static void save_launch_record(const Game*g,const Config*c) {
  /* The frontend calibration is the baseline for games. Per-game mode
   * corrections are added, but frontend-only TV standard is never exported.
   * Clamp for malformed legacy settings before the game's renderer reads it. */
- int x240=(int)c->game_x240-50;
- int x480=(int)c->game_x480-50;
- unsigned w240=c->game_w240;
- unsigned w480=c->game_w480;
+ /* Apply the global CRT calibration ONCE as the baseline for each game's
+  * 240p/480i profile. The adapted module reads these values before drawing. */
+ int x240=(int)c->video_x-50+(int)c->game_x240-50;
+ int x480=(int)c->video_x-50+(int)c->game_x480-50;
+ int y=(int)c->video_y-50;
+ unsigned w240=c->video_w*c->game_w240/100u;
+ unsigned w480=c->video_w*c->game_w480/100u;
+ unsigned h=c->video_h;
+ if(y< -50)y=-50;if(y>50)y=50;
+ if(h<70)h=70;if(h>130)h=130;
  if(x240< -50)x240=-50;if(x240>50)x240=50;
  if(x480< -50)x480=-50;if(x480>50)x480=50;
  if(w240<70)w240=70;if(w240>130)w240=130;
@@ -165,7 +187,12 @@ static void save_launch_record(const Game*g,const Config*c) {
  "game_w240=%u\ngame_w480=%u\ngame_h240=%u\ngame_h480=%u\n",
  g->system,g->path,module_name(g->system),
  c->media_volume,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio,c->ps1_engine,c->ps1_native,
- x240,x480,0,0,w240,w480,100u,100u);
+ x240,x480,y,y,w240,w480,h,h);
+ if(g->system==SYSTEM_MEDIA&&c->wiimc_apply){
+  fprintf(f,"wiimc_apply=1\n");
+  for(unsigned i=0;i<MAIZO_WIIMC_OPTION_COUNT;i++)
+   fprintf(f,"wiimc_%s=%u\n",maizo_wiimc_options[i].key,c->wiimc_opts[i]);
+ }
  fclose(f);
 }
 /* MEM2 bootstrap: do not copy target DOL sections over the running frontend.
@@ -243,7 +270,10 @@ int module_launch(const Game*g,const Config*c,char*error,size_t cap){
  if(!valid_dol(image,(size_t)size)){snprintf(error,cap,"DOL invalido: cabecalho/secoes");return 0;}
  if(g->system==SYSTEM_GC){
   NIN_CFG nin;
-  if(!save_nincfg(g,c,&nin)){snprintf(error,cap,"Falha ao gravar nincfg.bin");return 0;}
+  /* argv[1] carries the complete NIN_CFG directly (Nintendont main.c).
+   * The root nincfg.bin is a compatibility cache, not a prerequisite:
+   * previous code aborted direct boot on USB write/rename failures. */
+  (void)save_nincfg(g,c,&nin);
   /* Nintendont loader/source/main.c reads argv[1] as the NIN_CFG
    * binary. nincfg.bin alone does not provide reliable direct boot. */
   const size_t count=sizeof(nin)+1;

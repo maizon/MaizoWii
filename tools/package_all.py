@@ -236,8 +236,10 @@ def main():
             "  apps/maizo-forwarder/boot.dol\n", encoding="ascii")
     (out / "maizo/controllers").mkdir(parents=True, exist_ok=True)
     shutil.copy2("profiles/0079_0006.ini", out / "maizo/controllers/0079_0006.ini")
+    (out / "maizo/database").mkdir(parents=True, exist_ok=True)
+    shutil.copy2("data/wiitdb-en.txt", out / "maizo/database/wiitdb-en.txt")
     (out / "maizo/tools").mkdir(parents=True, exist_ok=True)
-    for helper in ("cover_sync.py", "build_cover_cache.py"):
+    for helper in ("cover_sync.py", "build_cover_cache.py", "import_nointro_dat.py"):
         shutil.copy2(Path("tools") / helper, out / "maizo/tools" / helper)
 
     manifest = {"frontend": "MAIZO-WII", "upstream": {}, "hid": {

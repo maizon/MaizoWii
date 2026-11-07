@@ -193,7 +193,7 @@ jobs:
           path: wiimc
       - uses: actions/download-artifact@v4
         with:
-          name: MAIZOWII-PREVIEW-USB-SD
+          name: MAIZOWII-ALL-IN-ONE
           path: official-archive
       - name: Extract unmodified official WiiMC baseline without compilation
         run: |
@@ -308,39 +308,19 @@ jobs:
           Path(os.environ['GITHUB_STEP_SUMMARY']).write_text('\n\n'.join(report)+'\n')
           print('FALLBACKS:',fallback)
           PY
-      # The package must include an actual channel WAD, not only a forwarder DOL.
-      # It remains experimental until real-console verification.
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
-      - name: Install channel packaging dependencies
+      # Only the user's MIZN WAD is allowed. Until that binary is committed,
+      # generate no substitute MZIO WAD and NEVER install NAND silently.
+      - name: Include only the verified standard MIZN WAD when present
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential make zlib1g-dev fonts-dejavu-core
-          python3 -m pip install --user --break-system-packages Pillow pycryptodomex
-      - name: Build Maizo channel banner and icon
-        run: |
-          git clone -q https://github.com/Monsterray/hbc-reborn.git channel-base
-          git -C channel-base checkout --detach 559a768d63a38cfe3fcd142b31c5b5c36d566f49
-          python3 tools/render_wad_titles.py channel-base
-          make -C channel-base/channel/banner -j2
-          test -s channel-base/channel/banner/build/banner.arc
-          test -s channel-base/channel/banner/build/icon.arc
-      - name: Package experimental IOS58 MZIO forwarder WAD
-        run: |
-          git clone -q https://github.com/davi-x86/WadPakk.git wad-builder
-          git -C wad-builder checkout --detach 155a00d4b2180eab968cf5b2f5da68f3c3ebdafd
-          dotnet build wad-builder/WadPakk.csproj -c Release -p:PlatformTarget=AnyCPU -p:RuntimeIdentifier=linux-x64
-          cp -r wad-builder/Resources wad-builder/bin/Release/net8.0/linux-x64/Resources
-          dotnet wad-builder/bin/Release/net8.0/linux-x64/WadPakk.dll pack \
-            -base wad-builder/Resources/base.wad \
-            -banner channel-base/channel/banner/build/banner.arc \
-            -icon channel-base/channel/banner/build/icon.arc \
-            -dol dist/apps/maizo-forwarder/boot.dol \
-            -id MZIO -name "Maizo Wii" -ios 58 -loader comex \
-            -o dist/wad/MAIZOWII-FORWARDER-MZIO-EXPERIMENTAL.wad
-          python3 tools/inspect_forwarder_wad.py dist/wad/MAIZOWII-FORWARDER-MZIO-EXPERIMENTAL.wad
-          python3 tools/assemble_channel.py dist
+          set -euo pipefail
+          official=channel/standard/Maizo-Frontend-MIZN-SD-USB.wad
+          if test -s "$official"; then
+            cp "$official" dist/wad/Maizo-Frontend-MIZN-SD-USB.wad
+            python3 tools/inspect_forwarder_wad.py dist/wad/Maizo-Frontend-MIZN-SD-USB.wad
+            python3 tools/assemble_channel.py dist
+          else
+            echo "::warning::MIZN WAD not checked into GitHub; ZIP will not contain a channel WAD"
+          fi
       - name: Verify every executable and zip the storage root
         run: |
           test -s dist/apps/maizo-installer/boot.dol
@@ -352,86 +332,15 @@ jobs:
           unzip -l MAIZOWII-ALL-IN-ONE.zip | tail -12
       - uses: actions/upload-artifact@v4
         with:
-          name: MAIZOWII-PREVIEW-USB-SD
+          name: MAIZOWII-ALL-IN-ONE
           path: MAIZOWII-ALL-IN-ONE.zip
           retention-days: 14
 
   release-rc:
-    # Publish a PRE-RELEASE only after the source, compiler and bundle gates.
-    # Physical Wii tests remain open; NEVER label this build stable v1.0.0.
+    # Intentionally disabled: complete physical Wii QA and publish only the
+    # accepted MIZN channel. An Actions success is NOT a stable release.
     needs: [frontend, adapted, launch-contracts, installer-hid, all-in-one]
-    if: >-
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/main' &&
-      needs.frontend.result == 'success' &&
-      needs.adapted.result == 'success' &&
-      needs.launch-contracts.result == 'success' &&
-      needs.all-in-one.result == 'success'
+    if: false
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: MAIZOWII-PREVIEW-USB-SD
-          path: preview/
-      - name: Verify final branch and avoid rewriting an existing tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          head="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
-          test "$head" = "$GITHUB_SHA" || { echo "main moved; refusing stale tag"; exit 1; }
-          if git ls-remote --exit-code --tags origin "refs/tags/v1.0.0-rc.1"; then
-            echo "RC tag already exists; not rewriting it"
-            exit 1
-          fi
-      - name: Exclude NAND WAD until a real Wii installation is validated
-        run: |
-          set -euo pipefail
-          mkdir -p public
-          unzip -q preview/MAIZOWII-ALL-IN-ONE.zip -d public
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          root=Path("public")
-          mfile=root/"maizo/MODULE_MANIFEST.json"
-          manifest=json.loads(mfile.read_text(encoding="utf-8"))
-          assert manifest["installer"]["channel_wad_included"] is True
-          channel=manifest.pop("channel",None)
-          assert channel and channel.get("real_wii_verified") is False
-          target=root/channel["path"]
-          assert target.is_file() and target.suffix.lower()==".wad"
-          target.unlink()
-          manifest["installer"]["channel_wad_included"]=False
-          (root/"wad/SHA256SUMS").unlink(missing_ok=True)
-          (root/"maizo/LEIA-PRIMEIRO.txt").write_text(
-              "Copie o conteudo do ZIP para a raiz FAT32 do SD/USB.\n"
-              "Teste apps/maizo/boot.dol pelo Homebrew Channel.\n"
-              "Este RC nao inclui WAD instalavel: instalacao NAND NAO validada.\n"
-              "HID, WiiMC e autoboot ainda precisam de testes no Wii real.\n",
-              encoding="utf-8")
-          (root/"wad/LEIA-ANTES-DE-INSTALAR.txt").write_text(
-              "WAD omitido deste release candidate por falta de teste no Wii real.\n"
-              "NAO instale canais experimentais na NAND.\n",
-              encoding="utf-8")
-          mfile.write_text(json.dumps(manifest,indent=2,sort_keys=True)+"\n",encoding="utf-8")
-          PY
-          python3 tools/verify_bundle.py public
-          (cd public && zip -q -r ../MAIZOWII-ULTIMATE-v1.0.0-rc.1.zip .)
-          if unzip -Z1 MAIZOWII-ULTIMATE-v1.0.0-rc.1.zip | grep -iE '\.wad$'; then
-            echo "Unsafe WAD unexpectedly present in release"; exit 1
-          fi
-          sha256sum MAIZOWII-ULTIMATE-v1.0.0-rc.1.zip > MAIZOWII-ULTIMATE-v1.0.0-rc.1.sha256
-      - name: Publish honest pre-release with exact tested SHA
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh release create v1.0.0-rc.1 \
-            MAIZOWII-ULTIMATE-v1.0.0-rc.1.zip \
-            MAIZOWII-ULTIMATE-v1.0.0-rc.1.sha256 \
-            --target "$GITHUB_SHA" --prerelease --latest=false \
-            --title "MAIZOWII ULTIMATE v1.0.0-rc.1 (testes no Wii pendentes)" \
-            --notes-file docs/RELEASE_1_0_RC1.md
+      - run: echo "Hardware validation is mandatory before publishing a release."
