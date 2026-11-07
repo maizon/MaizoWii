@@ -21,8 +21,9 @@ janela horizontal VI passa a 704 amostras. O 480i mantém sua cadência.
   a altura. Compilações oficiais não modificadas ignoram essa configuração.
 - WiiSXRX/WiiSX: o ajuste de VI já presente lê o novo flag de largura
   do registro; algumas rotas antigas do motor podem ignorar ajustes.
-- WiiMC-SSLC adaptado: aplica 704 após montar armazenamento e ler perfil,
-  inclusive após mudanças internas de modo de vídeo. WiiMC oficial não.
+- WiiMC: **excluído explicitamente** da opção global de 704. Como a imagem
+  já está correta na TV de referência, o player mantém seus ajustes próprios.
+  Nem o original nem o WiiMC adaptado recebem força de largura via Maizo.
 - USB Loader GX adaptado: tenta configurar a propria interface em 704 nos\n  pontos de reinicializacao de video quando o arquivo do Maizo esta acessivel.\n  Tambem faz patch **best effort** das estruturas
   GXRModeObjRVL reconhecidas no DOL dos jogos Wii, somente quando o
   usuário habilita a opção. Jogos que geram modos dinamicamente ou não
@@ -44,7 +45,8 @@ IOS, inserir patch residente na NAND ou alterar hardcode dos jogos
 
 Salvar a versão anterior. Comparar 480i e 240p com opção desligada e
 ligada, com o mesmo cabo e fonte. Testar especialmente SNES (224p,
-239p, 480i), NES (240p/480i), GB/GBA, GameCube, Wii e mídia. Conferir
+239p, 480i), NES (240p/480i), GB/GBA, GameCube e Wii.
+Confirmar também que a exibição do WiiMC permaneceu idêntica. Conferir
 centragem com padrão em quadrantes e corte em ambas as laterais. No
 caso de tela preta, iniciar pelo Priiloader/HBC anterior e restaurar
 `force_vi704=0` no `/maizo/settings.ini`.

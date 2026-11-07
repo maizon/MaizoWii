@@ -97,30 +97,6 @@ def patch_wiimc(root: Path):
             "WiiMC apply Maizo options after XML load")
         return t
     patch_file(root, "source/settings.cpp", wiimc_settings)
-    def wiimc_vi704(s):
-        marker='GXRModeObj *vmode; // Menu video mode'
-        insertion='''GXRModeObj *vmode; // Menu video mode
-static bool maizo_vi704_active=false;
-static void maizo_apply_video_width(void){
-    if(!maizo_vi704_active || !vmode)return;
-    vmode->viWidth=704;
-    vmode->viXOrigin=8;
-}
-void MaizoForceVI704(int enabled){
-    maizo_vi704_active=enabled==1;
-    if(maizo_vi704_active&&vmode){
-        maizo_apply_video_width();
-        VIDEO_Configure(vmode);
-        VIDEO_Flush();
-    }
-}
-'''
-        s=replace_once(s,marker,insertion,"WiiMC VI helper")
-        # Internal mode transitions must retain the forced 704 VI window.
-        s=s.replace('VIDEO_Configure(vmode);',
-          'maizo_apply_video_width();\n\tVIDEO_Configure(vmode);')
-        return s
-    patch_file(root,"source/video.cpp",wiimc_vi704)
     # Libretro's old libogc/newlib runtime bridge; needed for the matched
     # precompiled WiiMC player to use memory, threads and FAT on GCC 2026.
     shutil.copyfile(SOURCE.parent / "wiimc_syscalls_compat.c",

@@ -187,7 +187,7 @@ static void save_launch_record(const Game*g,const Config*c) {
  "game_w240=%u\ngame_w480=%u\ngame_h240=%u\ngame_h480=%u\nforce_vi704=%u\n",
  g->system,g->path,module_name(g->system),
  c->media_volume,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio,c->ps1_engine,c->ps1_native,
- x240,x480,y,y,w240,w480,h,h,c->force_vi704?1u:0u);
+ x240,x480,y,y,w240,w480,h,h,(c->force_vi704&&g->system!=SYSTEM_MEDIA)?1u:0u);
  if(g->system==SYSTEM_MEDIA&&c->wiimc_apply){
   fprintf(f,"wiimc_apply=1\n");
   for(unsigned i=0;i<MAIZO_WIIMC_OPTION_COUNT;i++)
