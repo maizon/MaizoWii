@@ -124,6 +124,7 @@ void settings_value(const Config*c,System s,int row,char*dest,size_t cap){
  if(row==1){const char *layouts[]={"GRADE","LISTA","CARROSSEL"};snprintf(dest,cap,"%s",layouts[v%3]);return;}
  if(s==SYSTEM_COUNT&&row==2){snprintf(dest,cap,"%s",v?"LIGADO":"DESLIGADO");return;}
  if(s==SYSTEM_WII){if(row==2)snprintf(dest,cap,"IOS %u",v);
+  else if(v==2)snprintf(dest,cap,"AMBAS / AUTO");
   else snprintf(dest,cap,"USB %u",v);return;}
  if(s==SYSTEM_GC){
   if(row==6){snprintf(dest,cap,"%s",v==0?"AUTO":v==1?"PAL-M":v==2?"NTSC":"PAL50");return;}
@@ -170,7 +171,7 @@ int settings_change(Config*c,System s,int row,int dir){
   for(int i=0;i<5;i++)if(ios[i]==c->wii_ios){n=i;break;}
   c->wii_ios=ios[(n+5+(dir<0?-1:1))%5];return 1;
  }
- else if(s==SYSTEM_WII&&row==3)v=&c->wii_usb_port;
+ else if(s==SYSTEM_WII&&row==3){v=&c->wii_usb_port;lim=3;}
  else if(s==SYSTEM_GC)switch(row){
  case 2:v=&c->gc_memcard;break;case 3:v=&c->gc_wide;break;
  case 4:v=&c->gc_cheats;break;case 5:v=&c->gc_skip_ipl;break;

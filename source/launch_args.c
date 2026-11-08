@@ -81,11 +81,16 @@ int maizo_build_args(const MaizoLaunchSpec *s,MaizoLaunchArgs *out,char*error,si
  if(s->system==MAIZO_ARG_WII){
   /* Never mistake an ID-less Wii entry for a successful direct autoboot. */
   if(!id6(s->id))return fail(error,cap,"ID6 ausente: autoboot Wii indisponivel");
-  if(s->wii_usb_port>1 || !(s->wii_ios==58 || (s->wii_ios>=200 && s->wii_ios<=255)))
+  if(s->wii_usb_port>2 || !(s->wii_ios==58 || (s->wii_ios>=200 && s->wii_ios<=255)))
    return fail(error,cap,"IOS ou porta USB invalidos");
   if(!append(out,s->id))return fail(error,cap,"ID6 excede limite");
+  /* USB Loader GX has TWO independently parsed IOS flags.
+   * -bootios alone does NOT select the IOS used by its storage/game loader.
+   * Keep both equal to the user-selected cIOS/IOS58 for cold USB startup. */
+  snprintf(option,sizeof(option),"-ios=%u",s->wii_ios);
+  if(!append(out,option))return fail(error,cap,"IOS do loader excede limite");
   snprintf(option,sizeof(option),"-bootios=%u",s->wii_ios);
-  if(!append(out,option))return fail(error,cap,"IOS excede limite");
+  if(!append(out,option))return fail(error,cap,"IOS inicial excede limite");
   snprintf(option,sizeof(option),"-usbport=%u",s->wii_usb_port);
   if(!append(out,option))return fail(error,cap,"Porta excede limite");
   /* USB Loader GX enhanced supports -sdmode=1 for SD games. */

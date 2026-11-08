@@ -128,7 +128,10 @@ class UiIntegration(unittest.TestCase):
         self.assertNotIn("fopen(",ui)
         self.assertNotIn("USB OK",ui)
         self.assertNotIn("SD OK",ui)
-        self.assertIn('label(25,23+dy,"MAIZO",2.0f,ink);',ui)
+        self.assertIn('label(25,23,"MAIZO",2.0f',ui)
+        self.assertNotIn('label(25,23+dy,"MAIZO"',ui)
+        draw=ui.split("void ui_draw(",1)[1].split("void ui_shutdown",1)[0]
+        self.assertGreater(draw.rfind("brand_overlay();"),draw.rfind("topbar(u,l,hid);"))
         self.assertIn("topbar(u,l,hid);",ui)
         self.assertIn("state.storage_usb=storage_usb",main)
         self.assertIn("state.storage_sd=storage_sd",main)

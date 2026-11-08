@@ -163,7 +163,10 @@ static void topbar(const State*u,const Library*l,int hid){
  * A quiet backdrop protects legibility on 4:3 CRTs without rearranging UI. */
 static void brand_overlay(void){
  rounded(16,13,102,38,0xff10171eu);
+ quad(19,23,2,17,accent,accent);
  label(25,23,"MAIZO",2.0f,0xfff7f8fau);
+ quad(25,46,74,2,mix_rgb(0xff10171eu,accent,110),
+      mix_rgb(0xff10171eu,accent,110));
 }
 static void footer(const State*u){
  rounded(19,446,602,26,surface);
@@ -215,6 +218,15 @@ static void section_title(const State*u,const Library*l,const Config*c,int home)
  snprintf(s,sizeof(s),"%s  /  %d %s  /  %s",layout_name[layout_of(c)],n,
     home?"SISTEMAS":"ITENS",l->scanning?"INDEXANDO...":"PRONTO");
  clipped(29,111,s,0.94f,muted,77);
+ /* Storage snapshot: zero FAT I/O in this frame. Particularly useful on
+  * Priiloader cold autoboot when the USB device arrives late. */
+ rounded(463,81,151,30,surface);
+ label(474,91,"USB",0.88f,muted);
+ label(500,91,u->storage_usb?"OK":"--",0.88f,
+       u->storage_usb?0xff77d5a6u:0xffe2a68au);
+ label(536,91,"SD",0.88f,muted);
+ label(554,91,u->storage_sd?"OK":"--",0.88f,
+       u->storage_sd?0xff77d5a6u:0xffe2a68au);
 }
 static void grid_tile(const State*u,const Library*l,int home,int pos,
                       float x,float y){
@@ -316,6 +328,8 @@ static void carousel(const State*u,const Library*l,int home){
  int length=(int)strlen(name);if(length>39)length=39;
  float scale=length>27?0.95f:length>19?1.20f:1.48f;
  clipped(320.0f-length*4.0f*scale,372,name,scale,ink,length);
+ /* Focus micro-accent: fixed position, no moving/flashing cover geometry. */
+ quad(295,394,50,2,focus_color,focus_color);
  if(!home)game_metadata(game_at(u,l,home,focused),406);
  else{
   char games[72];snprintf(games,sizeof(games),"Jogos Disponíveis: %d",library_total(l,(System)focused,"",0));
@@ -331,7 +345,8 @@ static void no_items(const State*u,const Library*l){
  if(!u->storage_usb)label(75,324,"USB NAO MONTADO: TENTANDO NOVAMENTE",0.95f,0xffe7ab89u);
 }
 static void catalog(const State*u,const Library*l,const Config*c,int home){
- /* Keep the whole top canvas reserved for MAIZO. */
+ /* Shared title and live storage status on BOTH home and game libraries. */
+ section_title(u,l,c,home);
  if(!count_items(u,l,home)){no_items(u,l);return;}
  switch(layout_of(c)){
   case 1:split_list(u,l,home);break;
@@ -390,7 +405,7 @@ static void welcome(const Config*c){
  char s[65];snprintf(s,sizeof(s),"TEMA: %s  < >",premium_themes[c->theme%6]);
  label(69,346,s,1.11f,accent);
 }
-static void hid_page(void){
+static void hid_page(const State*u){
  HidDiagnostics d;input_hid_diagnostics(&d);
  label(42,92,"DIAGNOSTICO USB HID",1.58f,ink);
  char s[110];
@@ -409,7 +424,10 @@ static void hid_page(void){
    i+1,d.held[i],d.stick_x[i],d.stick_y[i]);
   label(43,260+i*36,s,0.99f,ink);
  }
- label(43,413,"B OU START PARA VOLTAR",0.90f,muted);
+ snprintf(s,sizeof(s),"DISPOSITIVOS: USB %s  /  SD %s",
+  u->storage_usb?"MONTADO":"AUSENTE",u->storage_sd?"MONTADO":"AUSENTE");
+ label(43,391,s,0.91f,u->storage_usb?0xff77d5a6u:0xffe2a68au);
+ label(43,423,"B OU START PARA VOLTAR",0.90f,muted);
 }
 static void cover_pick_ui(const State*u,const Config*c){
  label(38,80,"CENTRAL DE CAPAS",1.55f,ink);
@@ -509,16 +527,28 @@ static void settings_ui(const State*u,const Config*c){
  snprintf(group,sizeof(group),"%s / %s",u->settings_global?"MAIZO":system_title(u->system),settings_category(scope,u->settings_row));
  clipped(39,111,group,0.95f,muted,65);
  int n=settings_count(scope);
- int top=u->settings_row-7;if(top<0)top=0;
- if(top>n-9)top=n>9?n-9:0;
- int shown=0;
- for(int i=top;i<n&&shown<9;i++){
-  if(!u->settings_global&&!u->settings_for_game&&(i<2||i==n-2))continue;
-  int y=139+(shown++)*29;
-  rounded(39,y,555,25,u->settings_row==i?0xff4b7479u:surface);
+ /* Work in VISIBLE rows: hiding theme/layout on per-system screens
+  * must not make the selected row disappear near the end of a long list. */
+ int limited=!u->settings_global&&!u->settings_for_game;
+ int first=limited?2:0;
+ int count=n-first-(limited?1:0);
+ int focus=u->settings_row-first;
+ if(limited&&u->settings_row==n-1)focus--;
+ if(focus<0)focus=0;
+ int top=focus-7;if(top<0)top=0;
+ if(top>count-9)top=count>9?count-9:0;
+ int visible=0;
+ for(int i=first;i<n;i++){
+  if(limited&&i==n-2)continue;
+  if(visible<top){visible++;continue;}
+  if(visible>=top+9)break;
+  int y=139+(visible++-top)*29;
+  int selected=u->settings_row==i;
+  rounded(39,y,555,25,selected?0xff4b7479u:surface);
+  if(selected)quad(42,y+5,3,15,accent,accent);
   clipped(52,y+8,settings_label(scope,i),0.99f,ink,35);
   char val[56];settings_value(c,scope,i,val,sizeof(val));
-  clipped(454,y+8,val,0.92f,ink,18);
+  clipped(454,y+8,val,0.92f,selected?0xfff7f8fau:muted,18);
  }
  hid_note();
 }
@@ -527,6 +557,12 @@ void ui_boot_message(const char*stage){
  /* Boot is also a frontend screen: keep the branding at the same
   * top-left location while the loading message changes. */
  quad(0,0,640,480,0xff000000u,0xff000000u);
+ /* Loading is intentionally static: no fake progress percentage or extra
+  * FAT calls on the video thread. The brand remains at its fixed origin. */
+ rounded(101,183,438,122,0xff171e26u);
+ quad(105,187,430,3,0xff41676eu,0xff41676eu);
+ label(129,210,"PREPARANDO SEU WII",1.53f,0xfff7f8fau);
+ if(stage)clipped(130,258,stage,0.89f,0xffb3bed5u,48);
  brand_overlay();
  if(stage){
   int count=(int)strlen(stage);if(count>57)count=57;
@@ -581,7 +617,7 @@ void ui_draw(const State*u,const Library*l,const Config*c,int hid){
  case PAGE_DETAIL:detail(u,l,c);break;
  case PAGE_SEARCH:search_ui(u,l);break;
  case PAGE_SETTINGS:settings_ui(u,u->settings_for_game?&u->game_config:c);break;
- case PAGE_HID:hid_page();break;
+ case PAGE_HID:hid_page(u);break;
   case PAGE_COVER_PICK:cover_pick_ui(u,c);break;
   case PAGE_COVERS:downloads_ui();break;
  case PAGE_CALIBRATION:calibration_ui(u,c);break;
