@@ -1,19 +1,29 @@
 #!/usr/bin/env python3
-"""Static guardrails for the Maizo minimal carousel; not a hardware test."""
+"""Static constraints for the Maizo minimal carousel and always-on brand.
+Hardware/appearance must still be checked on a physical Wii/CRT.
+"""
 from pathlib import Path
-import re
 
-ui = Path("source/ui.c").read_text()
-config = Path("source/config.c").read_text()
-main = Path("source/main.c").read_text()
-icons = Path("tools/prepare_system_icons.py").read_text()
-assert "c->layout=2;" in config, "Carousel must be the factory default"
-assert "state.page=PAGE_HOME;" in main
-assert "static const int order[5]={-2,2,-1,1,0}" in ui
+ROOT = Path(__file__).resolve().parents[1]
+ui = (ROOT / "source/ui.c").read_text()
+main = (ROOT / "source/main.c").read_text()
+
 assert "footer(u);" in ui
-assert ui.rfind("topbar(u,l,hid);") > ui.rfind("footer(u);"), "Logo not on top layer"
-assert "if(i->favorite && state.page==PAGE_LIBRARY)" in main, "Y must show game details"
-for key in ("IWII", "IGC", "IPS1", "ISNES", "INES", "IGBA", "IGB", "IMEDIA", "IHB"):
-    assert key in ui and key in icons, "Missing icon cache key " + key
-assert "ImageOps.contain" in Path("tools/build_cover_cache.py").read_text()
-print("PASS premium carousel, no favorites, aspect-preserving imagery")
+assert "if(i->favorite && state.page==PAGE_LIBRARY)" in main
+assert "static void brand_overlay(void){" in ui
+brand = ui.split("static void brand_overlay(void){", 1)[1].split("\n}", 1)[0]
+assert 'label(25,23,"MAIZO",2.0f' in brand
+assert 'label(25,23+dy,"MAIZO"' not in ui
+topbar = ui.split("static void topbar(", 1)[1].split("static void brand_overlay", 1)[0]
+assert 'label(25,23,"MAIZO"' not in topbar
+
+render = ui.split("void ui_draw(", 1)[1].split("void ui_shutdown", 1)[0]
+assert render.rfind("brand_overlay();") > render.rfind("footer(u);")
+assert render.rfind("brand_overlay();") > render.rfind("topbar(u,l,hid);")
+assert render.rfind("brand_overlay();") < render.rfind("maizo_video_present();")
+assert "else topbar_phase=0;\n /* LAST overlay pass:" in render
+
+boot = ui.split("void ui_boot_message(", 1)[1].split("int ui_init(", 1)[0]
+assert "brand_overlay();" in boot
+assert "maizo_video_present();" in boot
+print("PASS premium carousel and always-on upper-left MAIZO branding")

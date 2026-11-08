@@ -142,7 +142,7 @@ static void topbar(const State*u,const Library*l,int hid){
  };
  const int dy=(8-topbar_phase)*-6;
  quad(0,0,640,(float)(62*topbar_phase)/8,0xff07090bu,0xff141b20u);
- label(25,23+dy,"MAIZO",2.0f,ink);
+ /* Brand is NOT part of the animated console strip. */
  label(145,28+dy,"L",1.1f,muted);
  for(int k=0;k<SYSTEM_COUNT;k++){
   float x=164+k*46;
@@ -157,6 +157,13 @@ static void topbar(const State*u,const Library*l,int hid){
   }
  }
  label(592,28+dy,"R",1.1f,muted);
+}
+/* The always-on MAIZO brand stays in its original position (25,23).
+ * Draw this AFTER pages, tabs and dialogs so nothing can obscure it.
+ * A quiet backdrop protects legibility on 4:3 CRTs without rearranging UI. */
+static void brand_overlay(void){
+ rounded(16,13,102,38,0xff10171eu);
+ label(25,23,"MAIZO",2.0f,0xfff7f8fau);
 }
 static void footer(const State*u){
  rounded(19,446,602,26,surface);
@@ -517,9 +524,10 @@ static void settings_ui(const State*u,const Config*c){
 }
 void ui_boot_message(const char*stage){
  maizo_video_clear();
- /* Same MAIZO font, centered on solid black, no intermediary UI. */
+ /* Boot is also a frontend screen: keep the branding at the same
+  * top-left location while the loading message changes. */
  quad(0,0,640,480,0xff000000u,0xff000000u);
- label(280,223,"MAIZO",2.0f,0xfff7f8fau);
+ brand_overlay();
  if(stage){
   int count=(int)strlen(stage);if(count>57)count=57;
   float scale=0.85f;
@@ -566,7 +574,7 @@ void ui_draw(const State*u,const Library*l,const Config*c,int hid){
  }
  quad(0,104,640,304,base,previous);
  quad(0,408,640,72,previous,base);
- /* Logo is rendered after every panel. */
+ /* Paint the page first, including any overlays. */
  switch(u->page){
  case PAGE_HOME:catalog(u,l,c,1);break;
  case PAGE_LIBRARY:catalog(u,l,c,0);break;
@@ -587,6 +595,8 @@ void ui_draw(const State*u,const Library*l,const Config*c,int hid){
  footer(u);
  if(u->in_system){if(topbar_phase<8)topbar_phase++;topbar(u,l,hid);}
  else topbar_phase=0;
+ /* LAST overlay pass: independent of page, modal and tab animation. */
+ brand_overlay();
  maizo_video_present();
 }
 void ui_shutdown(void){maizo_video_shutdown();}
