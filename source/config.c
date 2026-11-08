@@ -45,7 +45,7 @@ void config_load(Config*c){config_defaults(c);char p[80];snprintf(p,sizeof(p),"%
   else if(!strcmp(key,"cover_art"))c->cover_art=val%3;
   else if(!strcmp(key,"cover_region"))c->cover_region=val%5;
   else if(!strcmp(key,"wii_ios"))c->wii_ios=(val==58|| (val>=200&&val<=255))?val:249;
-  else if(!strcmp(key,"wii_usb_port"))c->wii_usb_port=val>1?0:val;
+  else if(!strcmp(key,"wii_usb_port"))c->wii_usb_port=val>2?0:val;
   else if(!strcmp(key,"gc_mc_multi"))c->gc_mc_multi=!!val;
   else if(!strcmp(key,"gc_native_si"))c->gc_native_si=!!val;
   else if(!strcmp(key,"gc_rem_limit"))c->gc_rem_limit=!!val;
@@ -144,7 +144,7 @@ void config_game_load(Config*out,const Config*defaults,const Game*g){
   else if(g->system==SYSTEM_WII){
    if(!strcmp(key,"wii_ios")&&(value==58||(value>=200&&value<=255)))
     out->wii_ios=value;
-   else if(!strcmp(key,"wii_usb_port")&&value<=1)
+   else if(!strcmp(key,"wii_usb_port")&&value<=2)
     out->wii_usb_port=value;
   } else if(g->system==SYSTEM_GC){
    if(!strcmp(key,"gc_memcard"))out->gc_memcard=!!value;

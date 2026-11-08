@@ -67,15 +67,21 @@ class LaunchArgsTests(unittest.TestCase):
     def test_wii_id6_and_ios(self):
         self.assertEqual(self.build(0, b"usb:/wbfs/Mario Kart/ID.wbfs"),
                          [b"usb:/apps/module/boot.dol", b"RMCE01",
-                          b"-bootios=249", b"-usbport=0"])
+                          b"-ios=249", b"-bootios=249", b"-usbport=0"])
         self.assertIsNone(self.build(0, b"usb:/wbfs/invalid.wbfs", ident=b""))
         self.assertIsNone(self.build(0, b"usb:/wbfs/invalid.wbfs", ident=b"invalid?"))
         self.assertIsNone(self.build(0, b"usb:/wbfs/invalid.wbfs", wii_usb_port=5))
 
+    def test_wii_auto_port_and_loader_ios_are_real_upstream_options(self):
+        self.assertEqual(self.build(0, b"usb:/wbfs/Test/RMCE01.wbfs",
+                                    wii_ios=250, wii_usb_port=2),
+                         [b"usb:/apps/module/boot.dol", b"RMCE01",
+                          b"-ios=250", b"-bootios=250", b"-usbport=2"])
+
     def test_wii_sd_mode_when_game_is_on_sd(self):
         self.assertEqual(self.build(0, b"sd:/wbfs/Mario Kart/RMCE01.wbfs"),
                          [b"usb:/apps/module/boot.dol", b"RMCE01",
-                          b"-bootios=249", b"-usbport=0", b"-sdmode=1"])
+                          b"-ios=249", b"-bootios=249", b"-usbport=0", b"-sdmode=1"])
 
     def test_gamecube_config_file_contract_not_fake_argv(self):
         self.assertEqual(self.build(1, b"sd:/games/Zelda/game.iso"),

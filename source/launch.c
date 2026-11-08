@@ -114,6 +114,28 @@ const char*module_name(System sys){
  case SYSTEM_MEDIA:return "WIIMC-SSLC";case SYSTEM_HB:return "HOMEBREW CHANNEL";default:return "SEM MODULO";
  }
 }
+/* Nintendont's LoadNinCFG() reads /nincfg.bin from its PRIMARY device,
+ * which may be SD even when the game is on USB.  As a fallback for loaders
+ * that fail to transport the binary argv, write the same game config to
+ * both mounted roots.  argv[1] is still the primary launch contract.
+ * Each write is best effort and never prevents a valid argv boot. */
+static int maizo_write_nincfg_root(const NIN_CFG *n,const char *root){
+ char dest[32],tmp[48],backup[48];
+ snprintf(dest,sizeof(dest),"%s:/nincfg.bin",root);
+ snprintf(tmp,sizeof(tmp),"%s.tmp",dest);
+ snprintf(backup,sizeof(backup),"%s.maizobak",dest);
+ FILE*f=fopen(tmp,"wb");
+ if(!f)return 0;
+ int ok=fwrite(n,1,sizeof(*n),f)==sizeof(*n);
+ if(fclose(f))ok=0;
+ if(!ok){remove(tmp);return 0;}
+ if(rename(tmp,dest)==0)return 1;
+ /* FAT may reject replacing an open/existing destination. Preserve the
+  * old file until the replacement has been fully written. */
+ if(rename(dest,backup)!=0){remove(tmp);return 0;}
+ if(rename(tmp,dest)==0){remove(backup);return 1;}
+ rename(backup,dest);remove(tmp);return 0;
+}
 static int save_nincfg(const Game*g,const Config*c,NIN_CFG *out) {
  NIN_CFG n;memset(&n,0,sizeof(n));n.Magicbytes=NIN_CFG_MAGIC;n.Version=NIN_CFG_VERSION;
  n.Config=NIN_CFG_AUTO_BOOT|(c->gc_memcard?NIN_CFG_MEMCARDEMU:0)|(c->gc_wide?NIN_CFG_FORCE_WIDE:0)|
@@ -147,17 +169,12 @@ static int save_nincfg(const Game*g,const Config*c,NIN_CFG *out) {
  if(!maizo_gc_relative_path(g->path,n.GamePath,sizeof(n.GamePath)))return 0;
  if(g->id[0])memcpy(&n.GameID,g->id,4);
  if(out)*out=n;
- char dest[32];snprintf(dest,sizeof(dest),"%s:/nincfg.bin",(n.Config&NIN_CFG_USB)?"usb":"sd");
- char tmp[48],backup[48];snprintf(tmp,sizeof(tmp),"%s.tmp",dest);
- snprintf(backup,sizeof(backup),"%s.bak",dest);
- FILE*f=fopen(tmp,"wb");if(!f)return 0;
- int ok=fwrite(&n,1,sizeof(n),f)==sizeof(n);if(fclose(f))ok=0;
- if(!ok){remove(tmp);return 0;}
- if(rename(tmp,dest)==0)return 1;
- remove(backup);
- if(rename(dest,backup)!=0){remove(tmp);return 0;}
- if(rename(tmp,dest)==0){remove(backup);return 1;}
- rename(backup,dest);remove(tmp);return 0;
+ /* Nintendont mounts SD first and may use it as primary even when
+  * the selected ISO is on USB. This cache is a compatibility fallback.
+  * The caller intentionally continues if neither filesystem accepts it. */
+ int a=maizo_write_nincfg_root(&n,(n.Config&NIN_CFG_USB)?"usb":"sd");
+ int b=maizo_write_nincfg_root(&n,(n.Config&NIN_CFG_USB)?"sd":"usb");
+ return a||b;
 }
 static void save_launch_record(const Game*g,const Config*c) {
  char dest[96];snprintf(dest,sizeof(dest),"%s/maizo",(g->path[0]=='s')?"sd:":"usb:");
@@ -188,6 +205,11 @@ static void save_launch_record(const Game*g,const Config*c) {
  g->system,g->path,module_name(g->system),
  c->media_volume,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio,c->ps1_engine,c->ps1_native,
  x240,x480,y,y,w240,w480,h,h,(c->force_vi704&&g->system!=SYSTEM_MEDIA)?1u:0u);
+ if(g->system==SYSTEM_WII)
+  fprintf(f,"wii_ios=%u\nwii_usb_port=%u\n",c->wii_ios,c->wii_usb_port);
+ if(g->system==SYSTEM_GC)
+  fprintf(f,"gc_device=%s\ngc_autoboot=1\n",
+    !strncmp(g->path,"usb:",4)?"usb":"sd");
  if(g->system==SYSTEM_MEDIA&&c->wiimc_apply){
   fprintf(f,"wiimc_apply=1\n");
   for(unsigned i=0;i<MAIZO_WIIMC_OPTION_COUNT;i++)
@@ -296,12 +318,19 @@ int module_launch(const Game*g,const Config*c,char*error,size_t cap){
  if(command.length>0x10000u-(argv_base-MAIZO_ARG_ADDR)){
   snprintf(error,cap,"Argumentos excedem regiao reservada");return 0;
  }
+ /* Official USB Loader GX and the Nintendont autoboot forwarder both
+  * leave one EXTRA terminal NUL after their NUL-separated argv payload.
+  * Mirror that ABI exactly; the binary NIN_CFG remains argv[1]. */
+ if(command.length+1>0x10000u-(argv_base-MAIZO_ARG_ADDR)){
+  snprintf(error,cap,"Argumentos excedem terminador");return 0;
+ }
  memset(args,0,sizeof(*args));memcpy(line,command.data,command.length);
+ line[command.length]=0;
  args->argvMagic=ARGV_MAGIC;
- args->commandLine=line;args->length=command.length;
+ args->commandLine=line;args->length=command.length+1;
  args->argc=command.argc;
  args->argv=&args->commandLine;args->endARGV=args->argv+1;
- DCFlushRange(args,(u32)(argv_base-MAIZO_ARG_ADDR+command.length+31u)&~31u);
+ DCFlushRange(args,(u32)(argv_base-MAIZO_ARG_ADDR+command.length+1u+31u)&~31u);
  memcpy((void*)(uintptr_t)MAIZO_BOOT_ADDR,maizo_bootstub,maizo_bootstub_len);
  DCFlushRange((void*)(uintptr_t)MAIZO_BOOT_ADDR,(maizo_bootstub_len+31u)&~31u);
  ICInvalidateRange((void*)(uintptr_t)MAIZO_BOOT_ADDR,(maizo_bootstub_len+31u)&~31u);

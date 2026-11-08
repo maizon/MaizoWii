@@ -217,6 +217,11 @@ static void play_game(int index,Page back){
   state.info_return=back;state.page=PAGE_INFO;return;
  }
  Config effective;config_game_load(&effective,&config,g);
+ /* Loading a large DOL can take a moment on a cold USB device. Show an
+  * actual stage rather than leaving the last cover frozen. */
+ char stage[128];
+ snprintf(stage,sizeof(stage),"ABRINDO %s...",module_name(g->system));
+ ui_boot_message(stage);
  char error[160]="";
  if(!module_launch(g,&effective,error,sizeof(error))){
   snprintf(state.info,sizeof(state.info),"%s",error[0]?error:"FALHA NA INICIALIZACAO DO JOGO");

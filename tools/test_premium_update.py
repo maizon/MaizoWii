@@ -12,11 +12,13 @@ def source(path):
 
 
 class PremiumUpdateContracts(unittest.TestCase):
-    def test_boot_splash_is_black_and_centered(self):
+    def test_boot_splash_is_black_and_persistent_brand(self):
         ui = source("source/ui.c")
         section = ui[ui.index("void ui_boot_message("):ui.index("int ui_init(")]
         self.assertIn("quad(0,0,640,480,0xff000000u,0xff000000u)", section)
-        self.assertIn('label(280,223,"MAIZO",2.0f', section)
+        self.assertIn("brand_overlay();", section)
+        self.assertIn('label(25,23,"MAIZO",2.0f', ui)
+        self.assertNotIn('label(280,223,"MAIZO"', section)
         self.assertIn("clipped(px,447,stage", section)
         self.assertNotIn("INICIANDO WII HUB", section)
         main = source("source/main.c")
