@@ -60,6 +60,14 @@ def patch_nin_kernel(root: Path) -> None:
        "\t\tif(mznet_iso)\n\t\t{\n"
        "\t\t\tfree(tmp_ciso);maizonet_nin_close();\n"
        "\t\t\tmznet_iso=false;ISOFileOpen=0;return false;\n\t\t}")
+    # ISOSeek() can be called independently of ISOReadDirect(). A remote
+    # image has no live FAT FIL, so never f_lseek() that uninitialized object.
+    replace_one(iso,
+       "\tif(LastOffset64 != Offset64)\n\t{\n\t\tif (ISO_IsCISO)",
+       "\tif(LastOffset64 != Offset64)\n\t{\n"
+       "\t\tif(mznet_iso)\n\t\t{\n"
+       "\t\t\tLastOffset64 = Offset64;\n\t\t\treturn;\n\t\t}\n"
+       "\t\tif (ISO_IsCISO)")
     replace_one(iso,
        "void ISOClose()\n{\n\tif(ISOFileOpen)\n\t{\n\t\tif(wiiVCInternal)",
        "void ISOClose()\n{\n\tif(ISOFileOpen)\n\t{\n"

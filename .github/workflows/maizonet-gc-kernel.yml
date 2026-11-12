@@ -6,6 +6,10 @@ on:
     paths:
       - integrations/maizonet_*
       - tools/patch_nintendont_maizonet.py
+      - tools/test_maizonet_smb1.py
+      - tests/smb1_wire.c
+      - source/launch.c
+      - docs/MAIZONET_EXPERIMENTAL.md
       - .github/workflows/maizonet-gc-kernel.yml
   workflow_dispatch:
 
@@ -13,7 +17,17 @@ permissions:
   contents: read
 
 jobs:
+  test-smb1-host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify SMB1 protocol and patch script on native Linux
+        run: |
+          set -eu
+          python3 tools/test_maizonet_smb1.py
+          python3 -m py_compile tools/patch_nintendont_maizonet.py
   build-nintendont:
+    needs: test-smb1-host
     runs-on: ubuntu-latest
     timeout-minutes: 35
     container:
@@ -53,6 +67,9 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config --global --add safe.directory "$GITHUB_WORKSPACE/upstream-nintendont"
           make -C upstream-nintendont -j2
+          test -s upstream-nintendont/kernel/kernel.bin
+          test -s upstream-nintendont/loader/loader.dol
+          grep -Fq 'if(mznet_iso)' upstream-nintendont/kernel/ISO.c
           find upstream-nintendont -type f \( -name loader.dol -o -name kernel.bin \) -print -exec ls -lh {} \;
       - name: Stage distinct experimental Nintendont (do not replace stock)
         run: |

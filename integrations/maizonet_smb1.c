@@ -96,6 +96,8 @@ int maizonet_smb1_connect_guest(MaizoNetSmb1*c,MaizoNetTransport t,
  memset(words,0,sizeof(words));words[0]=0xff;
  w16(words+4,32768);w16(words+6,2);
  w32(words+10,r32(p+33+15)); /* negotiate session key */
+ /* Advertise large-file offsets: GameCube disc offsets must not truncate. */
+ w32(words+22,0x00000008u); /* CAP_LARGE_FILES */
  data[0]=0;data[1]=0; /* anonymous account, primary domain */
  memcpy(data+2,"MaizoNet",9);
  memcpy(data+11,"Wii",4);
@@ -149,7 +151,15 @@ int maizonet_smb1_read_at(MaizoNetSmb1*c,uint64_t offset,void*buffer,unsigned le
   if(p[H]<12)return -1;
   got=r16(p+33+10)|((unsigned)r16(p+33+14)<<16);
   off=r16(p+33+12);
-  if(got>part||off+got>c->rxlen)return -1;
+  /* DataOffset is relative to the start of the SMB header, not NetBIOS.
+   * The claimed bytes must reside within ByteCount, never in SMB metadata. */
+  {
+   unsigned bytes_at=H+1u+2u*(unsigned)p[H]+2u;
+   unsigned bytes=r16(p+bytes_at-2u);
+   if(off<bytes_at || off>bytes_at+bytes ||
+      got>bytes_at+bytes-off || got>part || off+got>c->rxlen)
+    return -1;
+  }
   if(got==0)break;
   memcpy(out+finished,p+off,got);
   finished+=got;

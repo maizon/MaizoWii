@@ -192,6 +192,11 @@ static int save_nincfg(const Game*g,const Config*c,NIN_CFG *out) {
  /* Nintendont mounts SD first and may use it as primary even when
   * the selected ISO is on USB. This cache is a compatibility fallback.
   * The caller intentionally continues if neither filesystem accepts it. */
+ /* Remote configuration must NOT overwrite the global nincfg.bin on
+  * either device. Its CheatPath is a transport marker; if a later stock
+  * Nintendont run consumed that fallback file, it could try the tiny stub.
+  * The isolated loader receives this config through binary argv[1] only. */
+ if(marker&&marker[0])return 1;
  int a=maizo_write_nincfg_root(&n,(n.Config&NIN_CFG_USB)?"usb":"sd");
  int b=maizo_write_nincfg_root(&n,(n.Config&NIN_CFG_USB)?"sd":"usb");
  return a||b;

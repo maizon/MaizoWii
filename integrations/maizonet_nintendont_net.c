@@ -172,9 +172,11 @@ error:
  if(mzfd>=0){IOS_Close(mzfd);mzfd=-1;}
  return 0;
 }
-bool maizonet_nin_open(const char*marker){
+/* Keep the remote session independent from normal FAT/USB disk handling.
+ * One bounded reconnect is allowed after a failed sector read; requests are
+ * retried from the original offset, never from a partially filled buffer. */
+static bool mz_connect_backend(void){
  MaizoNetTransport t;
- if(mzopened || !split_marker(marker))return false;
  if(!mzsocket_init(mzhost,mzport))return false;
  t.receive=mzrecv;t.transmit=mzsend;t.user=0;
  if(!maizonet_smb1_connect_guest(&mzclient,t,mzhost,mzshare)){
@@ -186,6 +188,11 @@ bool maizonet_nin_open(const char*marker){
   maizonet_nin_close();return false;
  }
  mzopened=1;
+ return true;
+}
+bool maizonet_nin_open(const char*marker){
+ if(mzopened || !split_marker(marker))return false;
+ if(!mz_connect_backend())return false;
  dbgprintf("MZ SMB1: remote ISO backend opened\r\n");
  return true;
 }
@@ -193,7 +200,23 @@ bool maizonet_nin_read(void*out,u32 size,u64 offset){
  int ret;
  if(!mzopened||!out||!size)return false;
  ret=maizonet_smb1_read_at(&mzclient,offset,out,size);
- if(ret!=(int)size)return false;
+ if(ret!=(int)size){
+  dbgprintf("MZ SMB1: read failed at %08x:%08x len=%u status=%08x; reconnect\r\n",
+     (u32)(offset>>32),(u32)offset,size,mzclient.last_status);
+  /* Do not send SMB CLOSE on a dead TCP connection: that could block for
+   * another full socket timeout. maizonet_nin_close still closes IOS fds. */
+  mzopened=0;
+  maizonet_nin_close();
+  mdelay(80);
+  if(!mz_connect_backend())return false;
+  ret=maizonet_smb1_read_at(&mzclient,offset,out,size);
+  if(ret!=(int)size){
+   dbgprintf("MZ SMB1: retry failed; fail closed\r\n");
+   mzopened=0;
+   maizonet_nin_close();
+   return false;
+  }
+ }
  sync_after_write_align32(out,size);
  return true;
 }

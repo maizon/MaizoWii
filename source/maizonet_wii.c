@@ -20,6 +20,8 @@
 #include <stdint.h>
 #include <dirent.h>
 #include <sys/stat.h>
+/* Self-contained network module: do not depend on app.h path constants. */
+#define MAIZONET_PATH_CAP 512u
 typedef struct {
  char host[64],share[64],path[256];
  unsigned port;
@@ -154,7 +156,7 @@ int maizonet_wii_prepare(char*stub,size_t stubcap,char*marker,size_t markcap,
  NetConfig conf;NetSocket sock={-1};struct sockaddr_in addr;
  MaizoNetSmb1*smb=NULL;MaizoNetTransport t;
  unsigned char *first=NULL;FILE*f=NULL;int ok=0;
- char path[256],temp[MAIZO_PATH];
+ char path[256],temp[MAIZONET_PATH_CAP];
  if(!error||!errorcap||!stub||!stubcap||!marker||!markcap||!id6)return 0;
  error[0]=0;marker[0]=0;stub[0]=0;id6[0]=0;
  read_ini(&conf);
@@ -208,7 +210,7 @@ int maizonet_wii_prepare(char*stub,size_t stubcap,char*marker,size_t markcap,
   snprintf(error,errorcap,"ARQUIVO NAO TEM CABECALHO GAMECUBE VALIDO");goto done;
  }
  memcpy(id6,first,6);id6[6]=0;
- char folder[MAIZO_PATH];
+ char folder[MAIZONET_PATH_CAP];
  snprintf(folder,sizeof(folder),"%s/maizo",root);mkdir(folder,0777);
  snprintf(folder,sizeof(folder),"%s/maizo/maizonet",root);mkdir(folder,0777);
  f=fopen(temp,"wb");

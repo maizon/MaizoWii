@@ -57,8 +57,15 @@ Não encaminhe a porta SMB1 para a internet.
   Apenas um `path` é configurado por vez; extensões são passadas como texto.
 - Apenas SMB1 com acesso de convidado, sem senha/assinatura, em LAN.
   Servidores com NTLMSSP obrigatório podem rejeitar a conexão.
-- CISO, jogos multidisco pela rede e retomada após falhas ainda não têm
-  compatibilidade comprovada.
+- CISO e troca automática de discos pela rede ainda não têm compatibilidade
+  comprovada.
+- O kernel agora tenta **uma única reconexão** por leitura com erro, voltando
+  ao deslocamento original. Isso não garante recuperação de qualquer queda.
+- ISOSeek remoto não tenta deslocar um descritor FAT inexistente; o caminho
+  local permanece inalterado.
+- O marcador exclusivo da sessão SMB vai via NIN_CFG/argv; o frontend não
+  grava essa configuração remota em `nincfg.bin` global para proteger o Nintendont padrão.
+- Os testes de protocolo e build de CI não substituem Wii físico.
 - O código de rede no kernel ARM deve ser testado em Wii físico antes de uso
   prolongado. As estratégias de timeout podem variar entre versões de IOS.
 - Meta de 3,2 MB/s **não medida**. Nenhuma promessa de jogo sem travamentos.
