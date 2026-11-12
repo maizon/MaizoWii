@@ -13,6 +13,7 @@
 #include "common.h"
 #include "string.h"
 #include "ff_utf8.h"
+#include "maizonet_net_ipv4.h"
 #define SO_SOCKET 0x0f
 #define SO_CONNECT 0x04
 #define SO_CLOSE 0x03
@@ -147,33 +148,41 @@ static int mzsocket_init(const char*host,unsigned port){
  mzfd=IOS_Open("/dev/net/ip/top",0);
  mz_record(111,0,0,mzfd);
  if(mzfd<0)return 0;
+ /* The custom Nintendont IOS may expose SO (/dev/net/ip/top) without
+  * WiiConnect24 KD (/dev/net/kd/request). Our physical Wii log confirms
+  * KD open failure at stage 112 even though SO opens correctly (fd=2).
+  * KD is OPTIONAL for this read-only socket backend; do not abort here. */
  mz_error=112;
  kd=IOS_Open("/dev/net/kd/request",0);
- if(kd<0)goto error;
- for(k=0;k<15;k++){
-  memset(resp,0,sizeof(resp));
-  ret=IOS_Ioctl(kd,6,NULL,0,resp,sizeof(resp));
-  if(ret==0 && resp[0]!= (u32)-29 && resp[0]!=(u32)-15 && (s32)resp[0]<0){
-   dbgprintf("MZ SMB NWC failed %d\r\n",(s32)resp[0]);goto error;
+ mz_record(112,0,0,kd);
+ if(kd>=0){
+  for(k=0;k<15;k++){
+   memset(resp,0,sizeof(resp));
+   ret=IOS_Ioctl(kd,6,NULL,0,resp,sizeof(resp));
+   if(ret<0){mz_record(113,0,0,ret);break;}
+   if(ret==0 && resp[0]!= (u32)-29 && resp[0]!=(u32)-15 && (s32)resp[0]<0){
+    mz_record(113,0,0,(s32)resp[0]);
+    break; /* KD error does not prove SO unavailable. */
+   }
+   if(ret==0 && (resp[0]==0 || resp[0]==(u32)-15))break;
+   mdelay(100);
   }
-  if(ret==0 && (resp[0]==0 || resp[0]==(u32)-15))break;
-  mdelay(100);
+  if(k>=15)mz_record(113,0,0,-110);
+  IOS_Close(kd);kd=-1;
  }
- IOS_Close(kd);kd=-1;
- mz_error=113;
- if(k>=15)goto error;
+ /* The SO stack may already have been started by an earlier loader.
+  * Probe SOGetHostID even if SO_STARTUP says 'already running'. */
  mz_error=114;
  ret=IOS_Ioctl(mzfd,SO_STARTUP,NULL,0,NULL,0);
  mz_record(114,0,0,ret);
- if(ret<0)goto error;
  mz_error=115;
- for(k=0;k<20;k++){
+ for(k=0;k<25;k++){
   ret=IOS_Ioctl(mzfd,SO_HOSTID,NULL,0,NULL,0);
-  if(ret>0)break; /* DHCP IP assigned */
-  mdelay(100);
+  mz_record(115,0,0,ret);
+  if(maizonet_ipv4_hostid_ok((u32)ret))break;
+  mdelay(120);
  }
- mz_record(115,0,0,ret);
- if(ret<=0)goto error;
+ if(k>=25)goto error;
  mz_error=116;
  soc_in[0]=2;soc_in[1]=1;soc_in[2]=0;
  mzsocket=IOS_Ioctl(mzfd,SO_SOCKET,soc_in,sizeof(soc_in),NULL,0);

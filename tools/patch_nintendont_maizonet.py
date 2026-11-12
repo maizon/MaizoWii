@@ -21,7 +21,8 @@ def patch_nin_kernel(root: Path) -> None:
     src=Path(__file__).resolve().parents[1] / "integrations"
     kernel=root / "kernel"
     for name in ("maizonet_smb1.h","maizonet_smb1.c",
-                 "maizonet_nintendont_net.h","maizonet_nintendont_net.c"):
+                 "maizonet_nintendont_net.h","maizonet_nintendont_net.c",
+                 "maizonet_net_ipv4.h"):
         shutil.copyfile(src / name,kernel / name)
 
     replace_one(

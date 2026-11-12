@@ -100,3 +100,25 @@ SMB1, abertura, leitura e reconexão, com temporizador, retorno e deslocamento,
 no `maizo/maizonet/diagnostic.log` do dispositivo FAT selecionado.
 A captura é de melhor esforço, não de 100% dos eventos; falhas anteriores à
 montagem FAT e falhas abruptas podem não gerar arquivo.
+
+## Diagnóstico físico 12/11/2026 e correção KD opcional
+
+Log real do Wii (maizonet em ISO do XIII):
+```
+MZNET_FATAL step=ISO_OPEN code=112 nt=00000000 offset=00000000:00000000 bytes=0
+MZNET_TRACE tick=049A76AB phase=110 result=0 offset=00000000:00000000 size=1445
+MZNET_TRACE tick=049A775E phase=111 result=2 offset=00000000:00000000 size=0
+```
+O estágio **112** é a falha ao abrir `/dev/net/kd/request` (WiiConnect24),
+não a abertura da ISO e nem um defeito demonstrado no Samba. O dispositivo
+`/dev/net/ip/top` foi aberto com sucesso (fd 2), portanto o kernel agora
+continua a inicialização SO quando KD estiver indisponível, deixando
+observável o resultado real de `SO_STARTUP`, `SO_HOSTID`, `SO_SOCKET`
+e conexão TCP. O retorno da função `SO_HOSTID` é um endereço IPv4 de
+32 bits e não deve ser testado como inteiro positivo com sinal; o
+endereço 192.168.0.8 seria incorretamente rejeitado pela versão anterior.
+
+**A correção permite avançar além da fase 112, mas ainda não valida que a
+reimplementação SMB1 no kernel execute um jogo real.** Capture novos logs
+para diferenciar falta de IP (115), falha de socket (116), conexão (117),
+negociação SMB (120), abertura (121) ou leitura de setores (130/131).
