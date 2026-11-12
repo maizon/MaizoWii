@@ -17,19 +17,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     container:
-      image: devkitpro/devkitppc:20261102
+      image: devkitpro/devkitppc:20210619
     steps:
       - uses: actions/checkout@v4
-      - name: Check ARM/PPC compiler availability
+      - name: Check pinned legacy ARM/PPC compiler availability
         run: |
           set -eu
           echo "ARM="; command -v arm-none-eabi-gcc || true
           echo "PPC="; command -v powerpc-eabi-gcc || true
           test -x /opt/devkitpro/devkitPPC/bin/powerpc-eabi-gcc
-          if ! test -x /opt/devkitpro/devkitARM/bin/arm-none-eabi-gcc; then
-            dkp-pacman -Sy --needed --noconfirm devkitARM
-          fi
+          # This official historical image supplies the old libogc ABI that
+          # Nintendont requires. Do NOT upgrade to latest toolchain in CI.
+          test -x /opt/devkitpro/devkitARM/bin/arm-none-eabi-gcc
           /opt/devkitpro/devkitARM/bin/arm-none-eabi-gcc --version | head -1
+          /opt/devkitpro/devkitPPC/bin/powerpc-eabi-gcc --version | head -1
       - name: Fetch pinned upstream Nintendont
         run: |
           set -eu
