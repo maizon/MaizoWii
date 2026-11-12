@@ -295,8 +295,16 @@ static int mz_boot_prepare(MaizoNetSmb1*m,const MzSettings*c,const char*path){
  memcpy(&ncfg->GameID,buf,4);
  ncfg->Config &= ~(NIN_CFG_CHEATS|NIN_CFG_CHEAT_PATH|NIN_CFG_AUTO_BOOT);
  DCFlushRange(ncfg,sizeof(NIN_CFG));
- if(!mz_save_settings(c,path))goto done;
- strcpy(mz_status,"ISO verificada: boot direto em andamento");
+ /* network.ini is only a convenience for the NEXT launch. The active
+  * remote session is already encoded in NIN_CFG's per-run transport marker.
+  * Do not block a verified ISO if removable media rejects a config write.
+  * The separate 128-KiB stub still MUST be written successfully above.
+  */
+ if(!mz_save_settings(c,path)){
+  gprintf("MAIZONET: network.ini save failed; keeping runtime SMB config\r\n");
+ }else{
+  strcpy(mz_status,"ISO verificada: boot direto em andamento");
+ }
  ok=1;
 done:
  free(buf);
@@ -400,7 +408,7 @@ bool MaizoNetSelectGame(void){
    else break;
   }
   ClearScreen();PrintInfo();
-  PrintFormat(DEFAULT_SIZE,BLACK,MENU_POS_X,MENU_POS_Y+20*3,"MAIZONINDENDONT - SMB1 DIRETO");
+  PrintFormat(DEFAULT_SIZE,BLACK,MENU_POS_X,MENU_POS_Y+20*3,"MAIZONINDENDONT - SMB1 DIRETO r3-1112");
   for(i=0;i<8;i++)PrintFormat(DEFAULT_SIZE,i==(unsigned)pos?MAROON:BLACK,
        MENU_POS_X,MENU_POS_Y+20*(i+5),"%c %s",
        i==(unsigned)pos?'>':' ',items[i]);
