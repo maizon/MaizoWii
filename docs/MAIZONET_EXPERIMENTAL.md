@@ -155,3 +155,28 @@ NCD → KD → SO → obtenção de IP, e o código de retorno é gravado no log
 Isso NÃO modifica a NAND ou a configuração de conexão do Wii. Ainda é
 uma tentativa de inicialização: em caso de falha na interface/IOS,
 a ISO continuará indisponível e não se deve supor sucesso.
+
+## Correção funcional posterior: inicialização NCD antes da leitura DI
+
+A falha de IP no kernel ocorre durante ISO_OPEN, **antes** de a rotina
+padrão do Nintendont chegar à configuração de perfil de rede ao final
+do loader. O Nintendont original ativa perfis selecionados nessa etapa
+posterior exclusivamente quando a opção de emulação BBA está ativada.
+O frontend MaizoWii usa `NetworkProfile=0` e não habilita BBA para o XIII.
+
+A nova rotina experimental ativa apenas em MaizoNet um perfil NCD
+**já configurado no próprio Wii**, antes de `CheckForMultiGameAndRegion`,
+seguindo os mesmos ioctls 3/4 e bits de perfil utilizados no loader
+upstream. Prioriza o perfil ativo; caso não exista, um perfil já
+habilitado. Se não houver perfil configurado, não inventa um. Não liga
+o BBA dentro do jogo e não altera os caminhos locais de Nintendont.
+
+Além disso, `SO_HOSTID=0` deixa de bloquear automaticamente o SMB:
+após uma sondagem breve, o kernel tenta a operação real
+`SO_SOCKET / SO_CONNECT`. Isso pode permitir conexão quando o getter
+de IP retorna zero apesar de a pilha de rede estar utilizável.
+
+Compilação automática não equivale a sucesso de boot no Wii real.
+A autenticação SMB, leitura aleatória de setores, boot de apploader,
+vídeo e controles ainda precisam de teste físico. Sem gravar a ISO
+completa no USB.

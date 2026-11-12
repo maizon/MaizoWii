@@ -85,13 +85,55 @@ def patch_nin_kernel(root: Path) -> None:
     replace_one(loader,
         '#include <unistd.h>',
         '#include <unistd.h>\n#include <network.h>')
+    # Before the FIRST remote ISO header read, select the same valid NCD
+    # profile that Wii settings already have enabled. Nintendont's original
+    # profile activation runs much later, after the first DI reads, and only
+    # for BBA-emulation games. Remote ISO needs it much earlier. Do not set
+    # NIN_CFG_BBA_EMU: XIII and ordinary GameCube games must not see a BBA.
+    replace_one(loader,
+        'static ioctlv IOCTL_Buf[2] ALIGNED(32);',
+        'static ioctlv IOCTL_Buf[2] ALIGNED(32);\n'
+        'static int MaizoNetEnableIOSNetworkProfile(void)\n'
+        '{\n'
+        '\tu8 *cfg = memalign(32,0x1C00);\n'
+        '\tif(!cfg)return -12;\n'
+        '\tmemset(cfg,0,0x1C00);\n'
+        '\ts32 fd = IOS_Open("/dev/net/ncd/manage",0);\n'
+        '\tif(fd<0){free(cfg);return fd;}\n'
+        '\tioctlv v[2] ALIGNED(32);\n'
+        '\tv[0].data = cfg; v[0].len = 0x1B5C;\n'
+        '\tv[1].data = cfg+0x1B60; v[1].len = 0x20;\n'
+        '\ts32 ret=IOS_Ioctlv(fd,3,0,2,v);\n'
+        '\tif(ret>=0)\n'
+        '\t{\n'
+        '\t\tconst unsigned ofs[3]={8u,0x924u,0x1240u};\n'
+        '\t\tunsigned chosen=3,i;\n'
+        '\t\t/* Prefer the active Wii profile; otherwise an enabled one. */\n'
+        '\t\tfor(i=0;i<3;i++)if((cfg[ofs[i]]&0xA0)==0xA0){chosen=i;break;}\n'
+        '\t\tif(chosen==3)for(i=0;i<3;i++)if(cfg[ofs[i]]&0x80){chosen=i;break;}\n'
+        '\t\tif(chosen<3)\n'
+        '\t\t{\n'
+        '\t\t\tfor(i=0;i<3;i++)\n'
+        '\t\t\t{\n'
+        '\t\t\t\tif(i==chosen)cfg[ofs[i]] |= 0xA0;\n'
+        '\t\t\t\telse cfg[ofs[i]] &= 0x7F;\n'
+        '\t\t\t}\n'
+        '\t\t\tcfg[4] = (cfg[ofs[chosen]]&1) ? 2 : 1;\n'
+        '\t\t\tDCFlushRange(cfg,0x1C00);\n'
+        '\t\t\tret=IOS_Ioctlv(fd,4,1,1,v);\n'
+        '\t\t}\n'
+        '\t\telse ret=-2; /* No configured profile: do not invent one. */\n'
+        '\t}\n'
+        '\tIOS_Close(fd);free(cfg);return ret;\n'
+        '}\n')
     replace_one(loader,
         '\t// Get multi-game and region code information.',
         '\tif(strncmp(ncfg->CheatPath,"MZSMB1|",7)==0)\n'
         '\t{\n'
         '\t\t/* libogc net_init: NCD link, NWC24 startup, SO, DHCP. */\n'
+        '\t\tint profile_status = MaizoNetEnableIOSNetworkProfile();\n'
         '\t\tint net_status = net_init();\n'
-        '\t\tgprintf("MZNET: PPC network preflight=%d\\r\\n",net_status);\n'
+        '\t\tgprintf("MZNET: Wii NCD profile=%d / PPC network=%d\\r\\n",profile_status,net_status);\n'
         '\t\t/* Keep an independent diagnostic even if ARM never starts. */\n'
         '\t\tFIL logfile;\n'
         '\t\tif(f_open_char(&logfile,"/maizo/maizonet/diagnostic.log",\n'

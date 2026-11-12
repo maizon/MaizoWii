@@ -193,13 +193,13 @@ static int mzsocket_init(const char*host,unsigned port){
  ret=IOS_Ioctl(mzfd,SO_STARTUP,NULL,0,NULL,0);
  mz_record(114,0,0,ret);
  mz_error=115;
- for(k=0;k<25;k++){
+ for(k=0;k<4;k++){
   ret=IOS_Ioctl(mzfd,SO_HOSTID,NULL,0,NULL,0);
   mz_record(115,0,0,ret);
   if(maizonet_ipv4_hostid_ok((u32)ret))break;
   mdelay(120);
  }
- if(k>=25){
+ if(k>=4){
   /* Unknown IPv4: ask IOS for interface IP/netmask before stopping. */
   memset(mz_if_req,0,sizeof(mz_if_req));
   memset(mz_if_addr,0,sizeof(mz_if_addr));
@@ -214,7 +214,10 @@ static int mzsocket_init(const char*host,unsigned port){
   sync_before_read(mz_if_length,sizeof(mz_if_length));
   mz_record(118,0,mz_if_addr[0],ret);
   mz_record(119,0,mz_if_addr[1],(s32)mz_if_length[0]);
-  goto error;
+  /* A zero SO_HOSTID does not prove TCP cannot connect: do not make
+   * this advisory API a mandatory boot gate. The real operation is
+   * SO_SOCKET + SO_CONNECT to the configured SMB server. */
+  mz_record(135,0,port,0);
  }
  mz_error=116;
  soc_in[0]=2;soc_in[1]=1;soc_in[2]=0;
