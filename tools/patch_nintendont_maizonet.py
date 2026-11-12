@@ -2,10 +2,11 @@
 """Patch pinned FIX94/Nintendont for MaizoNet experiments.
 
 Keep Nintendont kernel/build isolated from the MaizoWii frontend.
-Important: this does NOT currently enable network GameCube play.
-Do not package as production unless the kernel stream backend has real tests.
+The kernel SMB1/ISO path remains experimental and UNVALIDATED on Wii hardware.
+Never package as production before physical GameCube gameplay tests.
 """
 from pathlib import Path
+import shutil
 import sys
 
 def replace_one(path: Path, before: str, after: str) -> None:
@@ -13,6 +14,61 @@ def replace_one(path: Path, before: str, after: str) -> None:
     if s.count(before)!=1:
         raise RuntimeError(f"{path}: expected exactly one matching anchor, got {s.count(before)}")
     path.write_text(s.replace(before,after),encoding="utf-8")
+
+
+def patch_nin_kernel(root: Path) -> None:
+    """Insert isolated read-only SMB1 ISO backend without changing FAT path."""
+    src=Path(__file__).resolve().parents[1] / "integrations"
+    kernel=root / "kernel"
+    for name in ("maizonet_smb1.h","maizonet_smb1.c",
+                 "maizonet_nintendont_net.h","maizonet_nintendont_net.c"):
+        shutil.copyfile(src / name,kernel / name)
+
+    replace_one(
+        kernel / "Makefile",
+        "SDI.o usb.o usbstorage.o wdvd.o sock.o",
+        "SDI.o usb.o usbstorage.o wdvd.o sock.o maizonet_smb1.o maizonet_nintendont_net.o"
+    )
+    iso=kernel / "ISO.c"
+    replace_one(iso,
+       '#include "wdvd.h"',
+       '#include "wdvd.h"\n#include "maizonet_nintendont_net.h"')
+    replace_one(iso,
+       "u32 ISOFileOpen = 0;",
+       "u32 ISOFileOpen = 0;\nstatic bool mznet_iso = false;")
+    replace_one(iso,
+       "\tif(ISOFileOpen == 0)\n\t\treturn;\n\n\tUINT read;",
+       "\tif(ISOFileOpen == 0)\n\t\treturn;\n"
+       "\t/* A remote ISO uses the same disc-sector demand path as FAT. */\n"
+       "\tif(mznet_iso)\n\t{\n"
+       "\t\tif(!maizonet_nin_read(Buffer,Length,Offset64))\n"
+       "\t\t{\n\t\t\tdbgprintf(\"MZNET: remote sector timeout\\r\\n\");\n"
+       "\t\t\tShutdown();\n\t\t}\n"
+       "\t\tLastOffset64=Offset64+Length;\n"
+       "\t\tUSBReadTimer=read32(HW_TIMER);\n"
+       "\t\treturn;\n\t}\n\n\tUINT read;")
+    replace_one(iso,
+       "\telse\n\t{\n\t\ts32 ret = f_open_char( &GameFile, ConfigGetGamePath(), FA_READ|FA_OPEN_EXISTING );",
+       "\telse if(maizonet_nin_requested(ConfigGetCheatPath()))\n\t{\n"
+       "\t\tif(!maizonet_nin_open(ConfigGetCheatPath()))return false;\n"
+       "\t\tmznet_iso=true;\n\t}\n"
+       "\telse\n\t{\n\t\ts32 ret = f_open_char( &GameFile, ConfigGetGamePath(), FA_READ|FA_OPEN_EXISTING );")
+    replace_one(iso,
+       "\tif (tmp_ciso->magic == CISO_MAGIC)\n\t{",
+       "\tif (tmp_ciso->magic == CISO_MAGIC)\n\t{\n"
+       "\t\t/* Only raw ISO/GCM over SMB1; no CISO remapping yet. */\n"
+       "\t\tif(mznet_iso)\n\t\t{\n"
+       "\t\t\tfree(tmp_ciso);maizonet_nin_close();\n"
+       "\t\t\tmznet_iso=false;ISOFileOpen=0;return false;\n\t\t}")
+    replace_one(iso,
+       "void ISOClose()\n{\n\tif(ISOFileOpen)\n\t{\n\t\tif(wiiVCInternal)",
+       "void ISOClose()\n{\n\tif(ISOFileOpen)\n\t{\n"
+       "\t\tif(mznet_iso)maizonet_nin_close();\n"
+       "\t\telse if(wiiVCInternal)")
+    replace_one(iso,
+       "\tISOFileOpen = 0;\n\tISO_IsCISO = false;\n}",
+       "\tISOFileOpen = 0;\n\tISO_IsCISO = false;\n\tmznet_iso=false;\n}")
+    print("Nintendont: experimental SMB1 guest ISO backend patched into ISO.c")
 
 def main() -> int:
     if len(sys.argv)!=2:
@@ -26,6 +82,7 @@ def main() -> int:
         "typedef void  (*app_entry)(app_init *init, app_main *main, app_final *final);"
     )
     print("Nintendont pinned source: corrected strict apploader ABI prototypes")
+    patch_nin_kernel(root)
     return 0
 
 if __name__=="__main__":
