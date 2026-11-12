@@ -91,3 +91,12 @@ de FAT, resets ou desligamentos externos. Não altere seu Samba do OPL.
 Após teste que falhar, desligue o Wii manualmente se necessário, conecte o
 pendrive ao Android/PC e envie `maizo/maizonet/diagnostic.log`. Em testes
 iniciais desative a emulação de Memory Card.
+
+## Histórico circular de diagnóstico
+
+O kernel experimental mantém até **64 eventos recentes na RAM**, sem escrita
+FAT durante cada leitura da ISO. Em falha terminal, grava eventos de socket IOS,
+SMB1, abertura, leitura e reconexão, com temporizador, retorno e deslocamento,
+no `maizo/maizonet/diagnostic.log` do dispositivo FAT selecionado.
+A captura é de melhor esforço, não de 100% dos eventos; falhas anteriores à
+montagem FAT e falhas abruptas podem não gerar arquivo.

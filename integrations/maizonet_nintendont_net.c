@@ -48,6 +48,16 @@ static int mzopened=0;
 static int mz_error=0;
 static u32 mz_ntstatus=0;
 int maizonet_nin_last_error(void){return mz_error?mz_error:199;}
+#define MZ_TRACE_CAP 64u
+typedef struct {u32 tick,phase,offhi,offlo,size; s32 result;} MzTrace;
+static MzTrace mz_trace[MZ_TRACE_CAP];
+static unsigned mz_trace_total=0;
+static void mz_record(u32 phase,u64 offset,u32 size,s32 result){
+ MzTrace *e=&mz_trace[mz_trace_total++ % MZ_TRACE_CAP];
+ e->tick=read32(HW_TIMER);e->phase=phase;
+ e->offhi=(u32)(offset>>32);e->offlo=(u32)offset;
+ e->size=size;e->result=result;
+}
 bool maizonet_nin_requested(const char*marker){
  return marker && !strncmp(marker,"MZSMB1|",7);
 }
@@ -131,10 +141,11 @@ static int mzrecv(void*ctx,void*buffer,unsigned n){
 static int mzsocket_init(const char*host,unsigned port){
  u8 addr[4];
  s32 kd=-1,ret;unsigned k;
- mz_error=110;
+ mz_error=110;mz_record(110,0,port,0);
  if(!ipv4(host,addr))return 0;
  mz_error=111;
  mzfd=IOS_Open("/dev/net/ip/top",0);
+ mz_record(111,0,0,mzfd);
  if(mzfd<0)return 0;
  mz_error=112;
  kd=IOS_Open("/dev/net/kd/request",0);
@@ -153,6 +164,7 @@ static int mzsocket_init(const char*host,unsigned port){
  if(k>=15)goto error;
  mz_error=114;
  ret=IOS_Ioctl(mzfd,SO_STARTUP,NULL,0,NULL,0);
+ mz_record(114,0,0,ret);
  if(ret<0)goto error;
  mz_error=115;
  for(k=0;k<20;k++){
@@ -160,10 +172,12 @@ static int mzsocket_init(const char*host,unsigned port){
   if(ret>0)break; /* DHCP IP assigned */
   mdelay(100);
  }
+ mz_record(115,0,0,ret);
  if(ret<=0)goto error;
  mz_error=116;
  soc_in[0]=2;soc_in[1]=1;soc_in[2]=0;
  mzsocket=IOS_Ioctl(mzfd,SO_SOCKET,soc_in,sizeof(soc_in),NULL,0);
+ mz_record(116,0,0,mzsocket);
  if(mzsocket<0)goto error;
  memset(&opt_par,0,sizeof(opt_par));
  opt_par.socket=mzsocket;opt_par.level=0xffff;
@@ -178,7 +192,9 @@ static int mzsocket_init(const char*host,unsigned port){
  conn_par.address[2]=(u8)(port>>8);conn_par.address[3]=(u8)port;
  memcpy(conn_par.address+4,addr,4);
  mz_error=117;
- if(IOS_Ioctl(mzfd,SO_CONNECT,&conn_par,sizeof(conn_par),NULL,0)<0)goto error;
+ ret=IOS_Ioctl(mzfd,SO_CONNECT,&conn_par,sizeof(conn_par),NULL,0);
+ mz_record(117,0,port,ret);
+ if(ret<0)goto error;
  mz_error=0;
  return 1;
 error:
@@ -195,18 +211,22 @@ static bool mz_connect_backend(void){
  if(!mzsocket_init(mzhost,mzport))return false;
  t.receive=mzrecv;t.transmit=mzsend;t.user=0;
  mz_error=120;
+ mz_record(120,0,0,0);
  if(!maizonet_smb1_connect_guest(&mzclient,t,mzhost,mzshare)){
   mz_ntstatus=mzclient.last_status;
+  mz_record(120,0,0,(s32)mz_ntstatus);
   dbgprintf("MZ SMB1: session rejected %08x\r\n",mzclient.last_status);
   maizonet_nin_close();return false;
  }
  mz_error=121;
+ mz_record(121,0,0,0);
  if(!maizonet_smb1_open(&mzclient,mzpath)){
   mz_ntstatus=mzclient.last_status;
+  mz_record(121,0,0,(s32)mz_ntstatus);
   dbgprintf("MZ SMB1: ISO open rejected %08x\r\n",mzclient.last_status);
   maizonet_nin_close();return false;
  }
- mzopened=1;
+ mzopened=1;mz_record(122,0,0,1);
  mz_error=0;
  return true;
 }
@@ -222,6 +242,7 @@ bool maizonet_nin_read(void*out,u32 size,u64 offset){
  int ret;
  if(!mzopened||!out||!size){mz_error=130;return false;}
  ret=maizonet_smb1_read_at(&mzclient,offset,out,size);
+ mz_record(130,offset,size,ret);
  if(ret!=(int)size){
   dbgprintf("MZ SMB1: read failed at %08x:%08x len=%u status=%08x; reconnect\r\n",
      (u32)(offset>>32),(u32)offset,size,mzclient.last_status);
@@ -233,7 +254,9 @@ bool maizonet_nin_read(void*out,u32 size,u64 offset){
   maizonet_nin_close();
   mdelay(80);
   if(!mz_connect_backend())return false;
+  mz_record(132,offset,size,0);
   ret=maizonet_smb1_read_at(&mzclient,offset,out,size);
+  mz_record(133,offset,size,ret);
   if(ret!=(int)size){
    mz_error=131;
    mz_ntstatus=mzclient.last_status;
@@ -264,7 +287,7 @@ void maizonet_nin_close(void){
  * Nintendont kernel still has it mounted. Do not power down automatically;
  * normal Nintendont and local images never call this routine. */
 void maizonet_nin_fatal(const char *step,u64 offset,u32 size){
- FIL log; UINT written=0;
+ FIL log; UINT written=0;unsigned total,i,index;
  char line[192];
  int code=maizonet_nin_last_error();
  BootStatusError(-9,code);
@@ -274,6 +297,15 @@ void maizonet_nin_fatal(const char *step,u64 offset,u32 size){
                 FA_OPEN_ALWAYS|FA_WRITE)==FR_OK){
   f_lseek(&log,f_size(&log));
   f_write(&log,line,strlen(line),&written);
+  total=mz_trace_total<MZ_TRACE_CAP?mz_trace_total:MZ_TRACE_CAP;
+  for(i=0;i<total;i++){
+   MzTrace *e;
+   index=(mz_trace_total-total+i)%MZ_TRACE_CAP;
+   e=&mz_trace[index];
+   _sprintf(line,"MZNET_TRACE tick=%08X phase=%u result=%d offset=%08X:%08X size=%u\n",
+            e->tick,e->phase,e->result,e->offhi,e->offlo,e->size);
+   f_write(&log,line,strlen(line),&written);
+  }
   f_sync(&log);
   f_close(&log);
  }
