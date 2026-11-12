@@ -148,6 +148,26 @@ def patch_nin_kernel(root: Path) -> None:
         '\t}\n'
         '\t// Get multi-game and region code information.')
 
+    # Stock Nintendont intentionally suspends the WiiConnect24 scheduler
+    # just before handing off to the GameCube game. That is a sensible local
+    # disc default but interferes with a network-backed virtual disc which
+    # MUST keep its IOS network services alive while gameplay is running.
+    # This exception applies only to the MaizoNet transport marker.
+    replace_one(loader,
+        '\tfd = IOS_Open("/dev/net/kd/request", 0);\n'
+        '\tIOS_Ioctl(fd, IOCTL_ExecSuspendScheduler, NULL, 0, &out, 4);\n'
+        '\tIOS_Close(fd);',
+        '\tif(strncmp(ncfg->CheatPath,"MZSMB1|",7)!=0)\n'
+        '\t{\n'
+        '\t\tfd = IOS_Open("/dev/net/kd/request", 0);\n'
+        '\t\tif(fd>=0)\n'
+        '\t\t{\n'
+        '\t\t\tIOS_Ioctl(fd, IOCTL_ExecSuspendScheduler, NULL, 0, &out, 4);\n'
+        '\t\t\tIOS_Close(fd);\n'
+        '\t\t}\n'
+        '\t}\n'
+        '\t/* Remote ISO must retain NWC24 service for the Nintendont ARM SMB1 socket. */')
+
     # A partial 128 KiB stub must NEVER be retried through FST then shut down.
     di=kernel / "DI.c"
     replace_one(di,

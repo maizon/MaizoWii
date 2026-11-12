@@ -167,6 +167,12 @@ static int mzsocket_init(const char*host,unsigned port){
  mzfd=IOS_Open("/dev/net/ip/top",0);
  mz_record(111,0,0,mzfd);
  if(mzfd<0)return 0;
+ /* PPC loader already called libogc net_init before the virtual disc
+  * opens. If IOS retains the assigned IP, reuse it: starting NWC24/SO
+  * a second time on ARM could tear down that network interface. */
+ ret=IOS_Ioctl(mzfd,SO_HOSTID,NULL,0,NULL,0);
+ mz_record(123,0,0,ret);
+ if(maizonet_ipv4_hostid_ok((u32)ret))goto network_ready;
  /* Physical Wii log: KD opens (fd=3), but NWC24 start returns -33.
   * A failed KD ioctl alone does not prove SO is unavailable. */
  mz_error=112;
@@ -219,6 +225,7 @@ static int mzsocket_init(const char*host,unsigned port){
    * SO_SOCKET + SO_CONNECT to the configured SMB server. */
   mz_record(135,0,port,0);
  }
+network_ready:
  mz_error=116;
  soc_in[0]=2;soc_in[1]=1;soc_in[2]=0;
  mzsocket=IOS_Ioctl(mzfd,SO_SOCKET,soc_in,sizeof(soc_in),NULL,0);

@@ -180,3 +180,23 @@ Compilação automática não equivale a sucesso de boot no Wii real.
 A autenticação SMB, leitura aleatória de setores, boot de apploader,
 vídeo e controles ainda precisam de teste físico. Sem gravar a ISO
 completa no USB.
+
+## Handoff de rede permanente — não suspender WiiConnect24 no MaizoNet
+
+No upstream Nintendont, já depois da inicialização da rede e quase no
+salto para o jogo, o loader chama `ExecSuspendScheduler` no serviço
+`/dev/net/kd/request` para parar a agenda do WiiConnect24. Essa decisão
+é correta para jogos carregados de disco/USB, mas pode interromper o
+serviço que nossa ISO de GameCube **precisa manter funcionando durante
+todo o jogo**. A nova integração experimental preserva esse serviço
+somente quando `CheatPath` contém o marcador `MZSMB1|`. Jogos locais
+continuam com o comportamento original.
+
+O kernel agora verifica, ao abrir `/dev/net/ip/top`, se já existe um
+IP atribuído pelo loader e, nesse caso, evita iniciar novamente KD/SO.
+Se ainda estiver sem IP, realiza a rotina existente de inicialização
+e tenta TCP `SO_CONNECT` mesmo que `SO_GETHOSTID` retorne zero.
+
+Essas são alterações de fluxo funcional, não apenas logs.
+O Wii real ainda precisa validar GameCube rodando e leituras aleatórias
+pelo SMB; não há garantia de funcionamento apenas pelo CI.
