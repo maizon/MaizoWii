@@ -361,6 +361,32 @@ static void handle(const Input*i){
    state.page=PAGE_INFO;
    return;
   }
+  if(state.settings_global && state.settings_row==4 && (i->accept||i->right)){
+   /* Experimental direct SMB guest ISO launch.
+    * Only a 128-KiB header stub is downloaded. Fail closed if no patched
+    * Nintendont is installed; never attempt to boot the stub as a full ISO. */
+   char stub[MAIZO_PATH],marker[255],id[7],error[160];
+   Game remote;Config options;
+   ui_boot_message("MAIZONET: ABRINDO ISO SMB1 (128KB)...");
+   if(!maizonet_wii_prepare(stub,sizeof(stub),marker,sizeof(marker),
+                           id,error,sizeof(error))){
+    snprintf(state.info,sizeof(state.info),"%s",error[0]?error:"FALHA NA REDE SMB1");
+    state.info_return=PAGE_SETTINGS;state.page=PAGE_INFO;return;
+   }
+   memset(&remote,0,sizeof(remote));remote.system=SYSTEM_GC;
+   snprintf(remote.path,sizeof(remote.path),"%s",stub);
+   snprintf(remote.id,sizeof(remote.id),"%s",id);
+   options=config;options.gc_cheats=0;
+   maizonet_wii_set_marker(marker);
+   ui_boot_message("MAIZONET: NINTENDONT REMOTO...");
+   if(!module_launch(&remote,&options,error,sizeof(error))){
+    maizonet_wii_set_marker(NULL);
+    snprintf(state.info,sizeof(state.info),"%s",
+      error[0]?error:"NINTENDONT REMOTO INDISPONIVEL");
+    state.info_return=PAGE_SETTINGS;state.page=PAGE_INFO;
+   }
+   return;
+  }
   if(!state.settings_for_game &&
      state.settings_row==settings_count(scope)-3 && (i->accept||i->right)){
    if(!state.settings_global&&(state.system==SYSTEM_MEDIA||state.system==SYSTEM_HB)){

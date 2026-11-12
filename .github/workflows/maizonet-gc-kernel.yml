@@ -54,12 +54,33 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE/upstream-nintendont"
           make -C upstream-nintendont -j2
           find upstream-nintendont -type f \( -name loader.dol -o -name kernel.bin \) -print -exec ls -lh {} \;
-      - name: Upload source-built binaries only
+      - name: Stage distinct experimental Nintendont (do not replace stock)
+        run: |
+          set -eu
+          test -s upstream-nintendont/loader/loader.dol
+          mkdir -p maizonet-stage/apps/nintendont-maizonet maizonet-stage/maizo
+          cp upstream-nintendont/loader/loader.dol maizonet-stage/apps/nintendont-maizonet/boot.dol
+          cp docs/MAIZONET_EXPERIMENTAL.md maizonet-stage/LEIA-MAIZONET.md
+          cat > maizonet-stage/apps/nintendont-maizonet/meta.xml <<'XML'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <app version="1">
+            <name>Nintendont MaizoNet (experimental)</name>
+            <coder>FIX94 / MaizoNet integration</coder>
+            <version>0.0.1-experimental</version>
+            <short_description>SMB1 direct disc reader - unverified Wii</short_description>
+            <ahb_access/>
+          </app>
+          XML
+          cat > maizonet-stage/maizo/network.ini.example <<'INI'
+          host=192.168.1.100
+          port=1445
+          share=PS2
+          path=GameCube/Meu Jogo/game.iso
+          INI
+      - name: Upload experimental bundle (NOT a proven gameplay release)
         uses: actions/upload-artifact@v4
         with:
           name: MAIZONET-NINTENDONT-EXPERIMENTAL
-          path: |
-            upstream-nintendont/loader/loader.dol
-            upstream-nintendont/kernel/kernel.bin
+          path: maizonet-stage/
           if-no-files-found: error
           retention-days: 7

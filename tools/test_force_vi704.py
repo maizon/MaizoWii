@@ -13,7 +13,7 @@ class Force704Tests(unittest.TestCase):
     def test_general_settings_are_live(self):
         s=code("source/settings.c")
         main=code("source/main.c")
-        self.assertIn("case SYSTEM_COUNT:return 7",s)
+        self.assertIn("case SYSTEM_COUNT:return 8",s)
         self.assertIn('FORCAR VI 704',s)
         self.assertIn("c->force_vi704=!c->force_vi704",s)
         self.assertIn("maizo_video_force_vi704(config.force_vi704)",main)

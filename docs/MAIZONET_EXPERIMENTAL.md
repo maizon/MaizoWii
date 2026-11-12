@@ -1,0 +1,66 @@
+# MaizoNet SMB1 Direct — protótipo de GameCube (NÃO validado no Wii real)
+
+**Estado:** o cliente SMB1 e um backend de leitura de ISO sob demanda para o kernel
+ARM do Nintendont foram escritos e a compilação automatizada está sendo exercitada.
+Não há confirmação de jogo iniciando em Wii físico. Nunca substitua o Nintendont normal
+com esse binário experimental.
+
+## Objetivo e isolamento
+
+- Somente Nintendo Wii, roteador e servidor Samba SMB1 existente na rede local.
+- Sem Raspberry Pi e sem servidor MaizoNet próprio.
+- Nenhuma ISO integral é transferida: o frontend baixa **somente os primeiros
+  128 KiB** da imagem para um stub local; o Nintendont modificado tenta ler
+  setores restantes diretamente do SMB1 durante o jogo.
+- O stub é armazenado em `sd:/maizo/maizonet/game.iso` ou equivalente USB.
+  É um arquivo **INCOMPLETO**; NÃO inicie no Nintendont oficial.
+- O Nintendont oficial e os demais módulos não devem ser modificados.
+- O WiiMC e sua configuração de vídeo continuam intactos.
+- Um SD ou pendrive FAT é necessário para executar os DOLs, config e armazenar o
+  pequeno stub (não para guardar a ISO toda).
+
+## Configuração
+
+Crie `sd:/maizo/network.ini` ou `usb:/maizo/network.ini`:
+
+```ini
+host=192.168.1.100
+port=1445
+share=PS2
+path=GameCube/Meu Jogo/game.iso
+```
+
+O servidor padrão é uma LAN isolada, convidado sem senha.
+Se sua instância Samba usa porta TCP 445, altere `port=445`.
+O diretório de `path` é **relativo à raiz** do compartilhamento.
+Não encaminhe a porta SMB1 para a internet.
+
+## Instalação experimental
+
+1. Faça backup dos seus arquivos e configurações.
+2. Instale o frontend compilado pela branch de testes.
+3. Instale o Nintendont modificado em
+   `sd:/apps/nintendont-maizonet/boot.dol`, ou em
+   `usb:/maizo/modules/nintendont-maizonet/boot.dol`.
+   **Não sobrescreva** `apps/Nintendont/boot.dol`.
+4. Na tela inicial, pressione START → Configurações gerais.
+5. Escolha **MAIZONET: TESTAR SMB1 CONVIDADO**; com `path` configurado,
+   a leitura de 32 bytes deverá retornar o ID do jogo.
+6. Escolha **MAIZONET: INICIAR GAMECUBE SMB1**. Somente com Nintendont
+   MaizoNet instalado o frontend permitirá avançar.
+7. Caso falhe, registre exatamente a tela/etapa; não suponha que teste de
+   conexão garante um jogo jogável.
+
+## Limitações atuais
+
+- Ainda não há descoberta automática de todas as ISOs SMB na biblioteca.
+  Apenas um `path` é configurado por vez; extensões são passadas como texto.
+- Apenas SMB1 com acesso de convidado, sem senha/assinatura, em LAN.
+  Servidores com NTLMSSP obrigatório podem rejeitar a conexão.
+- CISO, jogos multidisco pela rede e retomada após falhas ainda não têm
+  compatibilidade comprovada.
+- O código de rede no kernel ARM deve ser testado em Wii físico antes de uso
+  prolongado. As estratégias de timeout podem variar entre versões de IOS.
+- Meta de 3,2 MB/s **não medida**. Nenhuma promessa de jogo sem travamentos.
+- Nintendont é software GPL-2.0; alterações são compiladas em artefato
+  separado. A distribuição final deve manter os créditos/licenças.

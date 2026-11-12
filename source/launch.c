@@ -1,6 +1,7 @@
 #include "app.h"
 #include "launch_args.h"
 #include "ps1_cue.h"
+#include "maizonet_wii.h"
 #include <gccore.h>
 #include <ogcsys.h>
 #include <ogc/machine/processor.h>
@@ -51,6 +52,18 @@ static const char*paths[SYSTEM_COUNT][4]={
  {"usb:/apps/WiiMC/boot.dol","sd:/apps/WiiMC/boot.dol","usb:/maizo/modules/wiimc/boot.dol","sd:/maizo/modules/wiimc/boot.dol"},
   {NULL,NULL,NULL,NULL} /* HB path = executable. */
 };
+/* Remote GC MUST use the patched kernel, never the stock Nintendont:
+ * booting the 128-KiB header stub as a full ISO could crash the game. */
+static const char *maizonet_nintendont_path(void){
+ static const char *paths[]={
+  "usb:/maizo/modules/nintendont-maizonet/boot.dol",
+  "sd:/maizo/modules/nintendont-maizonet/boot.dol",
+  "usb:/apps/nintendont-maizonet/boot.dol",
+  "sd:/apps/nintendont-maizonet/boot.dol"};
+ for(unsigned i=0;i<sizeof(paths)/sizeof(paths[0]);i++)
+  if(file_exists(paths[i]))return paths[i];
+ return NULL;
+}
 static const char*ps1_wiisx_paths[]={
  "usb:/apps/WiiSX/boot.dol","sd:/apps/WiiSX/boot.dol",
  "usb:/apps/wiiSX/boot.dol","sd:/apps/wiiSX/boot.dol",
@@ -168,6 +181,13 @@ static int save_nincfg(const Game*g,const Config*c,NIN_CFG *out) {
  /* Nintendont expects a path relative to the selected root device. */
  if(!maizo_gc_relative_path(g->path,n.GamePath,sizeof(n.GamePath)))return 0;
  if(g->id[0])memcpy(&n.GameID,g->id,4);
+ /* CheatPath is reused as an isolated Nintendont GC kernel transport marker.
+  * Disable cheats explicitly in remote mode; normal games never see it. */
+ const char *marker=maizonet_wii_get_marker();
+ if(marker&&marker[0]){
+  n.Config &= ~NIN_CFG_CHEATS;
+  snprintf(n.CheatPath,sizeof(n.CheatPath),"%s",marker);
+ }
  if(out)*out=n;
  /* Nintendont mounts SD first and may use it as primary even when
   * the selected ISO is on USB. This cache is a compatibility fallback.
@@ -258,9 +278,17 @@ static int valid_dol(const unsigned char*image,size_t len){
 int module_launch(const Game*g,const Config*c,char*error,size_t cap){
  if(!g||!c||!error||!cap)return 0;
  error[0]=0;
- const char*exe=g->system==SYSTEM_HB?g->path:
+ const int remote_gc=g->system==SYSTEM_GC&&maizonet_wii_get_marker()[0];
+ const char*exe=remote_gc?maizonet_nintendont_path():
+                g->system==SYSTEM_HB?g->path:
                 (g->system==SYSTEM_PS1&&c->ps1_engine)?resolve_ps1_wiisx():
-                (g->system==SYSTEM_MEDIA&&c->media_player)?resolve_media_official():resolve(g->system);if(!exe){snprintf(error,cap,"DOL do %s nao encontrado",module_name(g->system));return 0;}
+                (g->system==SYSTEM_MEDIA&&c->media_player)?resolve_media_official():resolve(g->system);
+ if(!exe){
+  snprintf(error,cap,remote_gc?
+   "NINTENDONT MAIZONET NAO INSTALADO - JOGO REMOTO BLOQUEADO":
+   "DOL do modulo nao encontrado");
+  return 0;
+ }
  if(g->system==SYSTEM_PS1){
   const char*e=strrchr(g->path,'.');
   if(e&&(!strcasecmp(e,".chd")||!strcasecmp(e,".m3u"))){
