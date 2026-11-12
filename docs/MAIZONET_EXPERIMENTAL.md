@@ -234,3 +234,23 @@ silenciar um erro de transporte e evita um loop preto infinito.
 
 **Aprovado no CI não valida jogo em hardware**. A preflight é necessária,
 mas áudio, controles e o jogo inteiro ainda dependem de validação real.
+
+## Inspiração direta: Open PS2 Loader (ps2homebrew/Open-PS2-Loader)
+
+Estudado `modules/iopcore/cdvdman/smb.c`, `device-smb.c` e a
+comunicação de jogo com o IOP. OPL lê setores por SMB1 sob demanda sem
+copiar a ISO inteira ao dispositivo. A implementação OPL limita as
+recepções a **8192 bytes** para evitar congestionamento na janela TCP
+pequena do processador de I/O e usa TCP_NODELAY nas transações.
+
+O backend MaizoNet agora:
+- limita **ReadAndX a 8192 bytes** enquanto mantém offsets de 64 bits;
+- anuncia `MaxCount` sem `MinCount=part`, aceita respostas fragmentadas
+  e continua pedindo dados até completar a leitura;
+- ativa **TCP_NODELAY** no socket Starlet/IOS quando permitido;
+- remove apenas no modo remoto a **leitura especulativa de 64 KiB**
+  do Nintendont, mantendo seu cache nativo e jogos locais intactos.
+
+PS2/IOP e Wii/Starlet têm APIs e arquiteturas distintas. A adaptação
+é de estratégias de rede e leitura, não de binários de PS2; o sucesso
+em jogo real no Wii ainda precisa ser demonstrado.

@@ -7,7 +7,9 @@
  */
 #include <stddef.h>
 #include <stdint.h>
-#define MAIZONET_SMB1_MAX_IO 32768u
+/* PS2 OPL uses 8-KiB SMB1 receive limits to fit constrained I/O
+ * processor TCP windows. Bound Wii remote disc SMB packets similarly. */
+#define MAIZONET_SMB1_MAX_IO 8192u
 #define MAIZONET_SMB1_RX_CAP 36864u
 #define MAIZONET_SMB1_TX_CAP 512u
 typedef int (*MaizoNetRead)(void *,void *,unsigned);

@@ -32,6 +32,8 @@
 #define MZ_POLLERR 0x0008u
 #define MZ_POLLHUP 0x0010u
 #define MZ_TCP_TIMEOUT_MS 3500u
+#define SO_TCP_NODELAY_LEVEL 6u
+#define SO_TCP_NODELAY_OPT 1u
 
 #define NCD_GETLINKSTATUS 0x07
 #define SO_GETINTERFACEOPT 0x1c
@@ -278,7 +280,14 @@ network_ready:
  mz_record(137,0,0,ret);
  if(ret<0){mz_error=137;goto error;}
  memset(&opt_par,0,sizeof(opt_par));
- opt_par.socket=mzsocket;opt_par.level=0xffff;
+ opt_par.socket=mzsocket;
+ /* OPL disables Nagle for SMB1 request/response pairs. */
+ opt_par.level=SO_TCP_NODELAY_LEVEL;
+ opt_par.optname=SO_TCP_NODELAY_OPT;opt_par.optlen=4;
+ ((u32*)opt_par.optval)[0]=1;
+ ret=IOS_Ioctl(mzfd,SO_OPT,&opt_par,sizeof(opt_par),NULL,0);
+ mz_record(140,0,0,ret); /* non-fatal on older IOS */
+ opt_par.level=0xffff;
  opt_par.optname=0x1006;opt_par.optlen=8; /* SO_RCVTIMEO */
  ((u32*)opt_par.optval)[0]=3; /* seconds */
  IOS_Ioctl(mzfd,SO_OPT,&opt_par,sizeof(opt_par),NULL,0);

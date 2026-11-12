@@ -145,7 +145,10 @@ int maizonet_smb1_read_at(MaizoNetSmb1*c,uint64_t offset,void*buffer,unsigned le
   memset(words,0,sizeof(words));words[0]=0xff;
   w16(words+4,c->fid);
   w32(words+6,(uint32_t)(offset+finished));
-  w16(words+10,part);w16(words+12,part);
+  w16(words+10,part);
+  /* OPL's SMB ReadAndX sets MaxCount without requiring MinCount=part.
+   * Accept a short response and continue until the requested size. */
+  w16(words+12,0);
   w32(words+20,(uint32_t)((offset+finished)>>32));
   if(exchange(c,0x2e,words,24,0,0)!=1)return -1;
   p=c->rx+NB;

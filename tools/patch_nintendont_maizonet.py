@@ -77,6 +77,12 @@ def patch_nin_kernel(root: Path) -> None:
        "\t\tfree(tmp_ciso);maizonet_nin_close();\n"
        "\t\tmznet_iso=false;ISOFileOpen=0;return false;\n"
        "\t}")
+    # OPL reads requested CDVD sectors in bounded chunks rather than
+    # speculatively doubling tiny reads up to 64KiB. Use the same policy
+    # for remote ISO; retain native Nintendont cache and local behavior.
+    replace_one(iso,
+       "if( (Offset64 == LastOffset64) && (*Length < 0x8000) )",
+       "if( !mznet_iso && (Offset64 == LastOffset64) && (*Length < 0x8000) )")
     replace_one(iso,
        "void ISOClose()\n{\n\tif(ISOFileOpen)\n\t{\n\t\tif(wiiVCInternal)",
        "void ISOClose()\n{\n\tif(ISOFileOpen)\n\t{\n"
