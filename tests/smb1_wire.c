@@ -35,8 +35,11 @@ static int transmit(void*ctx,const void*ptr,unsigned n){
   if(p[32]!=4||p[33]!=0xff||p[39]!=1)return -1;
   wn=3;
  }else if(cmd==0x2d){
+  const char *name="GameCube\\Sample\\game.iso";
+  unsigned path_len=(unsigned)strlen(name)+1u;
   if(p[32]!=15||p[33]!=0xff||p[33+16]!=1||
-     p[33+30+2]!=4)return -1;
+     ((unsigned)p[63]|((unsigned)p[64]<<8))!=path_len||
+     n<65u+path_len||memcmp(p+65,name,path_len)!=0)return -1;
   wn=15;w16(out+33+4,0x33);
  }else if(cmd==0x2e){
   if(p[32]!=12||p[33]!=0xff||

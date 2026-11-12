@@ -124,10 +124,11 @@ int maizonet_smb1_open(MaizoNetSmb1*c,const char*path){
  memset(words,0,sizeof(words));words[0]=0xff;
  w16(words+6,0); /* access read */
  w16(words+16,1); /* open existing only */
- data[0]=4;
- memcpy(data+1,path,n);
- data[n+1]=0;
- if(exchange(c,0x2d,words,30,data,n+2)!=1)return 0;
+ /* OPEN_ANDX carries SMB_STRING directly (without the 0x04 legacy
+  * BufferFormat used by SMB_COM_OPEN). Preserve the terminator. */
+ memcpy(data,path,n);
+ data[n]=0;
+ if(exchange(c,0x2d,words,30,data,n+1)!=1)return 0;
  if(c->rx[NB+H]<3)return 0;
  c->fid=(uint16_t)r16(c->rx+NB+33+4);
  c->opened=1;
@@ -179,5 +180,8 @@ const char *maizonet_smb1_error(uint32_t status){
  if(status==0xC00000CCu)return "SMB: share not found";
  if(status==0xC000006Du)return "SMB: authentication rejected";
  if(status==0xC0000016u)return "SMB: extended authentication required";
+ if(status==0xC000003Au)return "SMB: directory path not found";
+ if(status==0xC000000Du)return "SMB: invalid request parameter";
+ if(status==0xC00000BBu)return "SMB: operation not supported";
  return "SMB: incompatible server or transport error";
 }

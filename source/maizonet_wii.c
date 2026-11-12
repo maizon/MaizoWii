@@ -114,8 +114,13 @@ void maizonet_wii_probe(char*result,size_t cap){
  established=1;
  snprintf(msg,sizeof(msg),"SMB1: CONECTADO EM %s (%u)",conf.share,conf.port);
  if(conf.path[0]){
-  if(!maizonet_smb1_open(smb,conf.path)){
-   snprintf(msg,sizeof(msg),"SMB1: ARQUIVO NAO ABRIU: %s",maizonet_smb1_error(smb->last_status));
+  /* SMB1 filenames use backslashes; network.ini is user-facing and accepts
+   * slash-separated paths. Match the launcher normalization in probe mode. */
+  char canonical_path[sizeof(conf.path)];
+  snprintf(canonical_path,sizeof(canonical_path),"%s",conf.path);
+  for(char *p=canonical_path;*p;p++)if(*p=='/')*p='\\';
+  if(!maizonet_smb1_open(smb,canonical_path)){
+   snprintf(msg,sizeof(msg),"SMB1: ARQUIVO NAO ABRIU: %s (NT=%08lX)",maizonet_smb1_error(smb->last_status),(unsigned long)smb->last_status);
    goto done;
   }
   r=maizonet_smb1_read_at(smb,0,header,sizeof(header));
@@ -201,7 +206,7 @@ int maizonet_wii_prepare(char*stub,size_t stubcap,char*marker,size_t markcap,
   snprintf(error,errorcap,"SMB1: %s",maizonet_smb1_error(smb->last_status));goto done;
  }
  if(!maizonet_smb1_open(smb,path)){
-  snprintf(error,errorcap,"ISO SMB: %s",maizonet_smb1_error(smb->last_status));goto done;
+  snprintf(error,errorcap,"ISO SMB: %s (NT=%08lX)",maizonet_smb1_error(smb->last_status),(unsigned long)smb->last_status);goto done;
  }
  if(maizonet_smb1_read_at(smb,0,first,131072u)!=131072){
   snprintf(error,errorcap,"FALHA AO LER 128KB DO GAMECUBE PELA REDE");goto done;
