@@ -298,3 +298,34 @@ o lançamento e mostra uma mensagem explicativa na própria interface.
 Isso verifica de fato o novo servidor e a leitura aleatória antes do
 handoff PPC→ARM, mas não garante que os serviços IOS continuem
 funcionando após a troca para o Nintendont.
+
+## MaizoNintendont - execucao independente (nova integracao)
+
+O boot.dol em `apps/nintendont-maizonet/` agora inicia com **tres fontes**
+no seletor do Nintendont: SD, USB e **SMB**. A aba SMB nao depende do
+MaizoWii nem de argv externo; carrega o servidor configurado, oferece uma
+interface para editar IP, porta e compartilhamento, permite salvar
+`/maizo/network.ini` no FAT selecionado, navega pastas por SMB1
+TRANS2_FIND_FIRST2/FIND_NEXT2, e mostra `.iso` e `.gcm` da pasta escolhida.
+`A` entra, `B` volta, `HOME` sai do navegador. Edicao: direcionais
+escolhem posicao/caractere; `X` remove; `START` confirma e salva o campo.
+Pastas e arquivos com nomes nao-ASCII, listagens com mais de 64 entradas,
+servidores que fragmentam respostas TRANS2 e shares com autenticacao
+podem nao funcionar nesta versao experimental.
+
+Ao escolher jogo, o loader le 128 KiB do cabecalho **e um bloco no offset
+0x20000** pelo SMB, valida a assinatura GameCube e cria apenas um stub
+local separado. Configura `GamePath` e o marcador `MZSMB1|` no NIN_CFG da
+sessao, sem persistir esse marcador no `nincfg.bin` global. Depois,
+o caminho no kernel ARM continua lendo setores remotamente sob demanda.
+As transferencias de 1,6 MB antes da tela preta **nao demonstram**
+que houve streaming de dados durante gameplay. O teste de preflight
+do ARM ainda precisa passar num Wii fisico.
+
+**Limite de confianca:** compilar o loader e rodar mock SMB nao mede a
+probabilidade de o jogo dar boot em hardware. Nenhuma porcentagem de
+85% e garantida sem que o Wii realmente inicie jogos e sustente
+leituras de setores no kernel. O Nintendont normal nao foi substituido.
+
+
+Nota: as versoes mais recentes tambem permitem protocolo UDP no kernel e porta UDP 17445. O navegador ainda lista a biblioteca via SMB1; o editor independente preserva `protocol`/`udp_port` no arquivo e permite escolher SMB ou UDP antes do boot. Apenas o uso SMB dispensa o servidor UDP opcional.

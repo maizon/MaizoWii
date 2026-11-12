@@ -246,6 +246,91 @@ def patch_nin_kernel(root: Path) -> None:
         '\t\t\t\t}\n'
         '\t\t\t\tif(di_msg->ioctl.command == 0)')
 
+    # Direct executable: patch the pinned Nintendont loader itself. Both
+    # independent launcher and ARM kernel use the same bounded SMB1 protocol,
+    # but separate compilation units/addresses. No MaizoWii argv dependency.
+    loaderdir = root / "loader" / "source"
+    for name in ("maizonet_loader.c", "maizonet_loader.h",
+                 "maizonet_smb1.c", "maizonet_smb1.h"):
+        shutil.copyfile(src / name, loaderdir / name)
+    menu = loaderdir / "menu.c"
+    replace_one(menu, '#include "menu.h"',
+                '#include "menu.h"\n#include "maizonet_loader.h"')
+    replace_one(menu,
+        '\tbool SaveSettings = false;\n\tbool redraw = true;\t// Need to draw the menu the first time.',
+        '\tbool SaveSettings = false;\n'
+        '\tint maizo_selection=(ncfg->Config & NIN_CFG_USB)?1:0;\n'
+        '\tbool redraw = true;\t// Need to draw the menu the first time.')
+    replace_one(menu,
+        'MENU_POS_Y + 20 * 6, UseSD ? ARROW_LEFT : "");',
+        'MENU_POS_Y + 20 * 6, maizo_selection==0 ? ARROW_LEFT : "");')
+    replace_one(menu,
+        'MENU_POS_Y + 20 * 7, UseSD ? "" : ARROW_LEFT);',
+        'MENU_POS_Y + 20 * 7, maizo_selection==1 ? ARROW_LEFT : "");')
+    replace_one(menu,
+        'MENU_POS_Y + 20 * 7, "USB  ");',
+        'MENU_POS_Y + 20 * 7, "USB  ");\n'
+        '\t\t\tPrintFormat(DEFAULT_SIZE, BLACK, MENU_POS_X + 53 * 6 - 8, MENU_POS_Y + 20 * 8, '
+        'maizo_selection==2 ? ARROW_LEFT : "");\n'
+        '\t\t\tPrintFormat(DEFAULT_SIZE, BLACK, MENU_POS_X + 47 * 6 - 8, MENU_POS_Y + 20 * 8, '
+        '"SMB  ");')
+    replace_one(menu,
+        '\t\tif (FPAD_OK(0))\n'
+        '\t\t{\n'
+        '\t\t\t// Select a game from the specified device.\n'
+        '\t\t\tint ret = SelectGame();\n'
+        '\t\t\tif (ret & 2) SaveSettings = true;\n'
+        '\t\t\tif (ret & 1) break;\n'
+        '\t\t\tredraw = true;\n'
+        '\t\t}\n'
+        '\t\telse if (FPAD_Start(0))\n'
+        '\t\t{\n'
+        '\t\t\tShowMessageScreenAndExit("Returning to loader...", 0);\n'
+        '\t\t}\n'
+        '\t\telse if (FPAD_Down(0))\n'
+        '\t\t{\n'
+        '\t\t\tncfg->Config = ncfg->Config | NIN_CFG_USB;\n'
+        '\t\t\tredraw = true;\n'
+        '\t\t}\n'
+        '\t\telse if (FPAD_Up(0))\n'
+        '\t\t{\n'
+        '\t\t\tncfg->Config = ncfg->Config & ~NIN_CFG_USB;\n'
+        '\t\t\tredraw = true;\n'
+        '\t\t}',
+        '\t\tif (FPAD_OK(0))\n'
+        '\t\t{\n'
+        '\t\t\tif(maizo_selection==2)\n'
+        '\t\t\t{\n'
+        '\t\t\t\tif(MaizoNetSelectGame())break;\n'
+        '\t\t\t}\n'
+        '\t\t\telse\n'
+        '\t\t\t{\n'
+        '\t\t\t\t/* Never carry a stale remote marker into local games. */\n'
+        '\t\t\t\tif(strncmp(ncfg->CheatPath,"MZSMB1|",7)==0)ncfg->CheatPath[0]=0;\n'
+        '\t\t\t\tint ret = SelectGame();\n'
+        '\t\t\t\tif (ret & 2) SaveSettings = true;\n'
+        '\t\t\t\tif (ret & 1) break;\n'
+        '\t\t\t}\n'
+        '\t\t\tredraw = true;\n'
+        '\t\t}\n'
+        '\t\telse if (FPAD_Start(0))\n'
+        '\t\t{\n'
+        '\t\t\tShowMessageScreenAndExit("Returning to loader...", 0);\n'
+        '\t\t}\n'
+        '\t\telse if (FPAD_Down(0))\n'
+        '\t\t{\n'
+        '\t\t\tif(maizo_selection<2)maizo_selection++;\n'
+        '\t\t\tif(maizo_selection==1)ncfg->Config |= NIN_CFG_USB;\n'
+        '\t\t\tredraw = true;\n'
+        '\t\t}\n'
+        '\t\telse if (FPAD_Up(0))\n'
+        '\t\t{\n'
+        '\t\t\tif(maizo_selection>0)maizo_selection--;\n'
+        '\t\t\tif(maizo_selection==0)ncfg->Config &= ~NIN_CFG_USB;\n'
+        '\t\t\tredraw = true;\n'
+        '\t\t}')
+    print("MaizoNintendont: independent SMB browser/config editor installed")
+
     print("Nintendont: experimental SMB1 guest ISO backend patched into ISO.c")
 
 def main() -> int:

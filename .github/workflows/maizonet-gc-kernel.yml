@@ -3,11 +3,14 @@ on:
   push:
     branches:
       - work/maizonet-smb1-direct
+      - work/maizonet-nintendont-direct
     paths:
       - integrations/maizonet_*
       - tools/patch_nintendont_maizonet.py
       - tools/test_maizonet_smb1.py
       - tests/smb1_wire.c
+      - tests/smb1_browse.c
+      - tests/smb1_live.c
       - source/launch.c
       - docs/MAIZONET_EXPERIMENTAL.md
       - .github/workflows/maizonet-gc-kernel.yml
@@ -27,8 +30,65 @@ jobs:
           python3 tools/test_maizonet_smb1.py
           python3 tools/test_maizonet_udp.py
           python3 -m py_compile tools/patch_nintendont_maizonet.py
-  build-nintendont:
+  test-smb1-samba:
     needs: test-smb1-host
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify real Samba SMB1 guest listing and ISO random read
+        run: |
+          set -eu
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq samba
+          ROOT="$(mktemp -d)"
+          mkdir -p "$ROOT/share/Games" "$ROOT/state"
+          python3 - "$ROOT/share/Games/game.iso" <<'PY'
+          import sys
+          with open(sys.argv[1], 'wb') as fp:
+              fp.write(bytes(0x20000))
+              fp.write(b'MZTESTSECTOR' + bytes(256))
+          PY
+          chmod 755 "$ROOT"
+          chmod -R a+rX "$ROOT/share"
+          cat > "$ROOT/smb.conf" <<INI
+          [global]
+            server role = standalone server
+            security = user
+            map to guest = Bad User
+            guest account = nobody
+            server min protocol = NT1
+            server max protocol = NT1
+            smb ports = 1445
+            interfaces = 127.0.0.1
+            bind interfaces only = yes
+            log file = $ROOT/state/samba.log
+            lock directory = $ROOT/state
+            state directory = $ROOT/state
+            cache directory = $ROOT/state
+            pid directory = $ROOT/state
+            private dir = $ROOT/state
+            load printers = no
+            disable spoolss = yes
+          [PS2]
+            path = $ROOT/share
+            browseable = yes
+            guest ok = yes
+            read only = yes
+          INI
+          sudo systemctl stop smbd nmbd || true
+          sudo smbd -F -s "$ROOT/smb.conf" -l "$ROOT/state" &
+          sleep 2
+          sudo ss -lntp | grep 1445 || true
+          cc -std=c99 -O2 -Wall -Wextra -Werror \
+             -I integrations integrations/maizonet_smb1.c tests/smb1_live.c \
+             -o "$ROOT/smb1-live"
+          "$ROOT/smb1-live" MZTESTSECTOR || {
+            cat "$ROOT/state/samba.log" || true
+            exit 1
+          }
+  build-nintendont:
+    needs: [test-smb1-host, test-smb1-samba]
     runs-on: ubuntu-latest
     timeout-minutes: 35
     container:
@@ -71,6 +131,8 @@ jobs:
           test -s upstream-nintendont/kernel/kernel.bin
           test -s upstream-nintendont/loader/loader.dol
           grep -Fq 'if(mznet_iso)' upstream-nintendont/kernel/ISO.c
+          grep -Fq 'MaizoNetSelectGame' upstream-nintendont/loader/source/menu.c
+          grep -Fq 'maizonet_smb1_list_dir' upstream-nintendont/loader/source/maizonet_smb1.c
           find upstream-nintendont -type f \( -name loader.dol -o -name kernel.bin \) -print -exec ls -lh {} \;
       - name: Stage distinct experimental Nintendont (do not replace stock)
         run: |
@@ -97,7 +159,7 @@ jobs:
             <name>Nintendont MaizoNet (experimental)</name>
             <coder>FIX94 / MaizoNet integration</coder>
             <version>0.0.1-experimental</version>
-            <short_description>SMB1 direct disc reader - unverified Wii</short_description>
+            <short_description>Independent SMB browser and virtual disc - unverified Wii</short_description>
             <ahb_access/>
           </app>
           XML

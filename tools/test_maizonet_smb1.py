@@ -41,5 +41,22 @@ class SMB1WireTests(unittest.TestCase):
             result = subprocess.run([binary], check=True, capture_output=True, text=True)
             self.assertIn("PASS", result.stdout)
 
+    def test_smb1_find_first2(self):
+        """Bounded SMB1 folder browser; no claims about actual Samba."""
+        cc = shutil.which("cc") or shutil.which("gcc")
+        self.assertIsNotNone(cc)
+        with tempfile.TemporaryDirectory() as tmp:
+            binary = pathlib.Path(tmp) / "smb1-dir-test"
+            build = subprocess.run([
+                cc, "-std=c99", "-Wall", "-Wextra", "-Werror", "-O2",
+                "-I" + str(ROOT / "integrations"),
+                str(ROOT / "integrations" / "maizonet_smb1.c"),
+                str(ROOT / "tests" / "smb1_browse.c"),
+                "-o", str(binary)
+            ], capture_output=True, text=True)
+            self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
+            result = subprocess.run([binary], check=True, capture_output=True, text=True)
+            self.assertIn("PASS", result.stdout)
+
 if __name__ == "__main__":
     unittest.main()

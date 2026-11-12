@@ -33,6 +33,14 @@ int maizonet_smb1_connect_guest(MaizoNetSmb1*,MaizoNetTransport,
                                 const char *ip,const char *share);
 int maizonet_smb1_open(MaizoNetSmb1*,const char *path);
 int maizonet_smb1_read_at(MaizoNetSmb1*,uint64_t offset,void *buf,unsigned length);
+void maizonet_smb1_close_file(MaizoNetSmb1*);
 void maizonet_smb1_close(MaizoNetSmb1*);
 const char *maizonet_smb1_error(uint32_t ntstatus);
+typedef struct {
+ char name[128];
+ unsigned char is_dir;
+} MaizoNetDirEntry;
+/* Returns bounded entry count or -1 for unsupported/malformed SMB response. */
+int maizonet_smb1_list_dir(MaizoNetSmb1*,const char*relative_dir,
+                            MaizoNetDirEntry*,unsigned capacity);
 #endif

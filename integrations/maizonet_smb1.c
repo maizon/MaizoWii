@@ -170,12 +170,15 @@ int maizonet_smb1_read_at(MaizoNetSmb1*c,uint64_t offset,void*buffer,unsigned le
  }
  return (int)finished; /* caller rejects short reads for disk sectors */
 }
-void maizonet_smb1_close(MaizoNetSmb1*c){
+void maizonet_smb1_close_file(MaizoNetSmb1*c){
  uint8_t words[6];
+ if(c&&c->opened){memset(words,0,sizeof(words));w16(words,c->fid);
+  exchange(c,0x04,words,6,0,0);c->opened=0;}
+}
+void maizonet_smb1_close(MaizoNetSmb1*c){
  if(!c)return;
- if(c->opened){memset(words,0,sizeof(words));w16(words,c->fid);
-  exchange(c,0x04,words,6,0,0);}
- c->opened=0;c->tree=0;c->session=0;
+ maizonet_smb1_close_file(c);
+ c->tree=0;c->session=0;
 }
 const char *maizonet_smb1_error(uint32_t status){
  if(status==0xC0000022u)return "SMB: access denied";
@@ -187,4 +190,142 @@ const char *maizonet_smb1_error(uint32_t status){
  if(status==0xC000000Du)return "SMB: invalid request parameter";
  if(status==0xC00000BBu)return "SMB: operation not supported";
  return "SMB: incompatible server or transport error";
+}
+
+/* SMB_COM_TRANSACTION2 / TRANS2_FIND_FIRST2 and FIND_NEXT2 (read-only).
+ * DOS/non-Unicode filenames on the trusted NT1 guest share. The list is
+ * bounded, search handles are closed, and malformed offsets fail closed.
+ * This deliberately does not implement NTLMSSP or SMB2.
+ */
+static int trans2_find(MaizoNetSmb1*c,int next,uint16_t sid,const char*pattern,
+                       unsigned *count,unsigned *end,unsigned *handle,
+                       const uint8_t **entries,unsigned *entry_bytes){
+ uint8_t words[30],data[330],*p,*par;unsigned plen,datalen;
+ unsigned param_off,param_len,data_off,data_len,base,byte_count;
+ memset(words,0,sizeof(words));memset(data,0,sizeof(data));
+ if(next){
+  /* SMB_FIND_FILE_BOTH_DIRECTORY_INFO, resume from the server cursor. */
+  plen=13;w16(data+1,sid);w16(data+3,24);w16(data+5,0x0104);
+  w32(data+7,0);w16(data+11,0x000A);data[13]=0;plen=13;
+ }else{
+  size_t size=strlen(pattern);
+  if(size>250)return -1;
+  plen=12u+(unsigned)size+1u;
+  w16(data+1,0x0016); /* hidden/system/directories included */
+  w16(data+3,24); /* one bounded page of 8KiB */
+  w16(data+5,0x0002); /* close search automatically at end */
+  w16(data+7,0x0104); /* SMB_FIND_FILE_BOTH_DIRECTORY_INFO */
+  w32(data+9,0);
+  memcpy(data+13,pattern,size+1);
+ }
+ /* One pad byte makes the parameter block offset 66 from SMB header. */
+ datalen=plen+1u;
+ w16(words+0,plen);
+ w16(words+4,10);
+ w16(words+6,8192);
+ w16(words+18,plen);
+ w16(words+20,H+1+30+2+1);
+ words[26]=1;w16(words+28,next?2:1);
+ if(exchange(c,0x32,words,sizeof(words),data,datalen)!=1)return -1;
+ p=c->rx+NB;
+ if(p[H]<10)return -1;
+ base=H+1+2u*(unsigned)p[H]+2u;
+ if(base>c->rxlen)return -1;
+ byte_count=r16(p+base-2u);
+ param_len=r16(p+33+6);
+ param_off=r16(p+33+8);
+ data_len=r16(p+33+12);
+ data_off=r16(p+33+14);
+ if(r16(p+33+10)!=0 || r16(p+33+16)!=0 ||
+    r16(p+33)!=param_len || r16(p+33+2)!=data_len ||
+    param_off<base || data_off<base ||
+    param_off>base+byte_count || data_off>base+byte_count ||
+    param_len>base+byte_count-param_off ||
+    data_len>base+byte_count-data_off || 
+    param_off+param_len>c->rxlen || data_off+data_len>c->rxlen)
+  return -1; /* secondary/multipart responses intentionally unsupported */
+ par=p+param_off;
+ if(param_len<(next?8u:10u))return -1;
+ if(next){
+  *count=r16(par);*end=r16(par+2);
+ }else{
+  *handle=r16(par);*count=r16(par+2);*end=r16(par+4);
+ }
+ if(*count>24)return -1;
+ *entries=p+data_off;*entry_bytes=data_len;
+ return 0;
+}
+
+/* Samba may return level 0x0104 filenames in UTF-16LE even for an
+ * eight-bit SMB1 request. Accept printable 8-bit or UTF-16LE ASCII.
+ * Non-ASCII is skipped until the entire wire path supports Unicode. */
+static int mz_find_name(char *out,unsigned cap,const uint8_t *s,unsigned n){
+ unsigned i,k=0,zeros=0,samples=0,wide=0;
+ while(n && s[n-1]==0)n--; /* Samba 4 can include string terminator in FileNameLength. */
+ if(!n)return 0;
+ if(!(n&1u)){
+  for(i=1;i<n&&samples<12;i+=2,samples++)if(s[i]==0)zeros++;
+  if(samples && zeros*2>=samples)wide=1;
+ }
+ if(wide){
+  for(i=0;i<n;i+=2){
+   unsigned ch=(unsigned)s[i]|((unsigned)s[i+1]<<8);
+   if(ch<32||ch>126||ch=='/'||ch=='\\'||ch=='|'||k+1>=cap)return 0;
+   out[k++]=(char)ch;
+  }
+ }else{
+  for(i=0;i<n;i++){
+   unsigned ch=s[i];
+   if(ch<32||ch>126||ch=='/'||ch=='\\'||ch=='|'||k+1>=cap)return 0;
+   out[k++]=(char)ch;
+  }
+ }
+ out[k]=0;
+ return strcmp(out,".")!=0&&strcmp(out,"..")!=0;
+}
+int maizonet_smb1_list_dir(MaizoNetSmb1*c,const char*dir,
+                            MaizoNetDirEntry*out,unsigned cap){
+ char pattern[260];size_t len;uint16_t sid=0;
+ unsigned count=0,end=0,handle=0,total=0,page;
+ const uint8_t *entries;unsigned bytes;
+ int begun=0,success=0;
+ if(!c||!c->tree||!out||cap==0||!dir||strlen(dir)>245||
+    strstr(dir,"..")||strchr(dir,':')||dir[0]=='/'||dir[0]=='\\')return -1;
+ len=strlen(dir);
+ memcpy(pattern,dir,len);
+ if(len && pattern[len-1]!='\\')pattern[len++]='\\';
+ pattern[len++]='*';pattern[len]=0;
+ for(page=0;page<16 && total<cap;page++){
+  unsigned pos=0,i;
+  if(trans2_find(c,begun,sid,pattern,&count,&end,&handle,&entries,&bytes)!=0)
+   goto done;
+  if(!begun){sid=(uint16_t)handle;begun=1;}
+  if(!count){if(end)success=1;goto done;}
+  for(i=0;i<count;i++){
+   uint32_t next,nlen,attr;
+   const uint8_t *entry;
+   if(bytes-pos<94)goto done;
+   entry=entries+pos;next=r32(entry);
+   attr=r32(entry+56);nlen=r32(entry+60);
+   if(nlen==0||nlen>127||nlen>bytes-pos-94 ||
+       (next && (next<94u+nlen||next>bytes-pos)))goto done;
+   if(total>=cap)break;
+   if(!mz_find_name(out[total].name,sizeof(out[total].name),entry+94,nlen))
+    goto advance;
+   out[total].is_dir=(attr&0x10u)!=0;
+   total++;
+advance:
+   if(!next)break;
+   pos+=next;
+  }
+  if(end||total>=cap){success=1;goto done;}
+ }
+ success=1;
+done:
+ if(begun && !end){
+  uint8_t closewords[2];w16(closewords,sid);
+  /* Never leak a FIND search cursor on cancel/truncation. */
+  exchange(c,0x34,closewords,2,0,0);
+ }
+ return success?(int)total:-1;
 }
