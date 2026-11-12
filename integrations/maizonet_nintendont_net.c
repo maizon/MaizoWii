@@ -22,6 +22,17 @@
 #define SO_STARTUP 0x1f
 #define SO_HOSTID 0x10
 #define SO_OPT 0x09
+#define SO_FCNTL 0x05
+#define SO_POLL 0x0b
+#define IOS_O_NONBLOCK 0x04
+#define IOS_F_GETFL 3
+#define IOS_F_SETFL 4
+#define MZ_POLLIN 0x0001u
+#define MZ_POLLOUT 0x0004u
+#define MZ_POLLERR 0x0008u
+#define MZ_POLLHUP 0x0010u
+#define MZ_TCP_TIMEOUT_MS 3500u
+
 #define NCD_GETLINKSTATUS 0x07
 #define SO_GETINTERFACEOPT 0x1c
 static s32 mzfd=-1,mzsocket=-1;
@@ -49,6 +60,25 @@ static struct {
  u8 optval[20];
 } opt_par ALIGNED(32);
 static u32 closing ALIGNED(32);
+static u32 fcntl_par[3] ALIGNED(32);
+static u32 poll_timeout[2] ALIGNED(32);
+static struct {s32 socket;u32 events,revents;} poll_s ALIGNED(32);
+/* Follow libogc network_wii.c's IOS ioctl SO_POLL framing. Returns 1
+ * only when requested events are ready, 0 on timeout/error/disconnect. */
+static int mzpoll(u32 events,u32 timeout){
+ s32 ret;
+ if(mzfd<0||mzsocket<0)return 0;
+ poll_timeout[0]=0;poll_timeout[1]=timeout;
+ poll_s.socket=mzsocket;poll_s.events=events;poll_s.revents=0;
+ sync_after_write(poll_timeout,sizeof(poll_timeout));
+ sync_after_write(&poll_s,sizeof(poll_s));
+ ret=IOS_Ioctl(mzfd,SO_POLL,poll_timeout,sizeof(poll_timeout),&poll_s,sizeof(poll_s));
+ if(ret<1)return 0;
+ sync_before_read(&poll_s,sizeof(poll_s));
+ if(poll_s.revents&(MZ_POLLERR|MZ_POLLHUP))return 0;
+ return (poll_s.revents&events)!=0;
+}
+
 static char mzhost[64],mzshare[64],mzpath[256];
 static unsigned mzport=445;
 static int mzopened=0;
@@ -117,6 +147,8 @@ static int mzsend(void*ctx,const void*payload,unsigned n){
  unsigned part;int sent;
  (void)ctx;
  if(mzfd<0||mzsocket<0||!n)return -1;
+ /* Poll first: IOS nonblocking send must never freeze the DI thread. */
+ if(!mzpoll(MZ_POLLOUT,MZ_TCP_TIMEOUT_MS))return -1;
  part=n;if(part>sizeof(send_buf))part=sizeof(send_buf);
  memcpy(send_buf,payload,part);
  memset(&send_par,0,sizeof(send_par));
@@ -133,6 +165,7 @@ static int mzrecv(void*ctx,void*buffer,unsigned n){
  unsigned part;int got;
  (void)ctx;
  if(mzfd<0||mzsocket<0||!n)return -1;
+ if(!mzpoll(MZ_POLLIN,MZ_TCP_TIMEOUT_MS))return -1;
  part=n;if(part>sizeof(recv_buf))part=sizeof(recv_buf);
  req_in[0]=mzsocket;req_in[1]=0;
  vec[0].data=req_in;vec[0].len=8;
@@ -231,6 +264,17 @@ network_ready:
  mzsocket=IOS_Ioctl(mzfd,SO_SOCKET,soc_in,sizeof(soc_in),NULL,0);
  mz_record(116,0,0,mzsocket);
  if(mzsocket<0)goto error;
+ /* IOS SO_CONNECT on a blocking socket may wait indefinitely when the
+  * network is unavailable in the custom Nintendont kernel. Enforce the
+  * same nonblocking socket scheme used by libogc (flags=0x04). */
+ fcntl_par[0]=mzsocket;fcntl_par[1]=IOS_F_GETFL;fcntl_par[2]=0;
+ ret=IOS_Ioctl(mzfd,SO_FCNTL,fcntl_par,sizeof(fcntl_par),NULL,0);
+ mz_record(136,0,0,ret);
+ if(ret<0){mz_error=136;goto error;}
+ fcntl_par[1]=IOS_F_SETFL;fcntl_par[2]=(u32)ret|IOS_O_NONBLOCK;
+ ret=IOS_Ioctl(mzfd,SO_FCNTL,fcntl_par,sizeof(fcntl_par),NULL,0);
+ mz_record(137,0,0,ret);
+ if(ret<0){mz_error=137;goto error;}
  memset(&opt_par,0,sizeof(opt_par));
  opt_par.socket=mzsocket;opt_par.level=0xffff;
  opt_par.optname=0x1006;opt_par.optlen=8; /* SO_RCVTIMEO */
@@ -246,7 +290,14 @@ network_ready:
  mz_error=117;
  ret=IOS_Ioctl(mzfd,SO_CONNECT,&conn_par,sizeof(conn_par),NULL,0);
  mz_record(117,0,port,ret);
- if(ret<0)goto error;
+ /* -EINPROGRESS from nonblocking connect is expected. Never treat
+  * writability alone as SMB authentication; first SMB request decides. */
+ mz_error=138;
+ if(!mzpoll(MZ_POLLOUT,MZ_TCP_TIMEOUT_MS)){
+  mz_record(138,0,port,ret);
+  goto error;
+ }
+ mz_record(139,0,port,ret);
  mz_error=0;
  return 1;
 error:

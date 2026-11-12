@@ -200,3 +200,19 @@ e tenta TCP `SO_CONNECT` mesmo que `SO_GETHOSTID` retorne zero.
 Essas são alterações de fluxo funcional, não apenas logs.
 O Wii real ainda precisa validar GameCube rodando e leituras aleatórias
 pelo SMB; não há garantia de funcionamento apenas pelo CI.
+
+## Nova correção: eliminar bloqueio indefinido no SO_CONNECT/SMB1
+
+Depois de `MZNET_LOADER_NET_INIT result=0` sem erro de kernel, a hipótese
+mais crítica é a espera dentro de uma chamada IOS SO de rede: o loader
+conclui seu trabalho, mas o kernel pode nunca chegar à rotina de erro,
+deixando a TV preta permanentemente.
+
+O kernel experimental agora utiliza o protocolo de socket não bloqueante
+do libogc: `SO_FCNTL(F_GETFL/F_SETFL,IOS_O_NONBLOCK)` e `SO_POLL`,
+com janela de **3500 ms** por operação de envio/recebimento/conexão.
+Respostas SMB continuam processadas incrementalmente e erros acionam a
+única reconexão existente. Sem alterações ao servidor Android.
+
+Esse ajuste não prova que o jogo funciona; elimina uma causa plausível de
+travamento indefinido e cria um desfecho controlado quando não há rede.
