@@ -77,6 +77,35 @@ def patch_nin_kernel(root: Path) -> None:
     replace_one(iso,
        "\tISOFileOpen = 0;\n\tISO_IsCISO = false;\n}",
        "\tISOFileOpen = 0;\n\tISO_IsCISO = false;\n\tmznet_iso=false;\n}")
+    # The frontend's network worked, but the handoff to Nintendont's IOS
+    # returned KD=-33 and SOGetHostID=0 on real Wii. Initialise via libogc
+    # on the PPC *before* the loader's first disc-header ioctl reaches the
+    # ARM kernel. Stock/local games never perform this extra step.
+    loader=root / "loader" / "source" / "main.c"
+    replace_one(loader,
+        '#include <unistd.h>',
+        '#include <unistd.h>\n#include <network.h>')
+    replace_one(loader,
+        '\t// Get multi-game and region code information.',
+        '\tif(strncmp(ncfg->CheatPath,"MZSMB1|",7)==0)\n'
+        '\t{\n'
+        '\t\t/* libogc net_init: NCD link, NWC24 startup, SO, DHCP. */\n'
+        '\t\tint net_status = net_init();\n'
+        '\t\tgprintf("MZNET: PPC network preflight=%d\\r\\n",net_status);\n'
+        '\t\t/* Keep an independent diagnostic even if ARM never starts. */\n'
+        '\t\tFIL logfile;\n'
+        '\t\tif(f_open_char(&logfile,"/maizo/maizonet/diagnostic.log",\n'
+        '\t\t               FA_OPEN_ALWAYS|FA_WRITE)==FR_OK)\n'
+        '\t\t{\n'
+        '\t\t\tchar logline[96]; UINT logged=0;\n'
+        '\t\t\tsnprintf(logline,sizeof(logline),"MZNET_LOADER_NET_INIT result=%d\\n",net_status);\n'
+        '\t\t\tf_lseek(&logfile,f_size(&logfile));\n'
+        '\t\t\tf_write(&logfile,logline,strlen(logline),&logged);\n'
+        '\t\t\tf_sync(&logfile); f_close(&logfile);\n'
+        '\t\t}\n'
+        '\t}\n'
+        '\t// Get multi-game and region code information.')
+
     # A partial 128 KiB stub must NEVER be retried through FST then shut down.
     di=kernel / "DI.c"
     replace_one(di,

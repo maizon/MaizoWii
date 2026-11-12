@@ -139,3 +139,19 @@ o retorno e parâmetros `SO_GETINTERFACEOPT` para IP/máscara (118/119).
 Não altera NAND, a conexão definida no menu do Wii, Samba, nem os
 jogos locais. Ainda é um experimento que exige outro teste físico;
 consultar NCD não garante por si só que o IOS obtenha um endereço IP.
+
+### Inicialização PPC antes do primeiro acesso DI
+
+A investigação também mostrou que o Nintendont chama
+`CheckForMultiGameAndRegion` antes da preparação posterior dos jogos, e
+que a implementação de rede no frontend não necessariamente sobrevive ao
+handoff de IOS. O loader experimental agora invoca `net_init()` do **libogc
+no PowerPC**, antes de sua primeira leitura pelo kernel, exclusivamente
+quando detecta `MZSMB1|` em CheatPath. O código oficial `net_init()` segue
+NCD → KD → SO → obtenção de IP, e o código de retorno é gravado no log como:
+
+`MZNET_LOADER_NET_INIT result=<código>`.
+
+Isso NÃO modifica a NAND ou a configuração de conexão do Wii. Ainda é
+uma tentativa de inicialização: em caso de falha na interface/IOS,
+a ISO continuará indisponível e não se deve supor sucesso.
