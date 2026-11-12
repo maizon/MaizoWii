@@ -216,3 +216,21 @@ Respostas SMB continuam processadas incrementalmente e erros acionam a
 
 Esse ajuste não prova que o jogo funciona; elimina uma causa plausível de
 travamento indefinido e cria um desfecho controlado quando não há rede.
+
+## Kernel ARM exigido antes da execução: leitura real além de 128 KiB
+
+O frontend só transferia o cabeçalho local, e o loader registrava
+`net_init=0` sem verificar que o **kernel** conseguia recuperar dados.
+O binário experimental agora testa `/dev/mydi` e lê um setor em
+`offset=0x20000` (além do stub local de 128 KiB), enquanto a interface
+PPC ainda funciona, **antes de iniciar o jogo**. A leitura depende do
+cliente SMB1 do kernel; em caso de erro a execução é bloqueada e o Wii
+mostra mensagem de falha. Nunca inicia o stub incompleto como jogo local.
+
+Para suportar essa validação, `maizonet_nin_fatal` não bloqueia
+permanentemente a thread DI. Marca falha, registra o erro e devolve
+`-70` via IPC, inclusive nos erros de leitura de setores. Isso evita
+silenciar um erro de transporte e evita um loop preto infinito.
+
+**Aprovado no CI não valida jogo em hardware**. A preflight é necessária,
+mas áudio, controles e o jogo inteiro ainda dependem de validação real.

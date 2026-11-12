@@ -70,6 +70,14 @@ def patch_nin_kernel(root: Path) -> None:
        "\t\t\tLastOffset64 = Offset64;\n\t\t\treturn;\n\t\t}\n"
        "\t\tif (ISO_IsCISO)")
     replace_one(iso,
+       "ISOReadDirect(tmp_ciso, 0x8000, 0);",
+       "ISOReadDirect(tmp_ciso, 0x8000, 0);\n"
+       "\tif(mznet_iso && maizonet_nin_failed())\n"
+       "\t{\n"
+       "\t\tfree(tmp_ciso);maizonet_nin_close();\n"
+       "\t\tmznet_iso=false;ISOFileOpen=0;return false;\n"
+       "\t}")
+    replace_one(iso,
        "void ISOClose()\n{\n\tif(ISOFileOpen)\n\t{\n\t\tif(wiiVCInternal)",
        "void ISOClose()\n{\n\tif(ISOFileOpen)\n\t{\n"
        "\t\tif(mznet_iso)maizonet_nin_close();\n"
@@ -174,6 +182,29 @@ def patch_nin_kernel(root: Path) -> None:
         '\t}\n'
         '\t/* Remote ISO must retain NWC24 service for the Nintendont ARM SMB1 socket. */')
 
+    # The Wii currently shows a completely blank screen because the
+    # ARM /dev/mydi reader can fail before game handoff without giving
+    # the PPC loader a usable answer. Require one read *past* the local
+    # 128 KiB stub while the loader still has video/UI. This tests real
+    # SMB-backed ARM sector transport rather than merely PPC net_init().
+    replace_one(loader,
+        '\tif(argsboot == false)\n\t{\n\t\tDrawBuffer(); // Draw all status messages',
+        '\tif(strncmp(ncfg->CheatPath,"MZSMB1|",7)==0)\n'
+        '\t{\n'
+        '\t\tint net_di=IOS_Open("/dev/mydi",0);\n'
+        '\t\tif(net_di<0)ShowMessageScreenAndExit("MaizoNet: ARM network ISO open FAILED",1);\n'
+        '\t\tu8 *test=memalign(32,32);\n'
+        '\t\tif(!test)ShowMessageScreenAndExit("MaizoNet: ISO check memory FAILED",1);\n'
+        '\t\tmemset(test,0xA5,32);DCFlushRange(test,32);\n'
+        '\t\tint ret=IOS_Ioctl(net_di,3,(void*)0x20000,0,test,32);\n'
+        '\t\tDCInvalidateRange(test,32);\n'
+        '\t\tIOS_Close(net_di);free(test);\n'
+        '\t\tif(ret<0)ShowMessageScreenAndExit("MaizoNet: ARM SMB sector read FAILED",1);\n'
+        '\t}\n'
+        '\tif(argsboot == false)\n'
+        '\t{\n'
+        '\t\tDrawBuffer(); // Draw all status messages')
+
     # A partial 128 KiB stub must NEVER be retried through FST then shut down.
     di=kernel / "DI.c"
     replace_one(di,
@@ -184,8 +215,28 @@ def patch_nin_kernel(root: Path) -> None:
         '\t\t\t\t\t\t_sprintf( GamePath, "%s", ConfigGetGamePath() );',
         '\t\t\t\t\tif( ISOInit() == false )\n\t\t\t\t\t{\n'
         '\t\t\t\t\t\tif(maizonet_nin_requested(ConfigGetCheatPath()))\n'
-        '\t\t\t\t\t\t\tmaizonet_nin_fatal("ISO_OPEN",0,0);\n'
+        '\t\t\t\t\t\t{\n'
+        '\t\t\t\t\t\t\tif(!maizonet_nin_failed())maizonet_nin_fatal("ISO_OPEN",0,0);\n'
+        '\t\t\t\t\t\t\tmqueue_ack(di_msg, -70);\n'
+        '\t\t\t\t\t\t\tbreak; /* Never silently fall back to 128-KiB stub. */\n'
+        '\t\t\t\t\t\t}\n'
         '\t\t\t\t\t\t_sprintf( GamePath, "%s", ConfigGetGamePath() );')
+
+    # If an ISO sector read fails, ACK the PPC ioctl with an error rather
+    # than copying invalid bytes or leaving PPC blocked on an IPC reply.
+    replace_one(di,
+        '\t\t\t\t\t\tif(((u32)di_dest + Offset) <= 0x31A0)',
+        '\t\t\t\t\t\tif(maizonet_nin_requested(ConfigGetCheatPath()) && maizonet_nin_failed())\n'
+        '\t\t\t\t\t\t\tbreak; /* Abort partial remote read. */\n'
+        '\t\t\t\t\t\tif(((u32)di_dest + Offset) <= 0x31A0)')
+    replace_one(di,
+        '\t\t\t\tif(di_msg->ioctl.command == 0)',
+        '\t\t\t\tif(maizonet_nin_requested(ConfigGetCheatPath()) && maizonet_nin_failed())\n'
+        '\t\t\t\t{\n'
+        '\t\t\t\t\tmqueue_ack(di_msg, -70);\n'
+        '\t\t\t\t\tbreak;\n'
+        '\t\t\t\t}\n'
+        '\t\t\t\tif(di_msg->ioctl.command == 0)')
 
     print("Nintendont: experimental SMB1 guest ISO backend patched into ISO.c")
 

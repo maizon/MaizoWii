@@ -83,8 +83,10 @@ static char mzhost[64],mzshare[64],mzpath[256];
 static unsigned mzport=445;
 static int mzopened=0;
 static int mz_error=0;
+static volatile int mz_failed=0;
 static u32 mz_ntstatus=0;
 int maizonet_nin_last_error(void){return mz_error?mz_error:199;}
+bool maizonet_nin_failed(void){return mz_failed!=0;}
 #define MZ_TRACE_CAP 64u
 typedef struct {u32 tick,phase,offhi,offlo,size; s32 result;} MzTrace;
 static MzTrace mz_trace[MZ_TRACE_CAP];
@@ -335,6 +337,7 @@ static bool mz_connect_backend(void){
  return true;
 }
 bool maizonet_nin_open(const char*marker){
+ mz_failed=0;
  mz_error=101;
  mz_ntstatus=0;
  if(mzopened || !split_marker(marker))return false;
@@ -394,6 +397,7 @@ void maizonet_nin_fatal(const char *step,u64 offset,u32 size){
  FIL log; UINT written=0;unsigned total,i,index;
  char line[192];
  int code=maizonet_nin_last_error();
+ mz_failed=1;
  BootStatusError(-9,code);
  _sprintf(line,"MZNET_FATAL step=%s code=%d nt=%08X offset=%08X:%08X bytes=%u\n",
           step?step:"UNKNOWN",code,mz_ntstatus,(u32)(offset>>32),(u32)offset,size);
@@ -414,6 +418,8 @@ void maizonet_nin_fatal(const char *step,u64 offset,u32 size){
   f_close(&log);
  }
  dbgprintf("%s",line);
- /* Keep diagnostic state observable and prevent boot with corrupted sectors. */
- for(;;) mdelay(100);
+ /* The DI thread must ACK IOS IPC with a real error instead of
+  * spinning forever while the PPC loader waits on /dev/mydi.
+  * ISO/DI callers check maizonet_nin_failed() before copying data. */
+ return;
 }
