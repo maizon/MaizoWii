@@ -10,6 +10,9 @@
 #include "maizonet_nintendont_net.h"
 #include "maizonet_smb1.h"
 #include "debug.h"
+#include "common.h"
+#include "string.h"
+#include "ff_utf8.h"
 #define SO_SOCKET 0x0f
 #define SO_CONNECT 0x04
 #define SO_CLOSE 0x03
@@ -42,6 +45,9 @@ static u32 closing ALIGNED(32);
 static char mzhost[64],mzshare[64],mzpath[256];
 static unsigned mzport=445;
 static int mzopened=0;
+static int mz_error=0;
+static u32 mz_ntstatus=0;
+int maizonet_nin_last_error(void){return mz_error?mz_error:199;}
 bool maizonet_nin_requested(const char*marker){
  return marker && !strncmp(marker,"MZSMB1|",7);
 }
@@ -125,9 +131,12 @@ static int mzrecv(void*ctx,void*buffer,unsigned n){
 static int mzsocket_init(const char*host,unsigned port){
  u8 addr[4];
  s32 kd=-1,ret;unsigned k;
+ mz_error=110;
  if(!ipv4(host,addr))return 0;
+ mz_error=111;
  mzfd=IOS_Open("/dev/net/ip/top",0);
  if(mzfd<0)return 0;
+ mz_error=112;
  kd=IOS_Open("/dev/net/kd/request",0);
  if(kd<0)goto error;
  for(k=0;k<15;k++){
@@ -140,16 +149,20 @@ static int mzsocket_init(const char*host,unsigned port){
   mdelay(100);
  }
  IOS_Close(kd);kd=-1;
+ mz_error=113;
  if(k>=15)goto error;
+ mz_error=114;
  ret=IOS_Ioctl(mzfd,SO_STARTUP,NULL,0,NULL,0);
  if(ret<0)goto error;
+ mz_error=115;
  for(k=0;k<20;k++){
   ret=IOS_Ioctl(mzfd,SO_HOSTID,NULL,0,NULL,0);
   if(ret>0)break; /* DHCP IP assigned */
   mdelay(100);
  }
  if(ret<=0)goto error;
- soc_in[0]=2;soc_in[1]=1;soc_in[2]=0; /* AF_INET, SOCK_STREAM */
+ mz_error=116;
+ soc_in[0]=2;soc_in[1]=1;soc_in[2]=0;
  mzsocket=IOS_Ioctl(mzfd,SO_SOCKET,soc_in,sizeof(soc_in),NULL,0);
  if(mzsocket<0)goto error;
  memset(&opt_par,0,sizeof(opt_par));
@@ -164,7 +177,9 @@ static int mzsocket_init(const char*host,unsigned port){
  conn_par.address[0]=8;conn_par.address[1]=2;
  conn_par.address[2]=(u8)(port>>8);conn_par.address[3]=(u8)port;
  memcpy(conn_par.address+4,addr,4);
+ mz_error=117;
  if(IOS_Ioctl(mzfd,SO_CONNECT,&conn_par,sizeof(conn_par),NULL,0)<0)goto error;
+ mz_error=0;
  return 1;
 error:
  if(kd>=0)IOS_Close(kd);
@@ -179,18 +194,25 @@ static bool mz_connect_backend(void){
  MaizoNetTransport t;
  if(!mzsocket_init(mzhost,mzport))return false;
  t.receive=mzrecv;t.transmit=mzsend;t.user=0;
+ mz_error=120;
  if(!maizonet_smb1_connect_guest(&mzclient,t,mzhost,mzshare)){
+  mz_ntstatus=mzclient.last_status;
   dbgprintf("MZ SMB1: session rejected %08x\r\n",mzclient.last_status);
   maizonet_nin_close();return false;
  }
+ mz_error=121;
  if(!maizonet_smb1_open(&mzclient,mzpath)){
+  mz_ntstatus=mzclient.last_status;
   dbgprintf("MZ SMB1: ISO open rejected %08x\r\n",mzclient.last_status);
   maizonet_nin_close();return false;
  }
  mzopened=1;
+ mz_error=0;
  return true;
 }
 bool maizonet_nin_open(const char*marker){
+ mz_error=101;
+ mz_ntstatus=0;
  if(mzopened || !split_marker(marker))return false;
  if(!mz_connect_backend())return false;
  dbgprintf("MZ SMB1: remote ISO backend opened\r\n");
@@ -198,19 +220,23 @@ bool maizonet_nin_open(const char*marker){
 }
 bool maizonet_nin_read(void*out,u32 size,u64 offset){
  int ret;
- if(!mzopened||!out||!size)return false;
+ if(!mzopened||!out||!size){mz_error=130;return false;}
  ret=maizonet_smb1_read_at(&mzclient,offset,out,size);
  if(ret!=(int)size){
   dbgprintf("MZ SMB1: read failed at %08x:%08x len=%u status=%08x; reconnect\r\n",
      (u32)(offset>>32),(u32)offset,size,mzclient.last_status);
   /* Do not send SMB CLOSE on a dead TCP connection: that could block for
    * another full socket timeout. maizonet_nin_close still closes IOS fds. */
+  mz_error=130;
+  mz_ntstatus=mzclient.last_status;
   mzopened=0;
   maizonet_nin_close();
   mdelay(80);
   if(!mz_connect_backend())return false;
   ret=maizonet_smb1_read_at(&mzclient,offset,out,size);
   if(ret!=(int)size){
+   mz_error=131;
+   mz_ntstatus=mzclient.last_status;
    dbgprintf("MZ SMB1: retry failed; fail closed\r\n");
    mzopened=0;
    maizonet_nin_close();
@@ -231,4 +257,27 @@ void maizonet_nin_close(void){
  if(mzfd>=0)IOS_Close(mzfd);
  mzfd=-1;
  memset(&mzclient,0,sizeof(mzclient));
+}
+
+/* Only reached after an unrecoverable remote ISO error.
+ * Persist one bounded diagnostic record on the selected FAT volume while the
+ * Nintendont kernel still has it mounted. Do not power down automatically;
+ * normal Nintendont and local images never call this routine. */
+void maizonet_nin_fatal(const char *step,u64 offset,u32 size){
+ FIL log; UINT written=0;
+ char line[192];
+ int code=maizonet_nin_last_error();
+ BootStatusError(-9,code);
+ _sprintf(line,"MZNET_FATAL step=%s code=%d nt=%08X offset=%08X:%08X bytes=%u\\n",
+          step?step:"UNKNOWN",code,mz_ntstatus,(u32)(offset>>32),(u32)offset,size);
+ if(f_open_char(&log,"/maizo/maizonet/diagnostic.log",
+                FA_OPEN_ALWAYS|FA_WRITE)==FR_OK){
+  f_lseek(&log,f_size(&log));
+  f_write(&log,line,strlen(line),&written);
+  f_sync(&log);
+  f_close(&log);
+ }
+ dbgprintf("%s",line);
+ /* Keep diagnostic state observable and prevent boot with corrupted sectors. */
+ for(;;) mdelay(100);
 }

@@ -43,7 +43,7 @@ def patch_nin_kernel(root: Path) -> None:
        "\tif(mznet_iso)\n\t{\n"
        "\t\tif(!maizonet_nin_read(Buffer,Length,Offset64))\n"
        "\t\t{\n\t\t\tdbgprintf(\"MZNET: remote sector timeout\\r\\n\");\n"
-       "\t\t\tShutdown();\n\t\t}\n"
+       "\t\t\tmaizonet_nin_fatal(\"ISO_READ\",Offset64,Length);\n\t\t}\n"
        "\t\tLastOffset64=Offset64+Length;\n"
        "\t\tUSBReadTimer=read32(HW_TIMER);\n"
        "\t\treturn;\n\t}\n\n\tUINT read;")
@@ -76,6 +76,19 @@ def patch_nin_kernel(root: Path) -> None:
     replace_one(iso,
        "\tISOFileOpen = 0;\n\tISO_IsCISO = false;\n}",
        "\tISOFileOpen = 0;\n\tISO_IsCISO = false;\n\tmznet_iso=false;\n}")
+    # A partial 128 KiB stub must NEVER be retried through FST then shut down.
+    di=kernel / "DI.c"
+    replace_one(di,
+        '#include "ISO.h"',
+        '#include "ISO.h"\n#include "maizonet_nintendont_net.h"')
+    replace_one(di,
+        '\t\t\t\t\tif( ISOInit() == false )\n\t\t\t\t\t{\n'
+        '\t\t\t\t\t\t_sprintf( GamePath, "%s", ConfigGetGamePath() );',
+        '\t\t\t\t\tif( ISOInit() == false )\n\t\t\t\t\t{\n'
+        '\t\t\t\t\t\tif(maizonet_nin_requested(ConfigGetCheatPath()))\n'
+        '\t\t\t\t\t\t\tmaizonet_nin_fatal("ISO_OPEN",0,0);\n'
+        '\t\t\t\t\t\t_sprintf( GamePath, "%s", ConfigGetGamePath() );')
+
     print("Nintendont: experimental SMB1 guest ISO backend patched into ISO.c")
 
 def main() -> int:

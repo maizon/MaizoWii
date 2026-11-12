@@ -71,3 +71,23 @@ Não encaminhe a porta SMB1 para a internet.
 - Meta de 3,2 MB/s **não medida**. Nenhuma promessa de jogo sem travamentos.
 - Nintendont é software GPL-2.0; alterações são compiladas em artefato
   separado. A distribuição final deve manter os créditos/licenças.
+
+## Desligamento do Wii e diagnóstico experimental
+
+O Nintendont anterior executava `Shutdown()` quando uma leitura remota
+falhava ou caía no fallback FST. A versão instrumentada deixa o Wii ligado,
+interrompe o lançamento remoto sem tentar usar os dados incompletos, e grava
+o erro **quando a unidade FAT estiver gravável** em
+`usb:/maizo/maizonet/diagnostic.log` (ou a unidade de inicialização SD).
+
+A linha `MZNET_FRONTEND` prova somente a leitura dos 128 KiB; a linha
+`MZNET_FATAL` distingue `ISO_OPEN` e `ISO_READ`, código da fase, último
+NTSTATUS, offset e tamanho da leitura. Códigos: 101 marcador; 110-117 rede IOS;
+120 negociação SMB; 121 abertura SMB; 130-131 leitura. O código 199 representa
+falha não classificada. Não são logs completos de todos os eventos ou falhas
+imprevisíveis: podem faltar em travamentos anteriores à gravação, corrupção
+de FAT, resets ou desligamentos externos. Não altere seu Samba do OPL.
+
+Após teste que falhar, desligue o Wii manualmente se necessário, conecte o
+pendrive ao Android/PC e envie `maizo/maizonet/diagnostic.log`. Em testes
+iniciais desative a emulação de Memory Card.

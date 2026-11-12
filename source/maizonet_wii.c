@@ -231,6 +231,17 @@ int maizonet_wii_prepare(char*stub,size_t stubcap,char*marker,size_t markcap,
   snprintf(error,errorcap,"NAO CONSEGUE ATIVAR STUB GC");goto done;
  }
  ok=1;
+ /* Record frontend success independently from the experimental ARM kernel. */
+ {
+  char diag[MAIZONET_PATH_CAP];
+  snprintf(diag,sizeof(diag),"%s/maizo/maizonet/diagnostic.log",root);
+  FILE *lf=fopen(diag,"ab");
+  if(lf){
+   fprintf(lf,"MZNET_FRONTEND remote_iso_header_128kb=OK id=%s port=%u share=%s\\n",
+           id6,conf.port,conf.share);
+   fclose(lf);
+  }
+ }
 done:
  if(f)fclose(f);
  if(!ok){remove(temp);marker[0]=0;}
