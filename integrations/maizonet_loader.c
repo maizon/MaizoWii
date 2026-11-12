@@ -13,7 +13,7 @@
 #include <strings.h>
 #include <errno.h>
 #include <unistd.h>
-#include <lwp_watchdog.h>
+#include <ogc/lwp_watchdog.h>
 #include "global.h"
 #include "menu.h"
 #include "FPad.h"
