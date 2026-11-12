@@ -4,7 +4,7 @@
  * dependencies. Samba NT1 public shares only; never open SMB to WAN.
  * SMB1 is unauthenticated/insecure. Never use for sensitive files.
  */
-#include "../include/maizonet_smb1.h"
+#include "maizonet_smb1.h"
 #include <string.h>
 #define H 32u
 #define NB 4u
