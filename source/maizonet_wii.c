@@ -10,6 +10,7 @@
  */
 #include "maizonet_wii.h"
 #include "../integrations/maizonet_smb1.h"
+#include "../integrations/maizonet_udp.h"
 #include <network.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -34,6 +35,14 @@ static int recv_some(void *ctx,void *dst,unsigned n){
 static int send_some(void *ctx,const void *src,unsigned n){
  NetSocket*s=(NetSocket*)ctx;return net_send(s->fd,src,n,0);
 }
+static int udp_receive(void*ctx,void*buf,unsigned n,unsigned timeout){
+ NetSocket*s=(NetSocket*)ctx;
+ struct pollsd poll;
+ poll.socket=s->fd;poll.events=1;poll.revents=0;
+ int r=net_poll(&poll,1,(int)timeout);
+ if(r<1 || !(poll.revents&1))return -1;
+ return net_recv(s->fd,buf,n,0);
+}
 static int ipv4(const char *host,struct in_addr*out){
  unsigned part=0,n=0,octets=0;uint32_t addr=0;
  if(!host||!host[0])return 0;
@@ -56,6 +65,32 @@ static int ipv4(const char *host,struct in_addr*out){
  p[0]=(unsigned char)(addr>>24);p[1]=(unsigned char)(addr>>16);
  p[2]=(unsigned char)(addr>>8);p[3]=(unsigned char)addr;
  return 1;
+}
+/* PPC preflight: prove the Android UDP block service works before any
+ * Nintendont IOS reload. This avoids trying a black-screen launch when
+ * the new server is missing or points at a different ISO file. */
+static int udp_compare_sector(const NetConfig*c,const char*path,
+                              const void*expected,unsigned length){
+ struct sockaddr_in addr;NetSocket udp={-1};
+ MaizoUdpTransport t;MaizoUdp*client=NULL;
+ u8*data=NULL;int ok=0;
+ if(!ipv4(c->host,&addr.sin_addr))return 0;
+ udp.fd=net_socket(AF_INET,SOCK_DGRAM,0);
+ if(udp.fd<0)return 0;
+ addr.sin_family=AF_INET;addr.sin_port=htons((unsigned short)c->udp_port);
+ if(net_connect(udp.fd,(struct sockaddr*)&addr,sizeof(addr))<0)goto done;
+ client=(MaizoUdp*)calloc(1,sizeof(*client));
+ data=(u8*)malloc(length);
+ if(!client||!data)goto done;
+ t.transmit=send_some;t.receive=udp_receive;t.user=&udp;
+ if(!maizonet_udp_open(client,t,path))goto done;
+ if(maizonet_udp_read(client,0x20000ULL,data,length)!=(int)length)goto done;
+ if(memcmp(data,expected,length))goto done;
+ ok=1;
+done:
+ if(client){maizonet_udp_close(client);free(client);}
+ free(data);net_close(udp.fd);
+ return ok;
 }
 static void read_ini(NetConfig*c){
  static const char *files[]={"usb:/maizo/network.ini","sd:/maizo/network.ini"};
@@ -222,6 +257,18 @@ int maizonet_wii_prepare(char*stub,size_t stubcap,char*marker,size_t markcap,
  }
  if(!iso_id_valid(first)){
   snprintf(error,errorcap,"ARQUIVO NAO TEM CABECALHO GAMECUBE VALIDO");goto done;
+ }
+ if(conf.udp_mode){
+  /* Cross-check two independent disk transports on an actual ISO sector.
+   * This checks Android server reachability, path, 64-bit seek and CRC,
+   * before handing the entire game over to the experimental ARM kernel. */
+  unsigned char expected[64];
+  if(maizonet_smb1_read_at(smb,0x20000ULL,expected,sizeof(expected))!=(int)sizeof(expected)){
+   snprintf(error,errorcap,"SMB1: FALHOU LEITURA DE COMPARACAO");goto done;
+  }
+  if(!udp_compare_sector(&conf,path,expected,sizeof(expected))){
+   snprintf(error,errorcap,"SERVIDOR UDP INDISPONIVEL OU ISO DIFERENTE - INICIE O SERVIDOR");goto done;
+  }
  }
  memcpy(id6,first,6);id6[6]=0;
  char folder[MAIZONET_PATH_CAP];

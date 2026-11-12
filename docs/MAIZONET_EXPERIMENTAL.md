@@ -286,3 +286,15 @@ ser exposto a uma rede local confiável. Não substitui o Samba do frontend
 nessa primeira integração. Sem `protocol=udp`, mantém-se o SMB1
 experimental anterior. Não há porcentagem confiável de sucesso até o
 Wii demonstrar boot e execução completa.
+
+### Pré-validação em PowerPC: evitar iniciar a tela preta
+
+Antes de abrir o Nintendont em `protocol=udp`, o MaizoWii agora solicita
+ao Android, por **SMB1 e UDP**, exatamente 64 bytes no mesmo endereço
+`0x20000`. Compara os dados byte a byte. Se o serviço UDP não estiver
+ativo, ou não estiver servindo a **mesma ISO**, o MaizoWii interrompe
+o lançamento e mostra uma mensagem explicativa na própria interface.
+
+Isso verifica de fato o novo servidor e a leitura aleatória antes do
+handoff PPC→ARM, mas não garante que os serviços IOS continuem
+funcionando após a troca para o Nintendont.
