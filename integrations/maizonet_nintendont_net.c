@@ -22,6 +22,8 @@
 #define SO_STARTUP 0x1f
 #define SO_HOSTID 0x10
 #define SO_OPT 0x09
+#define NCD_GETLINKSTATUS 0x07
+#define SO_GETINTERFACEOPT 0x1c
 static s32 mzfd=-1,mzsocket=-1;
 static MaizoNetSmb1 mzclient ALIGNED(32);
 static u8 send_buf[16384] ALIGNED(32);
@@ -29,6 +31,10 @@ static u8 recv_buf[16384] ALIGNED(32);
 static u32 soc_in[3] ALIGNED(32);
 static u32 req_in[2] ALIGNED(32);
 static u32 resp[8] ALIGNED(32);
+static u32 mz_ncd_link[8] ALIGNED(32);
+static u32 mz_if_req[2] ALIGNED(32);
+static u32 mz_if_addr[8] ALIGNED(32);
+static u32 mz_if_length[8] ALIGNED(32);
 static ioctlv vec[3] ALIGNED(32);
 static struct {
  u32 socket,flags,dest;
@@ -141,17 +147,28 @@ static int mzrecv(void*ctx,void*buffer,unsigned n){
 }
 static int mzsocket_init(const char*host,unsigned port){
  u8 addr[4];
- s32 kd=-1,ret;unsigned k;
+ s32 kd=-1,ncd=-1,ret;unsigned k;
  mz_error=110;mz_record(110,0,port,0);
  if(!ipv4(host,addr))return 0;
+ /* Query Wii NCD link status before KD/SO, as upstream libogc net_init
+  * does. This is read-only and does not change network profiles/NAND. */
+ mz_error=108;
+ ncd=IOS_Open("/dev/net/ncd/manage",0);
+ mz_record(108,0,0,ncd);
+ if(ncd>=0){
+  memset(mz_ncd_link,0,sizeof(mz_ncd_link));
+  vec[0].data=mz_ncd_link;vec[0].len=sizeof(mz_ncd_link);
+  ret=IOS_Ioctlv(ncd,NCD_GETLINKSTATUS,0,1,vec);
+  sync_before_read(mz_ncd_link,sizeof(mz_ncd_link));
+  mz_record(109,0,mz_ncd_link[0],ret);
+  IOS_Close(ncd);ncd=-1;
+ }
  mz_error=111;
  mzfd=IOS_Open("/dev/net/ip/top",0);
  mz_record(111,0,0,mzfd);
  if(mzfd<0)return 0;
- /* The custom Nintendont IOS may expose SO (/dev/net/ip/top) without
-  * WiiConnect24 KD (/dev/net/kd/request). Our physical Wii log confirms
-  * KD open failure at stage 112 even though SO opens correctly (fd=2).
-  * KD is OPTIONAL for this read-only socket backend; do not abort here. */
+ /* Physical Wii log: KD opens (fd=3), but NWC24 start returns -33.
+  * A failed KD ioctl alone does not prove SO is unavailable. */
  mz_error=112;
  kd=IOS_Open("/dev/net/kd/request",0);
  mz_record(112,0,0,kd);
@@ -182,7 +199,23 @@ static int mzsocket_init(const char*host,unsigned port){
   if(maizonet_ipv4_hostid_ok((u32)ret))break;
   mdelay(120);
  }
- if(k>=25)goto error;
+ if(k>=25){
+  /* Unknown IPv4: ask IOS for interface IP/netmask before stopping. */
+  memset(mz_if_req,0,sizeof(mz_if_req));
+  memset(mz_if_addr,0,sizeof(mz_if_addr));
+  memset(mz_if_length,0,sizeof(mz_if_length));
+  mz_if_req[0]=0xfffe;mz_if_req[1]=0x4003;
+  mz_if_length[0]=sizeof(mz_if_addr);
+  vec[0].data=mz_if_req;vec[0].len=sizeof(mz_if_req);
+  vec[1].data=mz_if_addr;vec[1].len=sizeof(mz_if_addr);
+  vec[2].data=mz_if_length;vec[2].len=sizeof(u32);
+  ret=IOS_Ioctlv(mzfd,SO_GETINTERFACEOPT,1,2,vec);
+  sync_before_read(mz_if_addr,sizeof(mz_if_addr));
+  sync_before_read(mz_if_length,sizeof(mz_if_length));
+  mz_record(118,0,mz_if_addr[0],ret);
+  mz_record(119,0,mz_if_addr[1],(s32)mz_if_length[0]);
+  goto error;
+ }
  mz_error=116;
  soc_in[0]=2;soc_in[1]=1;soc_in[2]=0;
  mzsocket=IOS_Ioctl(mzfd,SO_SOCKET,soc_in,sizeof(soc_in),NULL,0);
@@ -207,6 +240,7 @@ static int mzsocket_init(const char*host,unsigned port){
  mz_error=0;
  return 1;
 error:
+ if(ncd>=0)IOS_Close(ncd);
  if(kd>=0)IOS_Close(kd);
  if(mzsocket>=0){closing=mzsocket;IOS_Ioctl(mzfd,SO_CLOSE,&closing,4,NULL,0);mzsocket=-1;}
  if(mzfd>=0){IOS_Close(mzfd);mzfd=-1;}

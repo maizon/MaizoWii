@@ -122,3 +122,20 @@ endereço 192.168.0.8 seria incorretamente rejeitado pela versão anterior.
 reimplementação SMB1 no kernel execute um jogo real.** Capture novos logs
 para diferenciar falta de IP (115), falha de socket (116), conexão (117),
 negociação SMB (120), abertura (121) ou leitura de setores (130/131).
+
+## Teste de console de 12/11 — falha 115 e investigação NCD
+
+Novo log real da build 9a0cc2e1: `ISO_OPEN code=115`, fase 112 abre KD
+(fd=3), fase 113 retorna -33 na inicialização NWC24, fase 114 retorna
+0 no `SO_STARTUP`, fase 115 retorna **0 em 25 tentativas** de IP.
+O erro ocorreu **antes** de qualquer abertura SMB1 do kernel.
+
+A implementação anterior não consultava `/dev/net/ncd/manage` antes
+dos ioctls KD e SO. A revisão adiciona consulta read-only de link via
+NCD (fases 108/109) antes do restante do fluxo, semelhante à ordem de
+inicialização de `net_init` no libogc. Se ainda ficar sem IPv4, registra
+o retorno e parâmetros `SO_GETINTERFACEOPT` para IP/máscara (118/119).
+
+Não altera NAND, a conexão definida no menu do Wii, Samba, nem os
+jogos locais. Ainda é um experimento que exige outro teste físico;
+consultar NCD não garante por si só que o IOS obtenha um endereço IP.
