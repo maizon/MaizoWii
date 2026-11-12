@@ -237,7 +237,7 @@ int maizonet_wii_prepare(char*stub,size_t stubcap,char*marker,size_t markcap,
   snprintf(diag,sizeof(diag),"%s/maizo/maizonet/diagnostic.log",root);
   FILE *lf=fopen(diag,"ab");
   if(lf){
-   fprintf(lf,"MZNET_FRONTEND remote_iso_header_128kb=OK id=%s port=%u share=%s\\n",
+   fprintf(lf,"MZNET_FRONTEND remote_iso_header_128kb=OK id=%s port=%u share=%s\n",
            id6,conf.port,conf.share);
    fclose(lf);
   }

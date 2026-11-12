@@ -291,7 +291,7 @@ void maizonet_nin_fatal(const char *step,u64 offset,u32 size){
  char line[192];
  int code=maizonet_nin_last_error();
  BootStatusError(-9,code);
- _sprintf(line,"MZNET_FATAL step=%s code=%d nt=%08X offset=%08X:%08X bytes=%u\\n",
+ _sprintf(line,"MZNET_FATAL step=%s code=%d nt=%08X offset=%08X:%08X bytes=%u\n",
           step?step:"UNKNOWN",code,mz_ntstatus,(u32)(offset>>32),(u32)offset,size);
  if(f_open_char(&log,"/maizo/maizonet/diagnostic.log",
                 FA_OPEN_ALWAYS|FA_WRITE)==FR_OK){
