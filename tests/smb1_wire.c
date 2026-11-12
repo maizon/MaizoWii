@@ -14,7 +14,7 @@ typedef struct {
 static void w16(uint8_t*p,unsigned n){p[0]=n;p[1]=n>>8;}
 static void w32(uint8_t*p,uint32_t n){w16(p,n);w16(p+2,n>>16);}
 static int transmit(void*ctx,const void*ptr,unsigned n){
- Fake*f=ctx;const uint8_t*q=ptr,*p=q+4,*out=f->rx+4;
+ Fake*f=ctx;const uint8_t*q=ptr,*p=q+4;uint8_t*out=f->rx+4;
  unsigned bytes=0,wn=0;
  uint8_t cmd=p[4];
  if(q[0]!=0||p[0]!=0xff||p[1]!='S'||p[2]!='M'||p[3]!='B'||

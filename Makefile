@@ -5,7 +5,7 @@ endif
 include $(DEVKITPPC)/wii_rules
 
 SOURCES := $(wildcard source/*.c)
-OBJECTS := $(patsubst source/%.c,build/%.o,$(SOURCES)) build/bootstub_bytes.o build/ca_bundle.o
+OBJECTS := $(patsubst source/%.c,build/%.o,$(SOURCES)) build/bootstub_bytes.o build/ca_bundle.o build/maizonet_smb1.o
 CFLAGS := -O2 -g -Wall -Wextra -Wno-unused-parameter $(MACHDEP) -Iinclude -I$(LIBOGC_INC) -I$(DEVKITPRO)/portlibs/wii/include -I$(DEVKITPRO)/portlibs/ppc/include -I$(DEVKITPRO)/portlibs/ppc/include/libpng16
 # Old wii-curl libwiisocket duplicates inet_ntop/inet_pton already provided by
 # libogc 3.2. Keep legacy first definition to satisfy its dependent archive.
@@ -21,6 +21,8 @@ build:
 build/%.o: source/%.c | build
 	$(CC) $(CFLAGS) -c $< -o $@
 
+build/maizonet_smb1.o: integrations/maizonet_smb1.c integrations/maizonet_smb1.h | build
+	$(CC) $(CFLAGS) -c $< -o $@
 build/ca_bundle.o: source/ca_bundle.S data/cacert.pem | build
 	$(CC) $(MACHDEP) -c $< -o $@
 build/stub_entry.o: bootstub/start.S | build

@@ -2,6 +2,7 @@
 #include "nav.h"
 #include "cover_download.h"
 #include "video_sw.h"
+#include "maizonet_wii.h"
 #include <gccore.h>
 #include <fat.h>
 #include <ogc/disc_io.h>
@@ -352,6 +353,14 @@ static void handle(const Input*i){
  }
  if(state.page==PAGE_SETTINGS){
   System scope=state.settings_global?SYSTEM_COUNT:state.system;
+  /* Explicitly-requested guest SMB1 wire diagnostic; no gameplay promise.
+   * Never block in the rendering loop or during Priiloader cold boot. */
+  if(state.settings_global && state.settings_row==3 && (i->accept||i->right)){
+   maizonet_wii_probe(state.info,sizeof(state.info));
+   state.info_return=PAGE_SETTINGS;
+   state.page=PAGE_INFO;
+   return;
+  }
   if(!state.settings_for_game &&
      state.settings_row==settings_count(scope)-3 && (i->accept||i->right)){
    if(!state.settings_global&&(state.system==SYSTEM_MEDIA||state.system==SYSTEM_HB)){

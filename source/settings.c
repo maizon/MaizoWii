@@ -44,7 +44,7 @@ const MaizoWiiMCOption maizo_wiimc_options[MAIZO_WIIMC_OPTION_COUNT]={
  * The separate calibration screen modifies only the MAIZO frontend UI.
  * Do not imply that arbitrary DOLs consume frontend-only geometry. */
 int settings_count(System s){
- switch(s){case SYSTEM_COUNT:return 6;case SYSTEM_WII:return 7;case SYSTEM_GC:return 15;
+ switch(s){case SYSTEM_COUNT:return 7;case SYSTEM_WII:return 7;case SYSTEM_GC:return 15;
  case SYSTEM_PS1:return 20;case SYSTEM_SNES:return 9;
  case SYSTEM_MEDIA:return 8+MAIZO_WIIMC_OPTION_COUNT;default:return 5;}
 }
@@ -54,6 +54,7 @@ const char*settings_label(System s,int row){
   return maizo_wiimc_options[row-5].label;
  if(row==1)return "MODO DA BIBLIOTECA";
  if(s==SYSTEM_COUNT&&row==2)return "FORCAR VI 704 - MODULOS COMPATIVEIS";
+ if(s==SYSTEM_COUNT&&row==3)return "MAIZONET: TESTAR SMB1 CONVIDADO";
  if(row==settings_count(s)-1)return "VOLTAR";
  if(row==settings_count(s)-2)return "CALIBRAR TELA MAIZO";
  if(row==settings_count(s)-3)return s==SYSTEM_MEDIA||s==SYSTEM_HB?"REINDEXAR BIBLIOTECA":"GERENCIAR CAPAS";
@@ -99,6 +100,7 @@ static unsigned get(const Config*c,System s,int row){
  return 0;
 }
 void settings_value(const Config*c,System s,int row,char*dest,size_t cap){
+ if(s==SYSTEM_COUNT&&row==3){snprintf(dest,cap,"TESTAR");return;}
  if(row==settings_count(s)-1){snprintf(dest,cap,"A / B");return;}
  if(row==settings_count(s)-2||row==settings_count(s)-3){snprintf(dest,cap,"ABRIR");return;}
  if((s==SYSTEM_SNES||s==SYSTEM_PS1)&&row>=settings_count(s)-7&&row<settings_count(s)-3){
