@@ -197,7 +197,7 @@ static int mz_probe_current_volume(void){
  unsigned i;
  snprintf(dir,sizeof(dir),"%s:/maizo",GetRootDevice());
  if(!mz_make_dir(dir,"PROBE"))return 0;
- snprintf(path,sizeof(path),"%s:/maizo/.mz-write-test",GetRootDevice());
+ snprintf(path,sizeof(path),"%s:/maizo/mztest.bin",GetRootDevice());
  for(i=0;i<sizeof(test);i++)test[i]=(u8)(0x5au+(i*13u));
  if(!mz_write_checked(path,test,sizeof(test),"PROBE"))return 0;
  mz_remove_ascii_file(path);
