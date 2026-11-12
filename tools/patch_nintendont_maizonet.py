@@ -22,13 +22,13 @@ def patch_nin_kernel(root: Path) -> None:
     kernel=root / "kernel"
     for name in ("maizonet_smb1.h","maizonet_smb1.c",
                  "maizonet_nintendont_net.h","maizonet_nintendont_net.c",
-                 "maizonet_net_ipv4.h"):
+                 "maizonet_net_ipv4.h", "maizonet_udp.h", "maizonet_udp.c"):
         shutil.copyfile(src / name,kernel / name)
 
     replace_one(
         kernel / "Makefile",
         "SDI.o usb.o usbstorage.o wdvd.o sock.o",
-        "SDI.o usb.o usbstorage.o wdvd.o sock.o maizonet_smb1.o maizonet_nintendont_net.o"
+        "SDI.o usb.o usbstorage.o wdvd.o sock.o maizonet_smb1.o maizonet_udp.o maizonet_nintendont_net.o"
     )
     iso=kernel / "ISO.c"
     replace_one(iso,
@@ -142,7 +142,7 @@ def patch_nin_kernel(root: Path) -> None:
         '}\n')
     replace_one(loader,
         '\t// Get multi-game and region code information.',
-        '\tif(strncmp(ncfg->CheatPath,"MZSMB1|",7)==0)\n'
+        '\tif(strncmp(ncfg->CheatPath,"MZSMB1|",7)==0 || strncmp(ncfg->CheatPath,"MZUDP1|",7)==0)\n'
         '\t{\n'
         '\t\t/* libogc net_init: NCD link, NWC24 startup, SO, DHCP. */\n'
         '\t\tint net_status = net_init();\n'
@@ -177,7 +177,7 @@ def patch_nin_kernel(root: Path) -> None:
         '\tfd = IOS_Open("/dev/net/kd/request", 0);\n'
         '\tIOS_Ioctl(fd, IOCTL_ExecSuspendScheduler, NULL, 0, &out, 4);\n'
         '\tIOS_Close(fd);',
-        '\tif(strncmp(ncfg->CheatPath,"MZSMB1|",7)!=0)\n'
+        '\tif(strncmp(ncfg->CheatPath,"MZSMB1|",7)!=0 && strncmp(ncfg->CheatPath,"MZUDP1|",7)!=0)\n'
         '\t{\n'
         '\t\tfd = IOS_Open("/dev/net/kd/request", 0);\n'
         '\t\tif(fd>=0)\n'
@@ -195,7 +195,7 @@ def patch_nin_kernel(root: Path) -> None:
     # SMB-backed ARM sector transport rather than merely PPC net_init().
     replace_one(loader,
         '\tif(argsboot == false)\n\t{\n\t\tDrawBuffer(); // Draw all status messages',
-        '\tif(strncmp(ncfg->CheatPath,"MZSMB1|",7)==0)\n'
+        '\tif(strncmp(ncfg->CheatPath,"MZSMB1|",7)==0 || strncmp(ncfg->CheatPath,"MZUDP1|",7)==0)\n'
         '\t{\n'
         '\t\tint net_di=IOS_Open("/dev/mydi",0);\n'
         '\t\tif(net_di<0)ShowMessageScreenAndExit("MaizoNet: ARM network ISO open FAILED",1);\n'

@@ -24,7 +24,8 @@
 #define MAIZONET_PATH_CAP 512u
 typedef struct {
  char host[64],share[64],path[256];
- unsigned port;
+ unsigned port,udp_port;
+ int udp_mode;
 } NetConfig;
 typedef struct {int fd;} NetSocket;
 static int recv_some(void *ctx,void *dst,unsigned n){
@@ -59,7 +60,7 @@ static int ipv4(const char *host,struct in_addr*out){
 static void read_ini(NetConfig*c){
  static const char *files[]={"usb:/maizo/network.ini","sd:/maizo/network.ini"};
  FILE*f=0;char line[400];
- memset(c,0,sizeof(*c));c->port=445;
+ memset(c,0,sizeof(*c));c->port=445;c->udp_port=17445;
  for(unsigned k=0;k<2&&!f;k++)f=fopen(files[k],"rb");
  if(!f)return;
  while(fgets(line,sizeof(line),f)){
@@ -68,6 +69,11 @@ static void read_ini(NetConfig*c){
   if(!strcmp(line,"host"))snprintf(c->host,sizeof(c->host),"%s",e);
   else if(!strcmp(line,"share"))snprintf(c->share,sizeof(c->share),"%s",e);
   else if(!strcmp(line,"path"))snprintf(c->path,sizeof(c->path),"%s",e);
+  else if(!strcmp(line,"protocol")){c->udp_mode=(!strcmp(e,"udp"));}
+  else if(!strcmp(line,"udp_port")){
+   char *end=0;unsigned long v=strtoul(e,&end,10);
+   if(end&&!*end&&v>=1024&&v<=65535)c->udp_port=(unsigned)v;
+  }
   else if(!strcmp(line,"port")){
    char *end=0;unsigned long v=strtoul(e,&end,10);
    if(end&&!*end&&v>=1&&v<=65535)c->port=(unsigned)v;
@@ -178,8 +184,11 @@ int maizonet_wii_prepare(char*stub,size_t stubcap,char*marker,size_t markcap,
  if(!ipv4(conf.host,&addr.sin_addr)){
   snprintf(error,errorcap,"IP DO SERVIDOR SMB INVALIDO");return 0;
  }
- int n=snprintf(marker,markcap,"MZSMB1|%s|%u|%s|%s",
-      conf.host,conf.port,conf.share,path);
+ /* The 128KiB header comes from existing working Samba, but gameplay
+  * can use an independent CRC-checked UDP sector transport on Android. */
+ int n=snprintf(marker,markcap,"%s|%s|%u|%s|%s",
+      conf.udp_mode?"MZUDP1":"MZSMB1",
+      conf.host,conf.udp_mode?conf.udp_port:conf.port,conf.share,path);
  if(n<0||(size_t)n>=markcap||n>=255){
   marker[0]=0;snprintf(error,errorcap,"MARCADOR DE REDE EXCEDE 254 BYTES");return 0;
  }

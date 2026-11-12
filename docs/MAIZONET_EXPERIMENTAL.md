@@ -254,3 +254,35 @@ O backend MaizoNet agora:
 PS2/IOP e Wii/Starlet têm APIs e arquiteturas distintas. A adaptação
 é de estratégias de rede e leitura, não de binários de PS2; o sucesso
 em jogo real no Wii ainda precisa ser demonstrado.
+
+## Arquitetura opcional: UDP v1 sem SMB1 no kernel ARM
+
+Para evitar dependência da sessão SMB1/TCP dentro do IOS experimental
+do Nintendont, foi implementada outra arquitetura: o frontend PPC
+continua utilizando o Samba existente **somente** para obter os 128 KiB
+iniciais, mas o kernel ARM pede setores diretamente a um servidor
+read-only no Android por **UDP**.
+
+Protocolo: pedidos de 8 KiB; respostas em fragmentos de até 1024 bytes;
+CRC32 por fragmento; token de sessão; até seis retransmissões; offsets
+de 64 bits; cache original do Nintendont. O Wii não precisa carregar
+a ISO inteira nem de Raspberry Pi, cartão SD, root ou novo IOS instalado.
+
+Configure em `USB:/maizo/network.ini`:
+```ini
+host=192.168.0.2
+port=1445
+share=PS2
+path=Gamecube/games/XIII/game.iso
+protocol=udp
+udp_port=17445
+```
+No Android/Termux, execute:
+```sh
+python tools/maizonet_udp_server.py --root /storage/emulated/0/PS2 --port 17445
+```
+O servidor é SOMENTE leitura, limitado à pasta configurada, e só deve
+ser exposto a uma rede local confiável. Não substitui o Samba do frontend
+nessa primeira integração. Sem `protocol=udp`, mantém-se o SMB1
+experimental anterior. Não há porcentagem confiável de sucesso até o
+Wii demonstrar boot e execução completa.
