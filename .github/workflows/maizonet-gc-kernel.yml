@@ -1,0 +1,64 @@
+name: MaizoNet GC - compile Nintendont kernel (experimental)
+on:
+  push:
+    branches:
+      - work/maizonet-smb1-direct
+    paths:
+      - integrations/maizonet_*
+      - tools/patch_nintendont_maizonet.py
+      - .github/workflows/maizonet-gc-kernel.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-nintendont:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    container:
+      image: devkitpro/devkitppc:20261102
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check ARM/PPC compiler availability
+        run: |
+          set -eu
+          echo "ARM="; command -v arm-none-eabi-gcc || true
+          echo "PPC="; command -v powerpc-eabi-gcc || true
+          test -x /opt/devkitpro/devkitPPC/bin/powerpc-eabi-gcc
+          if ! test -x /opt/devkitpro/devkitARM/bin/arm-none-eabi-gcc; then
+            dkp-pacman -Sy --needed --noconfirm devkitARM
+          fi
+          /opt/devkitpro/devkitARM/bin/arm-none-eabi-gcc --version | head -1
+      - name: Fetch pinned upstream Nintendont
+        run: |
+          set -eu
+          git clone --quiet https://github.com/FIX94/Nintendont.git upstream-nintendont
+          git -C upstream-nintendont checkout --detach c683db301c941a64e6fe5cef6ac079bd1a726074
+      - name: Apply MaizoNet kernel adapter when available
+        run: |
+          if test -f tools/patch_nintendont_maizonet.py; then
+            python3 tools/patch_nintendont_maizonet.py upstream-nintendont
+          else
+            echo "No kernel patch yet: baseline upstream build only"
+          fi
+      - name: Compile Nintendont kernel and loader (not a Wii gameplay test)
+        env:
+          DEVKITPRO: /opt/devkitpro
+          DEVKITPPC: /opt/devkitpro/devkitPPC
+          DEVKITARM: /opt/devkitpro/devkitARM
+        run: |
+          set -e
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/upstream-nintendont"
+          make -C upstream-nintendont -j2
+          find upstream-nintendont -type f \( -name loader.dol -o -name kernel.bin \) -print -exec ls -lh {} \;
+      - name: Upload source-built binaries only
+        uses: actions/upload-artifact@v4
+        with:
+          name: MAIZONET-NINTENDONT-EXPERIMENTAL
+          path: |
+            upstream-nintendont/loader/loader.dol
+            upstream-nintendont/kernel/kernel.bin
+          if-no-files-found: error
+          retention-days: 7
