@@ -149,6 +149,7 @@ void settings_value(const Config*c,System s,int row,char*dest,size_t cap){
 int settings_change(Config*c,System s,int row,int dir){
  if(row>=settings_count(s)-3||row<0)return 0;
  if(s==SYSTEM_COUNT&&row==2){c->force_vi704=!c->force_vi704;return 1;}
+ if(s==SYSTEM_COUNT&&row==3)return 0; /* active diagnostic action, not a setting */
  if((s==SYSTEM_SNES||s==SYSTEM_PS1)&&row>=settings_count(s)-7&&row<settings_count(s)-3){
   unsigned *p=row==settings_count(s)-7?&c->game_x240:row==settings_count(s)-6?&c->game_x480:
              row==settings_count(s)-5?&c->game_w240:&c->game_w480;
