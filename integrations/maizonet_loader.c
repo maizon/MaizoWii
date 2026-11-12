@@ -13,7 +13,6 @@
 #include <strings.h>
 #include <errno.h>
 #include <unistd.h>
-#include <netinet/tcp.h>
 #include <lwp_watchdog.h>
 #include "global.h"
 #include "menu.h"
