@@ -70,7 +70,7 @@ static int block(MaizoUdp*c,uint64_t offset,uint8_t*out,unsigned n){
    if(index>=fragments||count!=fragments||
       off!=(unsigned)index*MZUDP_PAYLOAD||off+bytes>n||
       !bytes||bytes> MZUDP_PAYLOAD||
-      bytes!= (index+1==fragments?n-off:MZUDP_PAYLOAD))continue;
+      bytes!= ((unsigned)index+1u==fragments?n-off:MZUDP_PAYLOAD))continue;
    crc=r32(c->rx+32);
    if(crc32(c->rx+MZUDP_RES_H,bytes)!=crc)continue;
    if(!seen[index]){
