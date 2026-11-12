@@ -79,6 +79,18 @@ jobs:
           mkdir -p maizonet-stage/apps/nintendont-maizonet maizonet-stage/maizo
           cp upstream-nintendont/loader/loader.dol maizonet-stage/apps/nintendont-maizonet/boot.dol
           cp docs/MAIZONET_EXPERIMENTAL.md maizonet-stage/LEIA-MAIZONET.md
+          mkdir -p maizonet-stage/maizo/maizonet
+          cp tools/maizonet_udp_server.py maizonet-stage/maizo/maizonet/servidor-android.py
+          cat > maizonet-stage/maizo/network.ini.udp.example <<'INI'
+          # Keep the existing Samba server at TCP 1445 for the 128KiB header
+          host=192.168.0.2
+          port=1445
+          share=PS2
+          path=Gamecube/games/XIII/game.iso
+          # During gameplay the custom Nintendont ARM streams through UDP.
+          protocol=udp
+          udp_port=17445
+          INI
           cat > maizonet-stage/apps/nintendont-maizonet/meta.xml <<'XML'
           <?xml version="1.0" encoding="UTF-8"?>
           <app version="1">

@@ -197,6 +197,7 @@ def patch_nin_kernel(root: Path) -> None:
         '\tif(argsboot == false)\n\t{\n\t\tDrawBuffer(); // Draw all status messages',
         '\tif(strncmp(ncfg->CheatPath,"MZSMB1|",7)==0 || strncmp(ncfg->CheatPath,"MZUDP1|",7)==0)\n'
         '\t{\n'
+        '\t\tShowMessageScreen("MAIZONET: TESTING ARM NETWORK DISC READER...");\n'
         '\t\tint net_di=IOS_Open("/dev/mydi",0);\n'
         '\t\tif(net_di<0)ShowMessageScreenAndExit("MaizoNet: ARM network ISO open FAILED",1);\n'
         '\t\tu8 *test=memalign(32,32);\n'
@@ -205,7 +206,8 @@ def patch_nin_kernel(root: Path) -> None:
         '\t\tint ret=IOS_Ioctl(net_di,3,(void*)0x20000,0,test,32);\n'
         '\t\tDCInvalidateRange(test,32);\n'
         '\t\tIOS_Close(net_di);free(test);\n'
-        '\t\tif(ret<0)ShowMessageScreenAndExit("MaizoNet: ARM SMB sector read FAILED",1);\n'
+        '\t\tif(ret<0)ShowMessageScreenAndExit("MaizoNet: ARM network sector read FAILED",1);\n'
+        '\t\tShowMessageScreen("MAIZONET: ARM ISO SECTOR READ OK");\n'
         '\t}\n'
         '\tif(argsboot == false)\n'
         '\t{\n'
