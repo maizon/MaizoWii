@@ -14,13 +14,14 @@ class SMB1WireTests(unittest.TestCase):
         self.assertIsNotNone(cc)
         with tempfile.TemporaryDirectory() as tmp:
             binary = pathlib.Path(tmp) / "smb1-test"
-            subprocess.run([
+            build = subprocess.run([
                 cc, "-std=c99", "-Wall", "-Wextra", "-Werror", "-O2",
                 "-I" + str(ROOT / "integrations"),
                 str(ROOT / "integrations" / "maizonet_smb1.c"),
                 str(ROOT / "tests" / "smb1_wire.c"),
                 "-o", str(binary)
-            ], check=True, capture_output=True, text=True)
+            ], capture_output=True, text=True)
+            self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
             result = subprocess.run([binary], check=True, capture_output=True, text=True)
             self.assertIn("PASS", result.stdout)
 
