@@ -27,7 +27,7 @@ static int transmit(void*ctx,const void*ptr,unsigned n){
      memcmp(p+36,"NT LM 0.12",11))return -1;
   wn=17;w32(out+33+7,32768);w32(out+33+15,0xabcdef12);
  }else if(cmd==0x73){
-  if(p[32]!=13||p[33]!=0xff||p[34]!=0||p[59]!=0||
+  if(p[32]!=13||p[33]!=0xff||p[34]!=0||p[59]!=15||
    p[60]!=0)return -1;
   wn=3;
  }else if(cmd==0x75){
