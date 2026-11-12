@@ -9,6 +9,7 @@
 #include "Config.h"
 #include "maizonet_nintendont_net.h"
 #include "maizonet_smb1.h"
+#include "maizonet_udp.h"
 #include "debug.h"
 #include "common.h"
 #include "string.h"
@@ -39,6 +40,8 @@
 #define SO_GETINTERFACEOPT 0x1c
 static s32 mzfd=-1,mzsocket=-1;
 static MaizoNetSmb1 mzclient ALIGNED(32);
+static MaizoUdp mzudpclient ALIGNED(32);
+static int mzudp_mode=0;
 static u8 send_buf[16384] ALIGNED(32);
 static u8 recv_buf[16384] ALIGNED(32);
 static u32 soc_in[3] ALIGNED(32);
@@ -100,7 +103,7 @@ static void mz_record(u32 phase,u64 offset,u32 size,s32 result){
  e->size=size;e->result=result;
 }
 bool maizonet_nin_requested(const char*marker){
- return marker && !strncmp(marker,"MZSMB1|",7);
+ return marker && (!strncmp(marker,"MZSMB1|",7) || !strncmp(marker,"MZUDP1|",7));
 }
 static int dec(const char*s,unsigned *v){
  unsigned n=0,t=0;
@@ -117,6 +120,7 @@ static int split_marker(const char*s){
  char fields[4][256];unsigned lens[4]={0,0,0,0};int part=0;
  memset(fields,0,sizeof(fields));
  if(!maizonet_nin_requested(s))return 0;
+ mzudp_mode=(!strncmp(s,"MZUDP1|",7));
  s+=7;
  for(;*s;s++){
   if(*s=='|' && part<3){part++;continue;}
@@ -318,6 +322,81 @@ error:
  if(mzfd>=0){IOS_Close(mzfd);mzfd=-1;}
  return 0;
 }
+/* Experimental UDP virtual-disc path: avoid TCP and SMB negotiation on
+ * Starlet. Android remains authoritative for random-access disc sectors. */
+static u8 mz_udp_addr[8] ALIGNED(32);
+static int mzudp_send(void *ctx,const void*data,unsigned size){
+ int result;
+ (void)ctx;
+ if(size>sizeof(send_buf)||mzfd<0||mzsocket<0)return -1;
+ memcpy(send_buf,data,size);
+ memset(&send_par,0,sizeof(send_par));
+ send_par.socket=mzsocket;
+ send_par.dest=1;
+ memcpy(send_par.address,mz_udp_addr,8);
+ vec[0].data=send_buf;vec[0].len=size;
+ vec[1].data=&send_par;vec[1].len=sizeof(send_par);
+ sync_after_write(send_buf,ALIGN_FORWARD(size,32));
+ sync_after_write(&send_par,sizeof(send_par));
+ result=IOS_Ioctlv(mzfd,SO_SEND,2,0,vec);
+ if(result<0||result>(int)size)return -1;
+ return result;
+}
+static int mzudp_recv(void *ctx,void*out,unsigned maxlen,unsigned timeout){
+ int result;
+ (void)ctx;
+ if(maxlen>sizeof(recv_buf)||mzfd<0||mzsocket<0)return -1;
+ if(!mzpoll(MZ_POLLIN,timeout))return -1;
+ req_in[0]=mzsocket;req_in[1]=0;
+ vec[0].data=req_in;vec[0].len=8;
+ vec[1].data=recv_buf;vec[1].len=maxlen;
+ vec[2].data=NULL;vec[2].len=0;
+ sync_after_write(req_in,32);
+ result=IOS_Ioctlv(mzfd,SO_RECV,1,2,vec);
+ if(result<=0||result>(int)maxlen)return -1;
+ sync_before_read(recv_buf,ALIGN_FORWARD(result,32));
+ memcpy(out,recv_buf,result);
+ return result;
+}
+static bool mzudp_connect_backend(void){
+ u8 addr[4];s32 ret;MaizoUdpTransport t;
+ if(!ipv4(mzhost,addr))return false;
+ mz_error=150;
+ mzfd=IOS_Open("/dev/net/ip/top",0);
+ mz_record(150,0,mzport,mzfd);
+ if(mzfd<0)return false;
+ /* Do not restart NWC24 / the PPC-established IOS network on ARM. */
+ soc_in[0]=2;soc_in[1]=2;soc_in[2]=0; /* AF_INET / SOCK_DGRAM */
+ mzsocket=IOS_Ioctl(mzfd,SO_SOCKET,soc_in,sizeof(soc_in),NULL,0);
+ mz_record(151,0,0,mzsocket);
+ if(mzsocket<0)goto fail;
+ fcntl_par[0]=mzsocket;fcntl_par[1]=IOS_F_GETFL;fcntl_par[2]=0;
+ ret=IOS_Ioctl(mzfd,SO_FCNTL,fcntl_par,sizeof(fcntl_par),NULL,0);
+ if(ret>=0){
+  fcntl_par[1]=IOS_F_SETFL;fcntl_par[2]=(u32)ret|IOS_O_NONBLOCK;
+  ret=IOS_Ioctl(mzfd,SO_FCNTL,fcntl_par,sizeof(fcntl_par),NULL,0);
+ }
+ mz_record(152,0,0,ret);
+ if(ret<0)goto fail;
+ memset(mz_udp_addr,0,sizeof(mz_udp_addr));
+ mz_udp_addr[0]=8;mz_udp_addr[1]=2;
+ mz_udp_addr[2]=(u8)(mzport>>8);mz_udp_addr[3]=(u8)mzport;
+ memcpy(mz_udp_addr+4,addr,4);
+ t.transmit=mzudp_send;t.receive=mzudp_recv;t.user=NULL;
+ mz_error=153;
+ if(!maizonet_udp_open(&mzudpclient,t,mzpath)){
+  mz_record(153,0,0,mzudpclient.error);
+  goto fail;
+ }
+ mzopened=1;mz_error=0;mz_record(154,0,0,1);
+ return true;
+fail:
+ if(mzfd>=0&&mzsocket>=0){
+  closing=mzsocket;IOS_Ioctl(mzfd,SO_CLOSE,&closing,sizeof(closing),NULL,0);
+ }
+ mzsocket=-1;if(mzfd>=0)IOS_Close(mzfd);mzfd=-1;
+ return false;
+}
 /* Keep the remote session independent from normal FAT/USB disk handling.
  * One bounded reconnect is allowed after a failed sector read; requests are
  * retried from the original offset, never from a partially filled buffer. */
@@ -350,6 +429,11 @@ bool maizonet_nin_open(const char*marker){
  mz_error=101;
  mz_ntstatus=0;
  if(mzopened || !split_marker(marker))return false;
+ if(mzudp_mode){
+  if(!mzudp_connect_backend())return false;
+  dbgprintf("MZ UDP: remote ISO backend opened\r\n");
+  return true;
+ }
  if(!mz_connect_backend())return false;
  dbgprintf("MZ SMB1: remote ISO backend opened\r\n");
  return true;
@@ -357,6 +441,23 @@ bool maizonet_nin_open(const char*marker){
 bool maizonet_nin_read(void*out,u32 size,u64 offset){
  int ret;
  if(!mzopened||!out||!size){mz_error=130;return false;}
+ if(mzudp_mode){
+  mz_error=155;
+  ret=maizonet_udp_read(&mzudpclient,offset,out,size);
+  mz_record(155,offset,size,ret);
+  if(ret!=(int)size){
+   maizonet_nin_close();
+   mdelay(80);
+   if(!mzudp_connect_backend())return false;
+   mz_error=156;
+   ret=maizonet_udp_read(&mzudpclient,offset,out,size);
+   mz_record(156,offset,size,ret);
+   if(ret!=(int)size)return false;
+  }
+  mz_error=0;
+  sync_after_write_align32(out,size);
+  return true;
+ }
  ret=maizonet_smb1_read_at(&mzclient,offset,out,size);
  mz_record(130,offset,size,ret);
  if(ret!=(int)size){
@@ -386,7 +487,8 @@ bool maizonet_nin_read(void*out,u32 size,u64 offset){
  return true;
 }
 void maizonet_nin_close(void){
- if(mzopened)maizonet_smb1_close(&mzclient);
+ if(mzudp_mode)maizonet_udp_close(&mzudpclient);
+ else if(mzopened)maizonet_smb1_close(&mzclient);
  mzopened=0;
  if(mzfd>=0&&mzsocket>=0){
   closing=mzsocket;
