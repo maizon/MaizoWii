@@ -104,47 +104,144 @@ static int mz_valid_settings(const MzSettings*c){
  }
  return 1;
 }
+/*
+ * USB/SD write path. FatFs is mounted by the stock Nintendont loader.
+ * Every success includes f_sync, close, reopen and a byte-for-byte readback.
+ * Use bounded writes (8 KiB) for older Wii USB mass-storage bridges.
+ */
+static int mz_make_dir(const char*path,const char*tag){
+ FRESULT ret=f_mkdir_char(path);
+ if(ret==FR_OK||ret==FR_EXIST)return 1;
+ snprintf(mz_status,sizeof(mz_status),"%s: mkdir FAT=%u",tag,(unsigned)ret);
+ return 0;
+}
+static int mz_write_checked(const char*path,const void*data,unsigned len,const char*tag){
+ const u8 *src=(const u8*)data;
+ u8 *readback=NULL;
+ FIL f;
+ FRESULT ret,closed;
+ UINT moved=0;
+ unsigned off=0;
+ ret=f_open_char(&f,path,FA_CREATE_ALWAYS|FA_WRITE);
+ if(ret!=FR_OK){
+  snprintf(mz_status,sizeof(mz_status),"%s: %s open FAT=%u",
+           tag,GetRootDevice(),(unsigned)ret);
+  return 0;
+ }
+ while(off<len){
+  const UINT want=(UINT)((len-off)>8192u?8192u:(len-off));
+  moved=0;
+  ret=f_write(&f,src+off,want,&moved);
+  if(ret!=FR_OK||moved!=want){
+   snprintf(mz_status,sizeof(mz_status),"%s: write FAT=%u at=%u n=%u/%u",
+            tag,(unsigned)ret,off,(unsigned)moved,(unsigned)want);
+   f_close(&f);
+   return 0;
+  }
+  off+=moved;
+ }
+ ret=f_sync(&f);
+ closed=f_close(&f);
+ if(ret!=FR_OK||closed!=FR_OK){
+  snprintf(mz_status,sizeof(mz_status),"%s: %s sync=%u close=%u",
+           tag,GetRootDevice(),(unsigned)ret,(unsigned)closed);
+  return 0;
+ }
+ ret=f_open_char(&f,path,FA_READ|FA_OPEN_EXISTING);
+ if(ret!=FR_OK){
+  snprintf(mz_status,sizeof(mz_status),"%s: verify open FAT=%u",
+           tag,(unsigned)ret);
+  return 0;
+ }
+ if(f_size(&f)!=(FSIZE_t)len){
+  snprintf(mz_status,sizeof(mz_status),"%s: size verify !=%u",tag,len);
+  f_close(&f);return 0;
+ }
+ readback=memalign(32,8192);
+ if(!readback){
+  f_close(&f);snprintf(mz_status,sizeof(mz_status),"%s: verify OOM",tag);
+  return 0;
+ }
+ off=0;
+ while(off<len){
+  const UINT want=(UINT)((len-off)>8192u?8192u:(len-off));
+  moved=0;
+  ret=f_read(&f,readback,want,&moved);
+  if(ret!=FR_OK||moved!=want||memcmp(readback,src+off,want)){
+   snprintf(mz_status,sizeof(mz_status),"%s: verify FAT=%u at=%u %u/%u",
+            tag,(unsigned)ret,off,(unsigned)moved,(unsigned)want);
+   free(readback);f_close(&f);return 0;
+  }
+  off+=moved;
+ }
+ free(readback);
+ closed=f_close(&f);
+ if(closed!=FR_OK){
+  snprintf(mz_status,sizeof(mz_status),"%s: verify close FAT=%u",
+           tag,(unsigned)closed);
+  return 0;
+ }
+ return 1;
+}
+static void mz_remove_ascii_file(const char*path){
+ WCHAR wpath[80];unsigned i=0;
+ while(path[i]&&i<sizeof(wpath)/sizeof(wpath[0])-1){
+  wpath[i]=(WCHAR)(unsigned char)path[i];i++;
+ }
+ if(path[i])return;
+ wpath[i]=0;
+ f_unlink(wpath); /* Best-effort cleanup of a successful probe. */
+}
+static int mz_probe_current_volume(void){
+ char dir[48],path[64];u8 test[64];
+ unsigned i;
+ snprintf(dir,sizeof(dir),"%s:/maizo",GetRootDevice());
+ if(!mz_make_dir(dir,"PROBE"))return 0;
+ snprintf(path,sizeof(path),"%s:/maizo/.mz-write-test",GetRootDevice());
+ for(i=0;i<sizeof(test);i++)test[i]=(u8)(0x5au+(i*13u));
+ if(!mz_write_checked(path,test,sizeof(test),"PROBE"))return 0;
+ mz_remove_ascii_file(path);
+ return 1;
+}
+static int mz_choose_writable_volume(void){
+ extern FATFS *devices[2];
+ int selected=UseSD?MZ_DEV_SD:MZ_DEV_USB;
+ int order[2]={selected,selected==MZ_DEV_SD?MZ_DEV_USB:MZ_DEV_SD};
+ int i;
+ char failure[96]="";
+ for(i=0;i<2;i++){
+  int which=order[i];
+  if(!devices[which])continue;
+  UseSD=(which==MZ_DEV_SD);
+  if(mz_probe_current_volume()){
+   if(UseSD)ncfg->Config&=~NIN_CFG_USB;
+   else ncfg->Config|=NIN_CFG_USB;
+   return 1;
+  }
+  if(!failure[0])snprintf(failure,sizeof(failure),"%s",mz_status);
+ }
+ UseSD=(selected==MZ_DEV_SD);
+ if(failure[0])snprintf(mz_status,sizeof(mz_status),"%s",failure);
+ else strcpy(mz_status,"PROBE: nenhum FAT USB/SD montado");
+ return 0;
+}
 static int mz_save_settings(const MzSettings*c,const char*last_path){
- FIL f;UINT written=0;char line[480],folder[48];FRESULT ret,closed;
- const char*save_path=last_path?last_path:c->path;size_t need;int count;
+ char line[480],folder[48];const char*save_path=last_path?last_path:c->path;int count;
  if(!mz_valid_settings(c)){strcpy(mz_status,"INI: IP/porta/share invalido");return 0;}
  if(strchr(save_path,'\n')||strchr(save_path,'\r')){
   strcpy(mz_status,"INI: caminho invalido");return 0;
  }
  snprintf(folder,sizeof(folder),"%s:/maizo",GetRootDevice());
- ret=f_mkdir_char(folder);
- if(ret!=FR_OK&&ret!=FR_EXIST){
-  snprintf(mz_status,sizeof(mz_status),"INI: %s mkdir FAT=%u",GetRootDevice(),(unsigned)ret);
-  return 0;
- }
+ if(!mz_make_dir(folder,"INI"))return 0;
  count=snprintf(line,sizeof(line),
           "host=%s\nport=%s\nshare=%s\npath=%s\nprotocol=%s\nudp_port=%s\n",
           c->host,c->port,c->share,save_path,c->protocol,c->udp_port);
  if(count<0||count>=(int)sizeof(line)){
   strcpy(mz_status,"INI: config grande demais");return 0;
  }
- need=(size_t)count;
- ret=f_open_char(&f,mz_ini_path(),FA_CREATE_ALWAYS|FA_WRITE);
- if(ret!=FR_OK){
-  snprintf(mz_status,sizeof(mz_status),"INI: %s open FAT=%u",GetRootDevice(),(unsigned)ret);
-  return 0;
- }
- ret=f_write(&f,line,(UINT)need,&written);
- if(ret!=FR_OK||written!=(UINT)need){
-  snprintf(mz_status,sizeof(mz_status),"INI: write FAT=%u %u/%u",
-           (unsigned)ret,(unsigned)written,(unsigned)need);
-  f_close(&f);
-  return 0;
- }
- ret=f_sync(&f);
- closed=f_close(&f);
- if(ret!=FR_OK||closed!=FR_OK){
-  snprintf(mz_status,sizeof(mz_status),"INI: %s sync=%u close=%u",
-           GetRootDevice(),(unsigned)ret,(unsigned)closed);
-  return 0;
- }
+ if(!mz_write_checked(mz_ini_path(),line,(unsigned)count,"INI"))return 0;
  snprintf(mz_status,sizeof(mz_status),"INI OK (%s) %u bytes",
-          GetRootDevice(),(unsigned)written);
+          GetRootDevice(),(unsigned)count);
  return 1;
 }
 static void mz_draw(const char*title,const char*hint){
@@ -227,10 +324,9 @@ static int mz_is_disc(const char*name){
  return (n>4&&(!strcasecmp(name+n-4,".iso")||!strcasecmp(name+n-4,".gcm")));
 }
 static int mz_boot_prepare(MaizoNetSmb1*m,const MzSettings*c,const char*path){
- u8 *buf=NULL;FIL f;UINT written=0;unsigned port;
+ u8 *buf=NULL;unsigned port;
  char full[128],marker[255];int ok=0,midlen;
  const unsigned size=131072u;u8 verify[32];
- FRESULT ret;
  if(strlen(path)>195){strcpy(mz_status,"Caminho remoto longo demais");return 0;}
  if(!maizonet_smb1_open(m,path)){
   snprintf(mz_status,sizeof(mz_status),"ISO: %s",maizonet_smb1_error(m->last_status));return 0;
@@ -255,39 +351,13 @@ static int mz_boot_prepare(MaizoNetSmb1*m,const MzSettings*c,const char*path){
                strcmp(c->protocol,"udp")==0?"MZUDP1":"MZSMB1",
                c->host,port,c->share,path);
  if(midlen<0||midlen>=255){strcpy(mz_status,"Marcador SMB excede CheatPath");goto done;}
+ if(!mz_choose_writable_volume())goto done;
  snprintf(full,sizeof(full),"%s:/maizo",GetRootDevice());
- ret=f_mkdir_char(full);
- if(ret!=FR_OK&&ret!=FR_EXIST){
-  snprintf(mz_status,sizeof(mz_status),"STUB: mkdir maizo FAT=%u",(unsigned)ret);
-  goto done;
- }
+ if(!mz_make_dir(full,"STUB"))goto done;
  snprintf(full,sizeof(full),"%s:/maizo/maizonet",GetRootDevice());
- ret=f_mkdir_char(full);
- if(ret!=FR_OK&&ret!=FR_EXIST){
-  snprintf(mz_status,sizeof(mz_status),"STUB: mkdir maizonet FAT=%u",(unsigned)ret);
-  goto done;
- }
+ if(!mz_make_dir(full,"STUB"))goto done;
  snprintf(full,sizeof(full),"%s:/maizo/maizonet/game.iso",GetRootDevice());
- ret=f_open_char(&f,full,FA_CREATE_ALWAYS|FA_WRITE);
- if(ret!=FR_OK){
-  snprintf(mz_status,sizeof(mz_status),"STUB: %s open FAT=%u",GetRootDevice(),(unsigned)ret);
-  goto done;
- }
- ret=f_write(&f,buf,size,&written);
- if(ret!=FR_OK||written!=size){
-  snprintf(mz_status,sizeof(mz_status),"STUB: write FAT=%u %u/131072",
-           (unsigned)ret,(unsigned)written);
-  f_close(&f);goto done;
- }
- ret=f_sync(&f);
- {
-  FRESULT closed=f_close(&f);
-  if(ret!=FR_OK||closed!=FR_OK){
-   snprintf(mz_status,sizeof(mz_status),"STUB: %s sync=%u close=%u",
-            GetRootDevice(),(unsigned)ret,(unsigned)closed);
-   goto done;
-  }
- }
+ if(!mz_write_checked(full,buf,size,"STUB"))goto done;
  /* The isolated kernel recognizes this marker and reads all remaining
   * sectors from SMB. Never persist the marker into normal nincfg.bin. */
  snprintf(ncfg->GamePath,sizeof(ncfg->GamePath),"/maizo/maizonet/game.iso");
@@ -387,6 +457,9 @@ bool MaizoNetSelectGame(void){
   else {strcpy(mz_status,"Precisa de SD ou USB para stub");return false;}
  }else UseSD=!previous_usb;
  mz_load_settings(&cfg);
+ if(!mz_choose_writable_volume()){
+  /* Keep menu accessible for inspection, but browsing cannot boot. */
+ }
  while(1){
   unsigned i;
   VIDEO_WaitVSync();FPAD_Update();
@@ -395,7 +468,7 @@ bool MaizoNetSelectGame(void){
   if(FPAD_Down(0))pos=(pos+1)%8;
   if(FPAD_Up(0))pos=(pos+7)%8;
   if(FPAD_OK(0)){
-   if(pos==0){if(mz_browse(&cfg))return true;}
+   if(pos==0){if(mz_choose_writable_volume() && mz_browse(&cfg))return true;}
    else if(pos==1)mz_edit(cfg.host,sizeof(cfg.host),"IP",alpha_host);
    else if(pos==2)mz_edit(cfg.port,sizeof(cfg.port),"PORTA",alpha_port);
    else if(pos==3)mz_edit(cfg.share,sizeof(cfg.share),"SHARE",alpha_share);
@@ -404,11 +477,11 @@ bool MaizoNetSelectGame(void){
     snprintf(mz_status,sizeof(mz_status),"Kernel escolhido: %s",cfg.protocol);
    }
    else if(pos==5)mz_edit(cfg.udp_port,sizeof(cfg.udp_port),"PORTA UDP",alpha_port);
-   else if(pos==6)mz_save_settings(&cfg,NULL);
+   else if(pos==6){if(mz_choose_writable_volume())mz_save_settings(&cfg,NULL);}
    else break;
   }
   ClearScreen();PrintInfo();
-  PrintFormat(DEFAULT_SIZE,BLACK,MENU_POS_X,MENU_POS_Y+20*3,"MAIZONINDENDONT - SMB1 DIRETO r3-1112");
+  PrintFormat(DEFAULT_SIZE,BLACK,MENU_POS_X,MENU_POS_Y+20*3,"MAIZONINDENDONT - SMB1 DIRETO r4-FAT");
   for(i=0;i<8;i++)PrintFormat(DEFAULT_SIZE,i==(unsigned)pos?MAROON:BLACK,
        MENU_POS_X,MENU_POS_Y+20*(i+5),"%c %s",
        i==(unsigned)pos?'>':' ',items[i]);
