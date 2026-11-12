@@ -11,6 +11,10 @@
 #include <string.h>
 #include <ctype.h>
 #include <strings.h>
+#include <errno.h>
+#include <unistd.h>
+#include <netinet/tcp.h>
+#include <lwp_watchdog.h>
 #include "global.h"
 #include "menu.h"
 #include "FPad.h"
@@ -22,17 +26,21 @@
 extern u32 Shutdown;
 
 typedef struct {char host[64],port[8],share[64],protocol[8],udp_port[8],path[196];} MzSettings;
-typedef struct {int fd;} MzSock;
+typedef struct {int fd,last_rc;char last_op;} MzSock;
 static MaizoNetDirEntry mz_entries[64];
 static char mz_status[96];
 
 static int mz_rx(void *ctx,void *buf,unsigned n){
  MzSock*s=(MzSock*)ctx;
- return net_recv(s->fd,buf,n,0);
+ int rc=net_recv(s->fd,buf,n,0);
+ if(rc<=0){s->last_rc=rc;s->last_op='R';}
+ return rc;
 }
 static int mz_tx(void *ctx,const void *buf,unsigned n){
  MzSock*s=(MzSock*)ctx;
- return net_send(s->fd,buf,n,0);
+ int rc=net_send(s->fd,buf,n,0);
+ if(rc<=0){s->last_rc=rc;s->last_op='W';}
+ return rc;
 }
 static int mz_ip(const char *src,struct in_addr *dst){
  unsigned oct=0,v=0,digits=0;unsigned char *p=(unsigned char*)&dst->s_addr;
@@ -289,27 +297,67 @@ static int mz_edit(char*dst,unsigned cap,const char*title,const char*alphabet){
 }
 static MaizoNetSmb1* mz_connect(const MzSettings*c,MzSock*s){
  struct sockaddr_in addr;struct timeval tv;MaizoNetSmb1*m;MaizoNetTransport t;
- unsigned port;
- s->fd=-1;
- if(!mz_valid_settings(c)){strcpy(mz_status,"Configure IP, porta e share primeiro");return NULL;}
- if(net_init()<0){strcpy(mz_status,"Wii: net_init falhou");return NULL;}
+ unsigned port;int rc,nonblock=1,nodelay=1,connected=0;
+ u64 started;
+ s->fd=-1;s->last_rc=1;s->last_op='-';
+ if(!mz_valid_settings(c)){
+  strcpy(mz_status,"Configure IP, porta e share primeiro");return NULL;
+ }
+ ShowMessageScreen("MAIZONET: INICIANDO REDE...");
+ rc=net_init();
+ if(rc<0){
+  snprintf(mz_status,sizeof(mz_status),"Wii: net_init=%d",rc);return NULL;
+ }
  memset(&addr,0,sizeof(addr));
  mz_ip(c->host,&addr.sin_addr);
  port=(unsigned)strtoul(c->port,NULL,10);
  addr.sin_family=AF_INET;addr.sin_port=htons((unsigned short)port);
  s->fd=net_socket(AF_INET,SOCK_STREAM,0);
- if(s->fd<0){strcpy(mz_status,"Wii: socket indisponivel");return NULL;}
+ if(s->fd<0){
+  snprintf(mz_status,sizeof(mz_status),"SMB: socket=%d",s->fd);return NULL;
+ }
+ /* TinySMB reference: nonblocking connect bounded by monotonic Wii clock. */
+ rc=net_ioctl(s->fd,FIONBIO,&nonblock);
+ if(rc<0){
+  snprintf(mz_status,sizeof(mz_status),"SMB: FIONBIO=%d",rc);
+  net_close(s->fd);s->fd=-1;return NULL;
+ }
+ net_setsockopt(s->fd,IPPROTO_TCP,TCP_NODELAY,&nodelay,sizeof(nodelay));
+ ShowMessageScreen("MAIZONET: CONECTANDO SMB...");
+ started=ticks_to_millisecs(gettime());
+ do{
+  rc=net_connect(s->fd,(struct sockaddr*)&addr,sizeof(addr));
+  if(rc>=0||rc==-EISCONN){connected=1;break;}
+  if(rc!=-EINPROGRESS&&rc!=-EALREADY&&rc!=-EWOULDBLOCK&&rc!=-EAGAIN)break;
+  usleep(10000);
+ }while(ticks_to_millisecs(gettime())-started<6000u);
+ nonblock=0;
+ if(!connected){
+  snprintf(mz_status,sizeof(mz_status),"SMB: connect=%d 6s max",rc);
+  net_close(s->fd);s->fd=-1;return NULL;
+ }
+ rc=net_ioctl(s->fd,FIONBIO,&nonblock);
+ if(rc<0){
+  snprintf(mz_status,sizeof(mz_status),"SMB: FIONBIO reset=%d",rc);
+  net_close(s->fd);s->fd=-1;return NULL;
+ }
  tv.tv_sec=3;tv.tv_usec=0;
  net_setsockopt(s->fd,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof(tv));
  net_setsockopt(s->fd,SOL_SOCKET,SO_SNDTIMEO,&tv,sizeof(tv));
- if(net_connect(s->fd,(struct sockaddr*)&addr,sizeof(addr))<0){
-  strcpy(mz_status,"SMB1: servidor inacessivel");net_close(s->fd);s->fd=-1;return NULL;
- }
  m=calloc(1,sizeof(*m));
- if(!m){strcpy(mz_status,"Memoria SMB insuficiente");net_close(s->fd);s->fd=-1;return NULL;}
+ if(!m){
+  strcpy(mz_status,"Memoria SMB insuficiente");
+  net_close(s->fd);s->fd=-1;return NULL;
+ }
  t.receive=mz_rx;t.transmit=mz_tx;t.user=s;
  if(!maizonet_smb1_connect_guest(m,t,c->host,c->share)){
-  snprintf(mz_status,sizeof(mz_status),"SMB1: %s",maizonet_smb1_error(m->last_status));
+  if(s->last_rc<=0){
+   snprintf(mz_status,sizeof(mz_status),"SMB: handshake socket %c=%d",
+            s->last_op,s->last_rc);
+  }else{
+   snprintf(mz_status,sizeof(mz_status),"SMB1: NT=%08lX %s",
+            (unsigned long)m->last_status,maizonet_smb1_error(m->last_status));
+  }
   free(m);net_close(s->fd);s->fd=-1;return NULL;
  }
  strcpy(mz_status,"SMB1 conectado, listando arquivos...");
@@ -391,7 +439,13 @@ static int mz_browse(MzSettings*c){
  while(!done){
   int i;
   count=maizonet_smb1_list_dir(m,dir,mz_entries,64);
-  if(count<0){snprintf(mz_status,sizeof(mz_status),"SMB: listagem falhou NT=%08lX",(unsigned long)m->last_status);break;}
+  if(count<0){
+   if(sock.last_rc<=0)
+    snprintf(mz_status,sizeof(mz_status),"SMB: listar socket %c=%d",sock.last_op,sock.last_rc);
+   else
+    snprintf(mz_status,sizeof(mz_status),"SMB: listar NT=%08lX",(unsigned long)m->last_status);
+   break;
+  }
   cursor=scroll=0;
   while(1){
    VIDEO_WaitVSync();FPAD_Update();
@@ -481,7 +535,7 @@ bool MaizoNetSelectGame(void){
    else break;
   }
   ClearScreen();PrintInfo();
-  PrintFormat(DEFAULT_SIZE,BLACK,MENU_POS_X,MENU_POS_Y+20*3,"MAIZONINDENDONT - SMB1 DIRETO r4-FAT");
+  PrintFormat(DEFAULT_SIZE,BLACK,MENU_POS_X,MENU_POS_Y+20*3,"MAIZONINDENDONT - SMB1 DIRETO r5-NET");
   for(i=0;i<8;i++)PrintFormat(DEFAULT_SIZE,i==(unsigned)pos?MAROON:BLACK,
        MENU_POS_X,MENU_POS_Y+20*(i+5),"%c %s",
        i==(unsigned)pos?'>':' ',items[i]);
