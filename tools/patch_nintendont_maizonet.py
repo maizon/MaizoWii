@@ -20,6 +20,20 @@ def patch_nin_kernel(root: Path) -> None:
     """Insert isolated read-only SMB1 ISO backend without changing FAT path."""
     src=Path(__file__).resolve().parents[1] / "integrations"
     kernel=root / "kernel"
+
+    # The pinned Nintendont loader omits CTRL_SYNC from disk_ioctl().
+    # FatFs f_sync() therefore fails even after f_write() succeeds.
+    # Properly flush the libfat disk cache and propagate genuine IO errors.
+    diskio = root / "loader" / "source" / "diskio.c"
+    replace_one(
+        diskio,
+        "\t\tcase GET_SECTOR_COUNT:\n\t\t\t// TODO?\n\t\t\tbreak;",
+        "\t\tcase GET_SECTOR_COUNT:\n\t\t\t// TODO?\n\t\t\tbreak;\n"
+        "\n\t\tcase CTRL_SYNC:\n"
+        "\t\t\tret = cache[pdrv] && _FAT_cache_flush(cache[pdrv])\n"
+        "\t\t\t    ? RES_OK : RES_ERROR;\n"
+        "\t\t\tbreak;"
+    )
     for name in ("maizonet_smb1.h","maizonet_smb1.c",
                  "maizonet_nintendont_net.h","maizonet_nintendont_net.c",
                  "maizonet_net_ipv4.h", "maizonet_udp.h", "maizonet_udp.c"):
