@@ -51,7 +51,7 @@ int maizonet_udp_open(MaizoUdp*c,MaizoUdpTransport t,const char*path){
  c->error=11;return 0;
 }
 static int block(MaizoUdp*c,uint64_t offset,uint8_t*out,unsigned n){
- uint8_t seen[MZUDP_MAX_FRAG];unsigned got=0,attempts,fragments,i,p,amount,nreq;
+ uint8_t seen[MZUDP_MAX_FRAG];unsigned got=0,attempts,fragments,i,nreq;
  uint32_t crc;uint16_t count,index,off,bytes;
  if(!n||n>MZUDP_BLOCK)return 0;
  fragments=(n+MZUDP_PAYLOAD-1)/MZUDP_PAYLOAD;

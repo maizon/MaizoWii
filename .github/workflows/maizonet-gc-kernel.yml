@@ -25,6 +25,7 @@ jobs:
         run: |
           set -eu
           python3 tools/test_maizonet_smb1.py
+          python3 tools/test_maizonet_udp.py
           python3 -m py_compile tools/patch_nintendont_maizonet.py
   build-nintendont:
     needs: test-smb1-host
