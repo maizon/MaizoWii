@@ -55,11 +55,15 @@ static const char*paths[SYSTEM_COUNT][4]={
 /* Remote GC MUST use the patched kernel, never the stock Nintendont:
  * booting the 128-KiB header stub as a full ISO could crash the game. */
 static const char *maizonet_nintendont_path(void){
+ /* Always prefer the explicit test build under /apps. Older all-in-one
+  * bundles may still contain /maizo/modules/nintendont-maizonet/boot.dol.
+  * That legacy file previously SHADOWED every freshly installed /apps
+  * build, so hardware tests unknowingly repeated the same old binary. */
  static const char *paths[]={
-  "usb:/maizo/modules/nintendont-maizonet/boot.dol",
-  "sd:/maizo/modules/nintendont-maizonet/boot.dol",
   "usb:/apps/nintendont-maizonet/boot.dol",
-  "sd:/apps/nintendont-maizonet/boot.dol"};
+  "sd:/apps/nintendont-maizonet/boot.dol",
+  "usb:/maizo/modules/nintendont-maizonet/boot.dol",
+  "sd:/maizo/modules/nintendont-maizonet/boot.dol"};
  for(unsigned i=0;i<sizeof(paths)/sizeof(paths[0]);i++)
   if(file_exists(paths[i]))return paths[i];
  return NULL;
