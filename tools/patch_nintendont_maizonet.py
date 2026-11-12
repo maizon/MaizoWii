@@ -225,7 +225,7 @@ def patch_nin_kernel(root: Path) -> None:
     # If an ISO sector read fails, ACK the PPC ioctl with an error rather
     # than copying invalid bytes or leaving PPC blocked on an IPC reply.
     replace_one(di,
-        '\t\t\t\t\t\tif(((u32)di_dest + Offset) <= 0x31A0)',
+        '\t\t\t\t\tif(((u32)di_dest + Offset) <= 0x31A0)',
         '\t\t\t\t\t\tif(maizonet_nin_requested(ConfigGetCheatPath()) && maizonet_nin_failed())\n'
         '\t\t\t\t\t\t\tbreak; /* Abort partial remote read. */\n'
         '\t\t\t\t\t\tif(((u32)di_dest + Offset) <= 0x31A0)')
