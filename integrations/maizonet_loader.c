@@ -21,7 +21,7 @@
 #define MZ_DEV_USB 1
 extern u32 Shutdown;
 
-typedef struct {char host[64],port[8],share[64],protocol[8],udp_port[8];} MzSettings;
+typedef struct {char host[64],port[8],share[64],protocol[8],udp_port[8],path[196];} MzSettings;
 typedef struct {int fd;} MzSock;
 static MaizoNetDirEntry mz_entries[64];
 static char mz_status[96];
@@ -81,6 +81,7 @@ static void mz_load_settings(MzSettings*c){
   else if(!strcmp(cur,"port"))snprintf(c->port,sizeof(c->port),"%s",e);
   else if(!strcmp(cur,"protocol"))snprintf(c->protocol,sizeof(c->protocol),"%s",e);
   else if(!strcmp(cur,"udp_port"))snprintf(c->udp_port,sizeof(c->udp_port),"%s",e);
+  else if(!strcmp(cur,"path"))snprintf(c->path,sizeof(c->path),"%s",e);
  }
  f_close(&f);
 }
@@ -104,24 +105,46 @@ static int mz_valid_settings(const MzSettings*c){
  return 1;
 }
 static int mz_save_settings(const MzSettings*c,const char*last_path){
- FIL f;UINT written;char line[480];FRESULT ret;
- if(!mz_valid_settings(c)){strcpy(mz_status,"IP, porta ou share invalida");return 0;}
- {
-  char folder[48];
-  snprintf(folder,sizeof(folder),"%s:/maizo",GetRootDevice());
-  f_mkdir_char(folder);
+ FIL f;UINT written=0;char line[480],folder[48];FRESULT ret,closed;
+ const char*save_path=last_path?last_path:c->path;size_t need;int count;
+ if(!mz_valid_settings(c)){strcpy(mz_status,"INI: IP/porta/share invalido");return 0;}
+ if(strchr(save_path,'\n')||strchr(save_path,'\r')){
+  strcpy(mz_status,"INI: caminho invalido");return 0;
  }
- if(last_path && (strchr(last_path,'\n')||strchr(last_path,'\r')))return 0;
- snprintf(line,sizeof(line),"host=%s\nport=%s\nshare=%s\npath=%s\nprotocol=%s\nudp_port=%s\n",
-          c->host,c->port,c->share,last_path?last_path:"",
-          c->protocol,c->udp_port);
+ snprintf(folder,sizeof(folder),"%s:/maizo",GetRootDevice());
+ ret=f_mkdir_char(folder);
+ if(ret!=FR_OK&&ret!=FR_EXIST){
+  snprintf(mz_status,sizeof(mz_status),"INI: %s mkdir FAT=%u",GetRootDevice(),(unsigned)ret);
+  return 0;
+ }
+ count=snprintf(line,sizeof(line),
+          "host=%s\nport=%s\nshare=%s\npath=%s\nprotocol=%s\nudp_port=%s\n",
+          c->host,c->port,c->share,save_path,c->protocol,c->udp_port);
+ if(count<0||count>=(int)sizeof(line)){
+  strcpy(mz_status,"INI: config grande demais");return 0;
+ }
+ need=(size_t)count;
  ret=f_open_char(&f,mz_ini_path(),FA_CREATE_ALWAYS|FA_WRITE);
- if(ret!=FR_OK){strcpy(mz_status,"Nao abriu network.ini para salvar");return 0;}
- ret=f_write(&f,line,strlen(line),&written);
- if(ret==FR_OK&&written==strlen(line))ret=f_sync(&f);
- f_close(&f);
- if(ret!=FR_OK||written!=strlen(line)){strcpy(mz_status,"Falha gravando network.ini");return 0;}
- strcpy(mz_status,"network.ini salvo");
+ if(ret!=FR_OK){
+  snprintf(mz_status,sizeof(mz_status),"INI: %s open FAT=%u",GetRootDevice(),(unsigned)ret);
+  return 0;
+ }
+ ret=f_write(&f,line,(UINT)need,&written);
+ if(ret!=FR_OK||written!=(UINT)need){
+  snprintf(mz_status,sizeof(mz_status),"INI: write FAT=%u %u/%u",
+           (unsigned)ret,(unsigned)written,(unsigned)need);
+  f_close(&f);
+  return 0;
+ }
+ ret=f_sync(&f);
+ closed=f_close(&f);
+ if(ret!=FR_OK||closed!=FR_OK){
+  snprintf(mz_status,sizeof(mz_status),"INI: %s sync=%u close=%u",
+           GetRootDevice(),(unsigned)ret,(unsigned)closed);
+  return 0;
+ }
+ snprintf(mz_status,sizeof(mz_status),"INI OK (%s) %u bytes",
+          GetRootDevice(),(unsigned)written);
  return 1;
 }
 static void mz_draw(const char*title,const char*hint){
@@ -212,7 +235,7 @@ static int mz_boot_prepare(MaizoNetSmb1*m,const MzSettings*c,const char*path){
  if(!maizonet_smb1_open(m,path)){
   snprintf(mz_status,sizeof(mz_status),"ISO: %s",maizonet_smb1_error(m->last_status));return 0;
  }
- buf=malloc(size);
+ buf=memalign(32,size);
  if(!buf){strcpy(mz_status,"Sem memoria para cabecalho ISO");goto done;}
  if(maizonet_smb1_read_at(m,0,buf,size)!=(int)size ||
     maizonet_smb1_read_at(m,0x20000,verify,sizeof(verify))!=(int)sizeof(verify)){
@@ -232,15 +255,39 @@ static int mz_boot_prepare(MaizoNetSmb1*m,const MzSettings*c,const char*path){
                strcmp(c->protocol,"udp")==0?"MZUDP1":"MZSMB1",
                c->host,port,c->share,path);
  if(midlen<0||midlen>=255){strcpy(mz_status,"Marcador SMB excede CheatPath");goto done;}
- snprintf(full,sizeof(full),"%s:/maizo",GetRootDevice());f_mkdir_char(full);
- snprintf(full,sizeof(full),"%s:/maizo/maizonet",GetRootDevice());f_mkdir_char(full);
+ snprintf(full,sizeof(full),"%s:/maizo",GetRootDevice());
+ ret=f_mkdir_char(full);
+ if(ret!=FR_OK&&ret!=FR_EXIST){
+  snprintf(mz_status,sizeof(mz_status),"STUB: mkdir maizo FAT=%u",(unsigned)ret);
+  goto done;
+ }
+ snprintf(full,sizeof(full),"%s:/maizo/maizonet",GetRootDevice());
+ ret=f_mkdir_char(full);
+ if(ret!=FR_OK&&ret!=FR_EXIST){
+  snprintf(mz_status,sizeof(mz_status),"STUB: mkdir maizonet FAT=%u",(unsigned)ret);
+  goto done;
+ }
  snprintf(full,sizeof(full),"%s:/maizo/maizonet/game.iso",GetRootDevice());
  ret=f_open_char(&f,full,FA_CREATE_ALWAYS|FA_WRITE);
- if(ret!=FR_OK){strcpy(mz_status,"Falhou abrir stub USB/SD");goto done;}
+ if(ret!=FR_OK){
+  snprintf(mz_status,sizeof(mz_status),"STUB: %s open FAT=%u",GetRootDevice(),(unsigned)ret);
+  goto done;
+ }
  ret=f_write(&f,buf,size,&written);
- if(ret==FR_OK&&written==size)ret=f_sync(&f);
- f_close(&f);
- if(ret!=FR_OK||written!=size){strcpy(mz_status,"Falhou gravar stub de 128 KiB");goto done;}
+ if(ret!=FR_OK||written!=size){
+  snprintf(mz_status,sizeof(mz_status),"STUB: write FAT=%u %u/131072",
+           (unsigned)ret,(unsigned)written);
+  f_close(&f);goto done;
+ }
+ ret=f_sync(&f);
+ {
+  FRESULT closed=f_close(&f);
+  if(ret!=FR_OK||closed!=FR_OK){
+   snprintf(mz_status,sizeof(mz_status),"STUB: %s sync=%u close=%u",
+            GetRootDevice(),(unsigned)ret,(unsigned)closed);
+   goto done;
+  }
+ }
  /* The isolated kernel recognizes this marker and reads all remaining
   * sectors from SMB. Never persist the marker into normal nincfg.bin. */
  snprintf(ncfg->GamePath,sizeof(ncfg->GamePath),"/maizo/maizonet/game.iso");
@@ -248,7 +295,7 @@ static int mz_boot_prepare(MaizoNetSmb1*m,const MzSettings*c,const char*path){
  memcpy(&ncfg->GameID,buf,4);
  ncfg->Config &= ~(NIN_CFG_CHEATS|NIN_CFG_CHEAT_PATH|NIN_CFG_AUTO_BOOT);
  DCFlushRange(ncfg,sizeof(NIN_CFG));
- mz_save_settings(c,path);
+ if(!mz_save_settings(c,path))goto done;
  strcpy(mz_status,"ISO verificada: boot direto em andamento");
  ok=1;
 done:
