@@ -36,7 +36,8 @@ def patch_nin_kernel(root: Path) -> None:
     )
     for name in ("maizonet_smb1.h","maizonet_smb1.c",
                  "maizonet_nintendont_net.h","maizonet_nintendont_net.c",
-                 "maizonet_net_ipv4.h", "maizonet_udp.h", "maizonet_udp.c"):
+                 "maizonet_net_ipv4.h", "maizonet_net_ios_status.h",
+                 "maizonet_udp.h", "maizonet_udp.c"):
         shutil.copyfile(src / name,kernel / name)
 
     replace_one(

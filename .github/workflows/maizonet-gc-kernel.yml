@@ -11,6 +11,7 @@ on:
       - tests/smb1_wire.c
       - tests/smb1_browse.c
       - tests/smb1_live.c
+      - tests/net_ios_status.c
       - source/launch.c
       - docs/MAIZONET_EXPERIMENTAL.md
       - .github/workflows/maizonet-gc-kernel.yml
@@ -30,6 +31,9 @@ jobs:
           python3 tools/test_maizonet_smb1.py
           python3 tools/test_maizonet_udp.py
           python3 -m py_compile tools/patch_nintendont_maizonet.py
+          cc -std=c99 -Wall -Wextra -Werror -I integrations \
+            tests/net_ios_status.c -o /tmp/maizonet-ios-status-test
+          /tmp/maizonet-ios-status-test
   test-smb1-samba:
     needs: test-smb1-host
     runs-on: ubuntu-latest
@@ -139,6 +143,9 @@ jobs:
           grep -Fq 'mz_record(149' upstream-nintendont/kernel/maizonet_nintendont_net.c
           grep -Fq 'last_reason=7' upstream-nintendont/kernel/maizonet_smb1.c
           grep -Fq 'phase=%u reason=%u' upstream-nintendont/kernel/maizonet_nintendont_net.c
+          grep -Fq 'mz_ios_connect_done(ret)' upstream-nintendont/kernel/maizonet_nintendont_net.c
+          grep -Fq 'mz_ios_io_retryable' upstream-nintendont/kernel/maizonet_nintendont_net.c
+          test -s upstream-nintendont/kernel/maizonet_net_ios_status.h
           find upstream-nintendont -type f \( -name loader.dol -o -name kernel.bin \) -print -exec ls -lh {} \;
       - name: Stage distinct experimental Nintendont (do not replace stock)
         run: |

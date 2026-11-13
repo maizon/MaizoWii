@@ -15,6 +15,7 @@
 #include "string.h"
 #include "ff_utf8.h"
 #include "maizonet_net_ipv4.h"
+#include "maizonet_net_ios_status.h"
 #define SO_SOCKET 0x0f
 #define SO_CONNECT 0x04
 #define SO_CLOSE 0x03
@@ -33,6 +34,7 @@
 #define MZ_POLLERR 0x0008u
 #define MZ_POLLHUP 0x0010u
 #define MZ_TCP_TIMEOUT_MS 10000u
+#define MZ_CONNECT_TIMEOUT_TICKS (8000u*1899u)
 /* HW_TIMER increments approximately 1,898,437 times per second. */
 #define MZ_TCP_TIMEOUT_TICKS (MZ_TCP_TIMEOUT_MS*1899u)
 #define SO_TCP_NODELAY_LEVEL 6u
@@ -190,7 +192,9 @@ static int mzsend(void*ctx,const void*payload,unsigned n){
   sent=IOS_Ioctlv(mzfd,SO_SEND,2,0,vec);
   if(sent>0 && (unsigned)sent<=part)return sent;
   last=sent;
-  if(sent>(int)part)break;
+  /* Retry only raw IOS transient errors; fail fast on refusal/reset. */
+  if(sent==0 || sent>(int)part ||
+     (sent<0 && !mz_ios_io_retryable(sent)))break;
   if(TimerDiffTicks(start)>MZ_TCP_TIMEOUT_TICKS)break;
   mdelay(10);
  }while(1);
@@ -219,9 +223,8 @@ static int mzrecv(void*ctx,void*buffer,unsigned n){
    return got;
   }
   last=got;
-  if(got>(int)part)break;
-  /* 0 is a graceful EOF: the peer closed the connection. */
-  if(got==0)break;
+  if(got==0 || got>(int)part ||
+     (got<0 && !mz_ios_io_retryable(got)))break;
   if(TimerDiffTicks(start)>MZ_TCP_TIMEOUT_TICKS)break;
   mdelay(10);
  }while(1);
@@ -346,15 +349,28 @@ network_ready:
  conn_par.address[2]=(u8)(port>>8);conn_par.address[3]=(u8)port;
  memcpy(conn_par.address+4,addr,4);
  /*
-  * On this Wii the server accepted the connection, yet SO_POLL never
-  * returned POLLOUT (ARM code 138). A negative return from nonblocking
-  * SO_CONNECT is often EINPROGRESS, not necessarily an error.
-  * Do not fail based on poll. Let the first bounded SMB1 send validate
-  * the socket, with retries while the TCP handshake finishes.
+  * SO_CONNECT on a nonblocking socket initially returns raw -26
+  * (EINPROGRESS), and a later retry returns -30 (EISCONN) once TCP
+  * is established. Previous code ignored the pending result and tried
+  * SMB1 before the IOS socket was ready, yielding ARM CODE=120.
+  * Follow the established Wii TinySMB connect loop with an 8s budget,
+  * using RAW IOS errno values rather than POSIX/newlib errno values.
   */
- mz_error=117;
- ret=IOS_Ioctl(mzfd,SO_CONNECT,&conn_par,sizeof(conn_par),NULL,0);
- mz_record(117,0,port,ret);
+ {
+  u32 started=read32(HW_TIMER);
+  mz_error=117;
+  do{
+   ret=IOS_Ioctl(mzfd,SO_CONNECT,&conn_par,sizeof(conn_par),NULL,0);
+   mz_record(117,0,port,ret);
+   if(mz_ios_connect_done(ret))break;
+   if(!mz_ios_connect_pending(ret) ||
+      TimerDiffTicks(started)>MZ_CONNECT_TIMEOUT_TICKS){
+    mz_record(143,0,port,ret);
+    goto error;
+   }
+   mdelay(10);
+  }while(1);
+ }
  mz_record(139,0,port,ret);
  mz_error=0;
  return 1;
