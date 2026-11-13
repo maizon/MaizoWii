@@ -33,6 +33,8 @@
 #define MZ_POLLERR 0x0008u
 #define MZ_POLLHUP 0x0010u
 #define MZ_TCP_TIMEOUT_MS 10000u
+/* HW_TIMER increments approximately 1,898,437 times per second. */
+#define MZ_TCP_TIMEOUT_TICKS (MZ_TCP_TIMEOUT_MS*1899u)
 #define SO_TCP_NODELAY_LEVEL 6u
 #define SO_TCP_NODELAY_OPT 1u
 
@@ -69,6 +71,7 @@ static u32 fcntl_par[3] ALIGNED(32);
 static u32 poll_timeout[2] ALIGNED(32);
 static struct {s32 socket;u32 events,revents;} poll_s ALIGNED(32);
 static void mz_record(u32 phase,u64 offset,u32 size,s32 result);
+static int mz_error=0;
 /* Follow libogc network_wii.c's IOS ioctl SO_POLL framing. Returns 1
  * only when requested events are ready, 0 on timeout/error/disconnect. */
 static int mzpoll(u32 events,u32 timeout){
@@ -98,7 +101,6 @@ static int mzpoll(u32 events,u32 timeout){
 static char mzhost[64],mzshare[64],mzpath[256];
 static unsigned mzport=445;
 static int mzopened=0;
-static int mz_error=0;
 static volatile int mz_failed=0;
 static u32 mz_ntstatus=0;
 int maizonet_nin_last_error(void){return mz_error?mz_error:199;}
@@ -162,12 +164,19 @@ static int ipv4(const char*s,u8*out){
  if(!n||k!=3)return 0;
  out[3]=(u8)val;return 1;
 }
+/*
+ * The physical Wii reached ARM error=138 after Samba accepted the TCP socket.
+ * That was SO_POLL returning no requested event, not evidence of lost Wi-Fi.
+ * Avoid making SO_POLL a mandatory gate for SMB. Instead use native IOS
+ * nonblocking send/recv operations, retrying short results until bounded
+ * timeout. The SMB1 codec still assembles frames across partial I/O.
+ */
 static int mzsend(void*ctx,const void*payload,unsigned n){
- unsigned part;int sent;
+ unsigned part;
+ int sent,last=0;
+ u32 start;
  (void)ctx;
  if(mzfd<0||mzsocket<0||!n)return -1;
- /* Poll first: IOS nonblocking send must never freeze the DI thread. */
- if(!mzpoll(MZ_POLLOUT,MZ_TCP_TIMEOUT_MS))return -1;
  part=n;if(part>sizeof(send_buf))part=sizeof(send_buf);
  memcpy(send_buf,payload,part);
  memset(&send_par,0,sizeof(send_par));
@@ -176,26 +185,49 @@ static int mzsend(void*ctx,const void*payload,unsigned n){
  vec[1].data=&send_par;vec[1].len=sizeof(send_par);
  sync_after_write(send_buf,ALIGN_FORWARD(part,32));
  sync_after_write(&send_par,sizeof(send_par));
- sent=IOS_Ioctlv(mzfd,SO_SEND,2,0,vec);
- if(sent<0 || (unsigned)sent>part)return -1;
- return sent;
+ start=read32(HW_TIMER);
+ do{
+  sent=IOS_Ioctlv(mzfd,SO_SEND,2,0,vec);
+  if(sent>0 && (unsigned)sent<=part)return sent;
+  last=sent;
+  if(sent>(int)part)break;
+  if(TimerDiffTicks(start)>MZ_TCP_TIMEOUT_TICKS)break;
+  mdelay(10);
+ }while(1);
+ mz_record(148,0,part,last);
+ mz_error=141;
+ return -1;
 }
 static int mzrecv(void*ctx,void*buffer,unsigned n){
- unsigned part;int got;
+ unsigned part;
+ int got,last=0;
+ u32 start;
  (void)ctx;
  if(mzfd<0||mzsocket<0||!n)return -1;
- if(!mzpoll(MZ_POLLIN,MZ_TCP_TIMEOUT_MS))return -1;
  part=n;if(part>sizeof(recv_buf))part=sizeof(recv_buf);
  req_in[0]=mzsocket;req_in[1]=0;
  vec[0].data=req_in;vec[0].len=8;
  vec[1].data=recv_buf;vec[1].len=part;
  vec[2].data=NULL;vec[2].len=0;
  sync_after_write(req_in,sizeof(req_in));
- got=IOS_Ioctlv(mzfd,SO_RECV,1,2,vec);
- if(got<=0 || (unsigned)got>part)return -1;
- sync_before_read(recv_buf,ALIGN_FORWARD(got,32));
- memcpy(buffer,recv_buf,got);
- return got;
+ start=read32(HW_TIMER);
+ do{
+  got=IOS_Ioctlv(mzfd,SO_RECV,1,2,vec);
+  if(got>0 && (unsigned)got<=part){
+   sync_before_read(recv_buf,ALIGN_FORWARD(got,32));
+   memcpy(buffer,recv_buf,got);
+   return got;
+  }
+  last=got;
+  if(got>(int)part)break;
+  /* 0 is a graceful EOF: the peer closed the connection. */
+  if(got==0)break;
+  if(TimerDiffTicks(start)>MZ_TCP_TIMEOUT_TICKS)break;
+  mdelay(10);
+ }while(1);
+ mz_record(149,0,part,last);
+ mz_error=142;
+ return -1;
 }
 static int mzsocket_init(const char*host,unsigned port){
  u8 addr[4];
@@ -304,7 +336,7 @@ network_ready:
  mz_record(140,0,0,ret); /* non-fatal on older IOS */
  opt_par.level=0xffff;
  opt_par.optname=0x1006;opt_par.optlen=8; /* SO_RCVTIMEO */
- ((u32*)opt_par.optval)[0]=3; /* seconds */
+ ((u32*)opt_par.optval)[0]=10; /* seconds */
  IOS_Ioctl(mzfd,SO_OPT,&opt_par,sizeof(opt_par),NULL,0);
  opt_par.optname=0x1005; /* SO_SNDTIMEO */
  IOS_Ioctl(mzfd,SO_OPT,&opt_par,sizeof(opt_par),NULL,0);
@@ -313,19 +345,16 @@ network_ready:
  conn_par.address[0]=8;conn_par.address[1]=2;
  conn_par.address[2]=(u8)(port>>8);conn_par.address[3]=(u8)port;
  memcpy(conn_par.address+4,addr,4);
+ /*
+  * On this Wii the server accepted the connection, yet SO_POLL never
+  * returned POLLOUT (ARM code 138). A negative return from nonblocking
+  * SO_CONNECT is often EINPROGRESS, not necessarily an error.
+  * Do not fail based on poll. Let the first bounded SMB1 send validate
+  * the socket, with retries while the TCP handshake finishes.
+  */
  mz_error=117;
  ret=IOS_Ioctl(mzfd,SO_CONNECT,&conn_par,sizeof(conn_par),NULL,0);
  mz_record(117,0,port,ret);
- /* SO_CONNECT may return immediate success (0) or pending (<0).
-  * Waiting for POLLOUT after an already established connection is
-  * unnecessary; poll only when IOS reports asynchronous completion.
-  * A writable socket is NOT proof of successful SMB authentication.
-  */
- mz_error=138;
- if(ret<0 && !mzpoll(MZ_POLLOUT,MZ_TCP_TIMEOUT_MS)){
-  mz_record(138,0,port,ret);
-  goto error;
- }
  mz_record(139,0,port,ret);
  mz_error=0;
  return 1;
@@ -421,6 +450,7 @@ static bool mz_connect_backend(void){
  mz_error=120;
  mz_record(120,0,0,0);
  if(!maizonet_smb1_connect_guest(&mzclient,t,mzhost,mzshare)){
+  /* mzsend/mzrecv preserve codes 141/142 for on-screen diagnostics. */
   mz_ntstatus=mzclient.last_status;
   mz_record(120,0,0,(s32)mz_ntstatus);
   dbgprintf("MZ SMB1: session rejected %08x\r\n",mzclient.last_status);

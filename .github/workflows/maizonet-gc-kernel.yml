@@ -134,7 +134,9 @@ jobs:
           grep -Fq 'MaizoNetSelectGame' upstream-nintendont/loader/source/menu.c
           grep -Fq 'maizonet_smb1_list_dir' upstream-nintendont/loader/source/maizonet_smb1.c
           grep -Fq 'MAIZONET ARM ERROR: CODE=' upstream-nintendont/loader/source/main.c
-          grep -Fq 'mz_record(145' upstream-nintendont/kernel/maizonet_nintendont_net.c
+          grep -Fq 'MZ_TCP_TIMEOUT_TICKS' upstream-nintendont/kernel/maizonet_nintendont_net.c
+          grep -Fq 'mz_record(148' upstream-nintendont/kernel/maizonet_nintendont_net.c
+          grep -Fq 'mz_record(149' upstream-nintendont/kernel/maizonet_nintendont_net.c
           find upstream-nintendont -type f \( -name loader.dol -o -name kernel.bin \) -print -exec ls -lh {} \;
       - name: Stage distinct experimental Nintendont (do not replace stock)
         run: |
