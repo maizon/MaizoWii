@@ -146,6 +146,8 @@ jobs:
           grep -Fq 'sync_after_write(vec,3*sizeof(ioctlv))' upstream-nintendont/kernel/maizonet_nintendont_net.c
           grep -Fq 'frame_bad' upstream-nintendont/kernel/maizonet_nintendont_net.c
           grep -Fq 'mz_ios_io_retryable(result)' upstream-nintendont/kernel/maizonet_nintendont_net.c
+          grep -Fq 'fragments*4u+8u' upstream-nintendont/kernel/maizonet_udp.c
+          grep -Fq 'small>2048u' upstream-nintendont/kernel/maizonet_udp.c
           grep -Fq 'sync_after_write(vec,3*sizeof(ioctlv))' upstream-nintendont/kernel/maizonet_nintendont_net.c
           ! sed -n '/static int mzudp_recv(/,/static bool mzudp_connect_backend(/p' upstream-nintendont/kernel/maizonet_nintendont_net.c | grep -Fq 'mzpoll('
           grep -Fq 'mz_ios_connect_done(ret)' upstream-nintendont/kernel/maizonet_nintendont_net.c

@@ -18,10 +18,15 @@ RES = struct.Struct("!4sBBBBIIQHHHHIQ")  # 44 bytes
 PAYLOAD = 1024
 BLOCK = 8192
 TTL = 600
+# Each 8-KiB read generates eight UDP packets. The IOS Wii receive queue
+# may drop a back-to-back burst; pace pairs of packets very slightly.
+# Adjustable to zero to test throughput on a wired/low-loss network.
+DEFAULT_PAIR_PACING_US = 300
 
 class BlockServer:
-    def __init__(self, root):
+    def __init__(self, root, pair_pacing_us=DEFAULT_PAIR_PACING_US):
         self.root = Path(root).resolve(strict=True)
+        self.pair_pacing_us = pair_pacing_us
         self.clients = {}  # (peer IP, peer UDP port, token) => (fd, size, expires)
         self.bytes_served = 0
 
@@ -85,6 +90,8 @@ class BlockServer:
                 raise OSError("short read")
             count = (len(data) + PAYLOAD - 1) // PAYLOAD
             for i in range(count):
+                if i and (i % 2 == 0) and self.pair_pacing_us:
+                    time.sleep(self.pair_pacing_us / 1_000_000)
                 start = i * PAYLOAD
                 self._reply(sock, peer, 2, req, token=token, offset=offset,
                             index=i, count=count, part=data[start:start + PAYLOAD],
@@ -99,10 +106,14 @@ def main():
     parser.add_argument("--root", default="/storage/emulated/0/PS2")
     parser.add_argument("--port", type=int, default=17445)
     parser.add_argument("--bind", default="0.0.0.0")
+    parser.add_argument("--pair-pacing-us", type=int, default=DEFAULT_PAIR_PACING_US,
+                        help="Delay after each pair of UDP fragments (default: 300 us)")
     args = parser.parse_args()
+    if not 0 <= args.pair_pacing_us <= 5000:
+        parser.error("--pair-pacing-us must be 0..5000")
     if not 1024 <= args.port <= 65535:
         parser.error("port must be 1024..65535")
-    server = BlockServer(args.root)
+    server = BlockServer(args.root, args.pair_pacing_us)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((args.bind, args.port))
     print(f"MaizoNet UDP: read-only {server.root} on {args.bind}:{args.port}", flush=True)

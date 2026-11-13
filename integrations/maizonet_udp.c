@@ -21,10 +21,13 @@ static unsigned request(MaizoUdp*c,uint8_t op,uint64_t off,unsigned len,const ch
  if(path){unsigned m=(unsigned)strlen(path);memcpy(c->tx+n,path,m);n+=m;}
  return n;
 }
-/* Return 1 for well-formed reply to the current request, 0 for unrelated
- * packet/timeout. UDP datagrams MUST be received atomically. */
+/* Return 1 for a matching datagram, 0 for an unrelated/corrupt datagram,
+ * -1 for socket timeout/failure. UDP datagrams MUST be received atomically.
+ * Previous code conflated both 0 and timeout, causing a premature full-block
+ * retransmission when ANY stale packet arrived in the IOS socket queue. */
 static int response(MaizoUdp*c,unsigned timeout){
  int n=c->io.receive(c->io.user,c->rx,sizeof(c->rx),timeout);
+ if(n<=0)return -1;
  if(n<(int)MZUDP_RES_H||n>(int)sizeof(c->rx))return 0;
  if(memcmp(c->rx,"MZUR",4)||c->rx[4]!=1||
     r32(c->rx+8)!=c->request)return 0;
@@ -41,12 +44,16 @@ int maizonet_udp_open(MaizoUdp*c,MaizoUdpTransport t,const char*path){
  n=request(c,1,0,0,path);
  for(attempts=0;attempts<7;attempts++){
   if(c->io.transmit(t.user,c->tx,n)!=(int)n)continue;
-  if(!response(c,220))continue;
-  if(c->rx[5]!=1)continue;
-  if(c->rx[6]){c->error=c->rx[6];return 0;}
-  c->token=r32(c->rx+12);c->size=r64(c->rx+36);
-  if(!c->token||c->size<0x20000ULL){c->error=10;return 0;}
-  c->opened=1;return 1;
+  /* Ignore stale/invalid datagrams without restarting OPEN immediately. */
+  for(i=0;i<6;i++){
+   int state=response(c,220);
+   if(state<0)break;
+   if(state==0||c->rx[5]!=1)continue;
+   if(c->rx[6]){c->error=c->rx[6];return 0;}
+   c->token=r32(c->rx+12);c->size=r64(c->rx+36);
+   if(!c->token||c->size<0x20000ULL){c->error=10;return 0;}
+   c->opened=1;return 1;
+  }
  }
  c->error=11;return 0;
 }
@@ -57,12 +64,16 @@ static int block(MaizoUdp*c,uint64_t offset,uint8_t*out,unsigned n){
  fragments=(n+MZUDP_PAYLOAD-1)/MZUDP_PAYLOAD;
  memset(seen,0,sizeof(seen));
  nreq=request(c,2,offset,n,NULL);
- for(attempts=0;attempts<7;attempts++){
+ for(attempts=0;attempts<5;attempts++){
   if(c->io.transmit(c->io.user,c->tx,nreq)!=(int)nreq)continue;
-  /* At most 2 timeouts per attempt. Prevent an endless stream of invalid
-   * datagrams from blocking the Wii DI thread. */
-  for(i=0;i<fragments+2;i++){
-   if(!response(c,180))break;
+  /* Collect valid fragments across retries. A stale response for the
+   * preceding 8-KiB block must not abort our current receive window.
+   * Bound unsolicited packet processing to prevent livelock or unbounded
+   * delay in the GameCube DI thread. */
+  for(i=0;i<fragments*4u+8u;i++){
+   int state=response(c,180);
+   if(state<0)break;
+   if(state==0)continue;
    if(c->rx[5]!=2||r32(c->rx+12)!=c->token||r64(c->rx+16)!=offset)continue;
    if(c->rx[6]){c->error=c->rx[6];return 0;}
    index=r16(c->rx+24);count=r16(c->rx+26);
@@ -84,12 +95,31 @@ static int block(MaizoUdp*c,uint64_t offset,uint8_t*out,unsigned n){
 }
 int maizonet_udp_read(MaizoUdp*c,uint64_t off,void*buffer,unsigned n){
  unsigned done=0,part;uint8_t*out=(uint8_t*)buffer;
- if(!c||!c->opened||!buffer||!n||off>c->size||(uint64_t)n>c->size-off)return -1;
+ if(!c)return -1;
+ if(!c->opened||!buffer||!n||off>c->size||(uint64_t)n>c->size-off){
+  c->error=13; /* invalid request / remote ISO ends before requested data */
+  return -1;
+ }
+ c->error=0;
  while(done<n){
   part=n-done;
   if(part>MZUDP_BLOCK)part=MZUDP_BLOCK;
-  if(!block(c,off+done,out+done,part))return -1;
+  if(!block(c,off+done,out+done,part)){
+   unsigned sub=0;
+   /* Tight bursts of eight UDP fragments can overrun the Wii's IOS
+    * receive queue. On exhausted 8-KiB retries, switch to 2-KiB
+    * requests (two datagrams each), preserving absolute ISO offsets.
+    * A server-reported error must NOT be retried as a different read. */
+   if(c->error!=12 || part<=2048u)return -1;
+   while(sub<part){
+    unsigned small=part-sub;
+    if(small>2048u)small=2048u;
+    if(!block(c,off+done+sub,out+done+sub,small))return -1;
+    sub+=small;
+   }
+  }
   done+=part;
+  c->error=0;
  }
  return (int)done;
 }

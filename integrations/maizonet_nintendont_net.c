@@ -582,13 +582,20 @@ bool maizonet_nin_read(void*out,u32 size,u64 offset){
   ret=maizonet_udp_read(&mzudpclient,offset,out,size);
   mz_record(155,offset,size,ret);
   if(ret!=(int)size){
+   /* Preserve the UDP codec's actual failure reason in the ARM
+    * diagnostic trace, rather than only generic 155/156. */
+   mz_record(157,offset,size,-mzudpclient.error);
+   if(mzudpclient.error==13)return false; /* no valid ISO bytes at offset */
    maizonet_nin_close();
    mdelay(80);
    if(!mzudp_connect_backend())return false;
    mz_error=156;
    ret=maizonet_udp_read(&mzudpclient,offset,out,size);
    mz_record(156,offset,size,ret);
-   if(ret!=(int)size)return false;
+   if(ret!=(int)size){
+    mz_record(157,offset,size,-mzudpclient.error);
+    return false;
+   }
   }
   mz_error=0;
   sync_after_write_align32(out,size);
