@@ -119,14 +119,14 @@ def patch_nin_kernel(root: Path) -> None:
     replace_one(
         loader,
         'PrintFormat(DEFAULT_SIZE, BLACK, MENU_POS_X, MENU_POS_Y + 20*6, "Loading patched kernel... %d", STATUS_LOADING);',
-        'PrintFormat(DEFAULT_SIZE, BLACK, MENU_POS_X, MENU_POS_Y + 20*6, "Loading patched kernel... %d", STATUS_LOADING);\\n'
-        '\\t\\t\\tif(STATUS_LOADING == -9)\\n'
-        '\\t\\t\\t{\\n'
-        '\\t\\t\\t\\tPrintFormat(DEFAULT_SIZE, MAROON, MENU_POS_X, MENU_POS_Y + 20*7,\\n'
-        '\\t\\t\\t\\t\\t"MAIZONET ARM ERROR: CODE=%d", (s32)STATUS_ERROR);\\n'
-        '\\t\\t\\t\\tPrintFormat(DEFAULT_SIZE, MAROON, MENU_POS_X, MENU_POS_Y + 20*8,\\n'
-        '\\t\\t\\t\\t\\t"138=SOCKET 120=SMB 121=OPEN 130=READ");\\n'
-        '\\t\\t\\t}'
+        'PrintFormat(DEFAULT_SIZE, BLACK, MENU_POS_X, MENU_POS_Y + 20*6, "Loading patched kernel... %d", STATUS_LOADING);\n'
+        '\t\t\tif(STATUS_LOADING == -9)\n'
+        '\t\t\t{\n'
+        '\t\t\t\tPrintFormat(DEFAULT_SIZE, MAROON, MENU_POS_X, MENU_POS_Y + 20*7,\n'
+        '\t\t\t\t\t"MAIZONET ARM ERROR: CODE=%d", (s32)STATUS_ERROR);\n'
+        '\t\t\t\tPrintFormat(DEFAULT_SIZE, MAROON, MENU_POS_X, MENU_POS_Y + 20*8,\n'
+        '\t\t\t\t\t"138=SOCKET 120=SMB 121=OPEN 130=READ");\n'
+        '\t\t\t}'
     )
 
     # Before the FIRST remote ISO header read, select the same valid NCD
