@@ -125,7 +125,7 @@ def patch_nin_kernel(root: Path) -> None:
         '\t\t\t\tPrintFormat(DEFAULT_SIZE, MAROON, MENU_POS_X, MENU_POS_Y + 20*7,\n'
         '\t\t\t\t\t"MAIZONET ARM ERROR: CODE=%d", (s32)STATUS_ERROR);\n'
         '\t\t\t\tPrintFormat(DEFAULT_SIZE, MAROON, MENU_POS_X, MENU_POS_Y + 20*8,\n'
-        '\t\t\t\t\t"117=CONNECT 120=SMB 121=OPEN 141=TX 142=RX");\n'
+        '\t\t\t\t\t"21xx=NEG 22xx=AUTH 23xx=SHARE 141=TX 142=RX");\n'
         '\t\t\t}'
     )
 

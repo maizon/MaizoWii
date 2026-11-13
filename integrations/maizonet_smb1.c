@@ -44,8 +44,10 @@ static int exact_write(MaizoNetSmb1*c,const uint8_t*p,unsigned n){
 static int exchange(MaizoNetSmb1*c,uint8_t command,const uint8_t*words,
                     unsigned wn,const uint8_t*data,unsigned dn){
  uint8_t *p=c->tx+NB;unsigned n;uint16_t mid;
+ c->last_command=command;
+ c->last_reason=0;
  if(!c->io.receive||!c->io.transmit||wn&1u||wn/2>255u||
-    NB+H+1+wn+2+dn>sizeof(c->tx))return -1;
+    NB+H+1+wn+2+dn>sizeof(c->tx)){c->last_reason=1;return -1;}
  memset(p,0,H);
  p[0]=0xff;p[1]='S';p[2]='M';p[3]='B';p[4]=command;
  p[9]=0x18;w16(p+10,0x4001); /* long names, NTSTATUS */
@@ -57,23 +59,23 @@ static int exchange(MaizoNetSmb1*c,uint8_t command,const uint8_t*words,
  if(dn){memcpy(p+n,data,dn);n+=dn;}
  c->tx[0]=0;c->tx[1]=(uint8_t)(n>>16);c->tx[2]=(uint8_t)(n>>8);
  c->tx[3]=(uint8_t)n;
- if(!exact_write(c,c->tx,n+NB))return -1;
- if(!exact_read(c,c->rx,4))return -1;
+ if(!exact_write(c,c->tx,n+NB)){c->last_reason=2;return -1;}
+ if(!exact_read(c,c->rx,4)){c->last_reason=3;return -1;}
  /* TCP session keepalives can appear between requests. */
  while(c->rx[0]==0x85 && c->rx[1]==0 && c->rx[2]==0&&c->rx[3]==0){
-  if(!exact_read(c,c->rx,4))return -1;
+  if(!exact_read(c,c->rx,4)){c->last_reason=4;return -1;}
  }
- if(c->rx[0]!=0)return -1;
+ if(c->rx[0]!=0){c->last_reason=5;return -1;}
  c->rxlen=((unsigned)c->rx[1]<<16)|((unsigned)c->rx[2]<<8)|c->rx[3];
- if(c->rxlen<H+3||c->rxlen>MAIZONET_SMB1_RX_CAP)return -1;
- if(!exact_read(c,c->rx+NB,c->rxlen))return -1;
+ if(c->rxlen<H+3||c->rxlen>MAIZONET_SMB1_RX_CAP){c->last_reason=5;return -1;}
+ if(!exact_read(c,c->rx+NB,c->rxlen)){c->last_reason=3;return -1;}
  p=c->rx+NB;
  if(p[0]!=0xff||p[1]!='S'||p[2]!='M'||p[3]!='B'||
-    p[4]!=command||r16(p+30)!=mid)return -1;
+    p[4]!=command||r16(p+30)!=mid){c->last_reason=6;return -1;}
  c->last_status=r32(p+5);
- if(c->last_status)return 0;
+ if(c->last_status){c->last_reason=7;return 0;}
  n=H+1u+2u*(unsigned)p[H];
- if(n+2>c->rxlen||n+2+r16(p+n)>c->rxlen)return -1;
+ if(n+2>c->rxlen||n+2+r16(p+n)>c->rxlen){c->last_reason=8;return -1;}
  return 1;
 }
 int maizonet_smb1_connect_guest(MaizoNetSmb1*c,MaizoNetTransport t,
@@ -82,17 +84,19 @@ int maizonet_smb1_connect_guest(MaizoNetSmb1*c,MaizoNetTransport t,
  if(!c||!t.receive||!t.transmit||!strfit(ip,63)||!strfit(share,63))return 0;
  memset(c,0,sizeof(*c));c->io=t;c->max_chunk=MAIZONET_SMB1_MAX_IO;
  /* SMB_COM_NEGOTIATE: NT LM 0.12, oldest dialect that supports ReadAndX. */
+ c->last_phase=1;
  data[0]=2;memcpy(data+1,"NT LM 0.12",11);
  if(exchange(c,0x72,0,0,data,12)!=1)return 0;
  p=c->rx+NB;
- if(p[H]!=17||r16(p+33)!=0)return 0; /* dialect index 0 */
+ if(p[H]!=17||r16(p+33)!=0){c->last_reason=9;return 0;} /* dialect index 0 */
  /* Maximum buffer is negotiated, not assumed. */
  limit=r32(p+33+7);
- if(limit<2048)return 0;
+ if(limit<2048){c->last_reason=10;return 0;}
  if(limit<MAIZONET_SMB1_MAX_IO+128)c->max_chunk=(uint16_t)(limit-128);
  /* Traditional guest SessionSetupAndX with null credentials and no
   * extended security. Some Samba servers require SPNEGO/NTLMSSP;
   * those are unsupported and must fail without sending passwords. */
+ c->last_phase=2;
  memset(words,0,sizeof(words));words[0]=0xff;
  w16(words+4,32768);w16(words+6,2);
  w32(words+10,r32(p+33+15)); /* negotiate session key */
@@ -104,6 +108,7 @@ int maizonet_smb1_connect_guest(MaizoNetSmb1*c,MaizoNetTransport t,
  if(exchange(c,0x73,words,26,data,15)!=1)return 0;
  c->uid=r16(c->rx+NB+28);c->session=1;
  /* SMB_COM_TREE_CONNECT_ANDX; shared guest directory, read-only. */
+ c->last_phase=3;
  memset(words,0,8);words[0]=0xff;w16(words+6,1);
  n=0;data[n++]=0;data[n++]='\\';data[n++]='\\';
  for(p=(uint8_t*)ip;*p;p++)data[n++]=*p;

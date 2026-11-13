@@ -28,6 +28,8 @@ typedef struct {
  uint16_t max_chunk;
  int session,tree,opened;
  uint32_t last_status;
+ /* Last handshake stage: 1=negotiate, 2=session, 3=tree. */
+ uint8_t last_phase,last_reason,last_command;
 } MaizoNetSmb1;
 int maizonet_smb1_connect_guest(MaizoNetSmb1*,MaizoNetTransport,
                                 const char *ip,const char *share);

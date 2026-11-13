@@ -452,8 +452,16 @@ static bool mz_connect_backend(void){
  if(!maizonet_smb1_connect_guest(&mzclient,t,mzhost,mzshare)){
   /* mzsend/mzrecv preserve codes 141/142 for on-screen diagnostics. */
   mz_ntstatus=mzclient.last_status;
-  mz_record(120,0,0,(s32)mz_ntstatus);
-  dbgprintf("MZ SMB1: session rejected %08x\r\n",mzclient.last_status);
+  /* The previous 120 conflated SMB protocol, authentication, transport
+   * formatting and share access errors. Encode stage + failure kind. */
+  if(mz_error==120)
+   mz_error=2000+(int)mzclient.last_phase*100+(int)mzclient.last_reason;
+  mz_record(120,mzclient.last_command,
+            ((u32)mzclient.last_phase<<16)|mzclient.last_reason,
+            (s32)mz_ntstatus);
+  dbgprintf("MZ SMB1: phase=%u reason=%u command=%02x NT=%08x\r\n",
+            mzclient.last_phase,mzclient.last_reason,
+            mzclient.last_command,mzclient.last_status);
   maizonet_nin_close();return false;
  }
  mz_error=121;
