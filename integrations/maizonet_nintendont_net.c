@@ -391,10 +391,19 @@ error:
 /* Experimental UDP virtual-disc path: avoid TCP and SMB negotiation on
  * Starlet. Android remains authoritative for random-access disc sectors. */
 static u8 mz_udp_addr[8] ALIGNED(32);
+/*
+ * UDP fallback for disc sectors: it bypasses the experimental ARM SMB1
+ * SessionSetupAndX path (physical Wii CODE=2211) while retaining the
+ * already-working SMB1 PPC folder browser and 128-KiB stub verification.
+ * Use IOS native nonblocking datagram send/recv directly, not SO_POLL:
+ * physical Wii had an unreliable readiness response on TCP CODE=138.
+ * Datagram boundaries must be preserved; a short send is an error.
+ */
 static int mzudp_send(void *ctx,const void*data,unsigned size){
- int result;
+ int result,last=0;
+ u32 start;
  (void)ctx;
- if(size>sizeof(send_buf)||mzfd<0||mzsocket<0)return -1;
+ if(!size||size>sizeof(send_buf)||mzfd<0||mzsocket<0)return -1;
  memcpy(send_buf,data,size);
  memset(&send_par,0,sizeof(send_par));
  send_par.socket=mzsocket;
@@ -404,25 +413,50 @@ static int mzudp_send(void *ctx,const void*data,unsigned size){
  vec[1].data=&send_par;vec[1].len=sizeof(send_par);
  sync_after_write(send_buf,ALIGN_FORWARD(size,32));
  sync_after_write(&send_par,sizeof(send_par));
- result=IOS_Ioctlv(mzfd,SO_SEND,2,0,vec);
- if(result<0||result>(int)size)return -1;
- return result;
+ sync_after_write(vec,2*sizeof(ioctlv));
+ start=read32(HW_TIMER);
+ do{
+  result=IOS_Ioctlv(mzfd,SO_SEND,2,0,vec);
+  if(result==(int)size)return result;
+  last=result;
+  /* A partially sent UDP datagram must never be repeated or concatenated. */
+  if(result>=0 || !mz_ios_io_retryable(result))break;
+  if(TimerDiffTicks(start)>379687u)break; /* 200 ms */
+  mdelay(4);
+ }while(1);
+ mz_record(158,0,size,last);
+ return -1;
 }
 static int mzudp_recv(void *ctx,void*out,unsigned maxlen,unsigned timeout){
- int result;
+ int result,last=0;
+ u32 start,budget;
  (void)ctx;
- if(maxlen>sizeof(recv_buf)||mzfd<0||mzsocket<0)return -1;
- if(!mzpoll(MZ_POLLIN,timeout))return -1;
+ if(!out||!maxlen||maxlen>sizeof(recv_buf)||mzfd<0||mzsocket<0)return -1;
  req_in[0]=mzsocket;req_in[1]=0;
  vec[0].data=req_in;vec[0].len=8;
  vec[1].data=recv_buf;vec[1].len=maxlen;
  vec[2].data=NULL;vec[2].len=0;
- sync_after_write(req_in,32);
- result=IOS_Ioctlv(mzfd,SO_RECV,1,2,vec);
- if(result<=0||result>(int)maxlen)return -1;
- sync_before_read(recv_buf,ALIGN_FORWARD(result,32));
- memcpy(out,recv_buf,result);
- return result;
+ sync_after_write(req_in,sizeof(req_in));
+ memset(recv_buf,0,ALIGN_FORWARD(maxlen,32));
+ sync_after_write(recv_buf,ALIGN_FORWARD(maxlen,32));
+ sync_after_write(vec,3*sizeof(ioctlv));
+ start=read32(HW_TIMER);
+ budget=(timeout>3000u?3000u:timeout)*1899u;
+ do{
+  result=IOS_Ioctlv(mzfd,SO_RECV,1,2,vec);
+  if(result>0 && result<=(int)maxlen){
+   sync_before_read(recv_buf,ALIGN_FORWARD(result,32));
+   memcpy(out,recv_buf,result);
+   return result;
+  }
+  last=result;
+  if(result==0 || result>(int)maxlen ||
+     (result<0 && !mz_ios_io_retryable(result)))break;
+  if(TimerDiffTicks(start)>=budget)break;
+  mdelay(4);
+ }while(1);
+ mz_record(159,0,maxlen,last);
+ return -1;
 }
 static bool mzudp_connect_backend(void){
  u8 addr[4];s32 ret;MaizoUdpTransport t;
@@ -483,7 +517,9 @@ static bool mz_connect_backend(void){
   mz_record(120,attempt,0,0);
   if(!maizonet_smb1_connect_guest(&mzclient,t,mzhost,mzshare)){
    mz_ntstatus=mzclient.last_status;
-   frame_bad=(mzclient.last_phase==1 &&
+   /* Full reconnect+renegotiate also repairs transient garbage at the
+    * session setup or tree-connect boundary, not just NEGOTIATE. */
+   frame_bad=(mzclient.last_phase>=1 && mzclient.last_phase<=3 &&
               (mzclient.last_reason==11 || mzclient.last_reason==12 ||
                mzclient.last_reason==13));
    if(mz_error==120)

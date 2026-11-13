@@ -51,6 +51,34 @@ Não encaminhe a porta SMB1 para a internet.
 7. Caso falhe, registre exatamente a tela/etapa; não suponha que teste de
    conexão garante um jogo jogável.
 
+## Alternativa experimental para ultrapassar CODE=2211 (UDP para os setores)
+ 
+**Atenção: isto exige um pequeno serviço UDP adicional no mesmo Android.**
+O Samba SMB1 existente continua ligado e é usado para navegar, escolher a ISO
+e ler o cabeçalho de 128 KiB. O novo serviço UDP somente entrega **setores
+solicitados sob demanda**, sem copiar a imagem completa. Não requer Raspberry Pi,
+root no Android, nem modificar o Samba/servidor do PS2.
+
+No Termux, com Python instalado e acesso à pasta /storage/emulated/0/PS2:
+
+```sh
+python maizonet_udp_server.py --root /storage/emulated/0/PS2 --port 17445
+```
+
+O script é disponibilizado no artefato Nintendont como
+`maizo/maizonet/servidor-android.py`. Copie-o para o Android e use o nome do
+arquivo copiado, ou baixe-o da branch diretamente. Não se deve executar esse
+script no Wii. Mantenha o terminal aberto durante a partida.
+
+No menu do MaizoNintendont: mantenha IP, porta TCP 1445 e share PS2 atuais;
+altere **Kernel: smb** para **Kernel: udp** e defina UDP 17445. O navegador
+continua usando SMB1; o kernel deixa de executar SessionSetupAndX via TCP, onde
+se observou o erro 2211 no Wii real, e acessa os setores por UDP no Android.
+Não há promessa de FPS, desempenho, boot ou porcentagem de compatibilidade:
+`MaizoNet` continua experimental até validação no Wii.
+
+O UDP é somente para LAN confiável; **não encaminhe UDP 17445 para a internet**.
+
 ## Limitações atuais
 
 - Ainda não há descoberta automática de todas as ISOs SMB na biblioteca.
