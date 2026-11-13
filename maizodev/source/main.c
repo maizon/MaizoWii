@@ -2,6 +2,7 @@
  * Only accepts fixed diagnostic commands; never executes arbitrary code.
  */
 #include <gccore.h>
+#include <wiiuse/wpad.h>
 #include <network.h>
 #include <ogc/lwp_watchdog.h>
 #include <stdio.h>
