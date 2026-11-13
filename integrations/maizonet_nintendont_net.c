@@ -32,7 +32,7 @@
 #define MZ_POLLOUT 0x0004u
 #define MZ_POLLERR 0x0008u
 #define MZ_POLLHUP 0x0010u
-#define MZ_TCP_TIMEOUT_MS 3500u
+#define MZ_TCP_TIMEOUT_MS 10000u
 #define SO_TCP_NODELAY_LEVEL 6u
 #define SO_TCP_NODELAY_OPT 1u
 
@@ -68,6 +68,7 @@ static u32 closing ALIGNED(32);
 static u32 fcntl_par[3] ALIGNED(32);
 static u32 poll_timeout[2] ALIGNED(32);
 static struct {s32 socket;u32 events,revents;} poll_s ALIGNED(32);
+static void mz_record(u32 phase,u64 offset,u32 size,s32 result);
 /* Follow libogc network_wii.c's IOS ioctl SO_POLL framing. Returns 1
  * only when requested events are ready, 0 on timeout/error/disconnect. */
 static int mzpoll(u32 events,u32 timeout){
@@ -78,10 +79,20 @@ static int mzpoll(u32 events,u32 timeout){
  sync_after_write(poll_timeout,sizeof(poll_timeout));
  sync_after_write(&poll_s,sizeof(poll_s));
  ret=IOS_Ioctl(mzfd,SO_POLL,poll_timeout,sizeof(poll_timeout),&poll_s,sizeof(poll_s));
- if(ret<1)return 0;
+ if(ret<1){
+  mz_record(145,0,events,ret);
+  return 0;
+ }
  sync_before_read(&poll_s,sizeof(poll_s));
- if(poll_s.revents&(MZ_POLLERR|MZ_POLLHUP))return 0;
- return (poll_s.revents&events)!=0;
+ if(poll_s.revents&(MZ_POLLERR|MZ_POLLHUP)){
+  mz_record(146,0,events,(s32)poll_s.revents);
+  return 0;
+ }
+ if(!(poll_s.revents&events)){
+  mz_record(147,0,events,(s32)poll_s.revents);
+  return 0;
+ }
+ return 1;
 }
 
 static char mzhost[64],mzshare[64],mzpath[256];
@@ -305,10 +316,13 @@ network_ready:
  mz_error=117;
  ret=IOS_Ioctl(mzfd,SO_CONNECT,&conn_par,sizeof(conn_par),NULL,0);
  mz_record(117,0,port,ret);
- /* -EINPROGRESS from nonblocking connect is expected. Never treat
-  * writability alone as SMB authentication; first SMB request decides. */
+ /* SO_CONNECT may return immediate success (0) or pending (<0).
+  * Waiting for POLLOUT after an already established connection is
+  * unnecessary; poll only when IOS reports asynchronous completion.
+  * A writable socket is NOT proof of successful SMB authentication.
+  */
  mz_error=138;
- if(!mzpoll(MZ_POLLOUT,MZ_TCP_TIMEOUT_MS)){
+ if(ret<0 && !mzpoll(MZ_POLLOUT,MZ_TCP_TIMEOUT_MS)){
   mz_record(138,0,port,ret);
   goto error;
  }

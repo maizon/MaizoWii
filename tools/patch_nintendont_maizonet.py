@@ -113,6 +113,22 @@ def patch_nin_kernel(root: Path) -> None:
     replace_one(loader,
         '#include <unistd.h>',
         '#include <unistd.h>\n#include <network.h>')
+    # The on-screen -9 is MaizoNet ARM's explicit fatal status, NOT a
+    # generic storage error. Show its STATUS_ERROR code without requiring
+    # a diagnostic.log file to be written on the Wii FAT volume.
+    replace_one(
+        loader,
+        'PrintFormat(DEFAULT_SIZE, BLACK, MENU_POS_X, MENU_POS_Y + 20*6, "Loading patched kernel... %d", STATUS_LOADING);',
+        'PrintFormat(DEFAULT_SIZE, BLACK, MENU_POS_X, MENU_POS_Y + 20*6, "Loading patched kernel... %d", STATUS_LOADING);\\n'
+        '\\t\\t\\tif(STATUS_LOADING == -9)\\n'
+        '\\t\\t\\t{\\n'
+        '\\t\\t\\t\\tPrintFormat(DEFAULT_SIZE, MAROON, MENU_POS_X, MENU_POS_Y + 20*7,\\n'
+        '\\t\\t\\t\\t\\t"MAIZONET ARM ERROR: CODE=%d", (s32)STATUS_ERROR);\\n'
+        '\\t\\t\\t\\tPrintFormat(DEFAULT_SIZE, MAROON, MENU_POS_X, MENU_POS_Y + 20*8,\\n'
+        '\\t\\t\\t\\t\\t"138=SOCKET 120=SMB 121=OPEN 130=READ");\\n'
+        '\\t\\t\\t}'
+    )
+
     # Before the FIRST remote ISO header read, select the same valid NCD
     # profile that Wii settings already have enabled. Nintendont's original
     # profile activation runs much later, after the first DI reads, and only
