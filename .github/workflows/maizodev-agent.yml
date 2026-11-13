@@ -1,0 +1,32 @@
+name: MaizoDev Wii Agent
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - work/maizonet-nintendont-direct
+    paths:
+      - maizodev/**
+      - .github/workflows/maizodev-agent.yml
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitppc:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile MaizoDev boot.dol
+        env:
+          DEVKITPRO: /opt/devkitpro
+          DEVKITPPC: /opt/devkitpro/devkitPPC
+        run: |
+          make -C maizodev
+          test -s maizodev/boot.dol
+          mkdir -p stage/apps/maizodev
+          cp maizodev/boot.dol stage/apps/maizodev/boot.dol
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MAIZODEV-WII-AGENT
+          path: stage/
+          retention-days: 14
