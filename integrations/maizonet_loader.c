@@ -527,14 +527,17 @@ bool MaizoNetSelectGame(void){
    else if(pos==3)mz_edit(cfg.share,sizeof(cfg.share),"SHARE",alpha_share);
    else if(pos==4){
     strcpy(cfg.protocol,strcmp(cfg.protocol,"udp")==0?"smb":"udp");
-    snprintf(mz_status,sizeof(mz_status),"Kernel escolhido: %s",cfg.protocol);
+    snprintf(mz_status,sizeof(mz_status),"%s",
+       strcmp(cfg.protocol,"udp")==0 ?
+       "UDP: iniciar servidor Android 17445 antes do jogo" :
+       "SMB: kernel ARM experimental");
    }
    else if(pos==5)mz_edit(cfg.udp_port,sizeof(cfg.udp_port),"PORTA UDP",alpha_port);
    else if(pos==6){if(mz_choose_writable_volume())mz_save_settings(&cfg,NULL);}
    else break;
   }
   ClearScreen();PrintInfo();
-  PrintFormat(DEFAULT_SIZE,BLACK,MENU_POS_X,MENU_POS_Y+20*3,"MAIZONINDENDONT - SMB1 DIRETO r5-NET");
+  PrintFormat(DEFAULT_SIZE,BLACK,MENU_POS_X,MENU_POS_Y+20*3,"MAIZONINDENDONT - REDE HIBRIDA r6-UDP");
   for(i=0;i<8;i++)PrintFormat(DEFAULT_SIZE,i==(unsigned)pos?MAROON:BLACK,
        MENU_POS_X,MENU_POS_Y+20*(i+5),"%c %s",
        i==(unsigned)pos?'>':' ',items[i]);
@@ -543,6 +546,10 @@ bool MaizoNetSelectGame(void){
   PrintFormat(DEFAULT_SIZE,BLACK,MENU_POS_X,MENU_POS_Y+20*15,
        "Share: %s | Kernel: %s:%s",cfg.share,cfg.protocol,
        strcmp(cfg.protocol,"udp")==0?cfg.udp_port:cfg.port);
+  PrintFormat(DEFAULT_SIZE,BLACK,MENU_POS_X,MENU_POS_Y+20*16,
+       strcmp(cfg.protocol,"udp")==0?
+       "Navegacao SMB; ISO durante jogo via UDP Android":
+       "Navegacao e ISO durante jogo via SMB1 ARM");
   PrintFormat(DEFAULT_SIZE,BLACK,MENU_POS_X,MENU_POS_Y+20*17,
        "A: selecionar | B/HOME: voltar");
   if(mz_status[0])PrintFormat(DEFAULT_SIZE,MAROON,MENU_POS_X,MENU_POS_Y+20*19,
