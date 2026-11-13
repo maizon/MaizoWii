@@ -8,6 +8,7 @@ on:
       - integrations/maizonet_*
       - tools/patch_nintendont_maizonet.py
       - tools/test_maizonet_smb1.py
+      - tools/test_maizonet_udp.py
       - tests/smb1_wire.c
       - tests/smb1_browse.c
       - tests/smb1_live.c
