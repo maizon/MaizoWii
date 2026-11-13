@@ -53,6 +53,7 @@ static int exchange(MaizoNetSmb1*c,uint8_t command,const uint8_t*words,
  p[9]=0x18;w16(p+10,0x4001); /* long names, NTSTATUS */
  w16(p+24,c->tid);w16(p+26,0x4d5a);w16(p+28,c->uid);
  mid=++c->mid;w16(p+30,mid);
+ c->expected_mid=mid;
  n=H;p[n++]=(uint8_t)(wn/2);
  if(wn){memcpy(p+n,words,wn);n+=wn;}
  w16(p+n,dn);n+=2;
@@ -70,8 +71,17 @@ static int exchange(MaizoNetSmb1*c,uint8_t command,const uint8_t*words,
  if(c->rxlen<H+3||c->rxlen>MAIZONET_SMB1_RX_CAP){c->last_reason=5;return -1;}
  if(!exact_read(c,c->rx+NB,c->rxlen)){c->last_reason=3;return -1;}
  p=c->rx+NB;
- if(p[0]!=0xff||p[1]!='S'||p[2]!='M'||p[3]!='B'||
-    p[4]!=command||r16(p+30)!=mid){c->last_reason=6;return -1;}
+ c->last_received_magic=((uint32_t)p[0]<<24)|((uint32_t)p[1]<<16)|
+                        ((uint32_t)p[2]<<8)|(uint32_t)p[3];
+ c->last_received_command=p[4];
+ c->received_mid=(uint16_t)r16(p+30);
+ /* A TCP frame alone does not establish an SMB1 response. Never accept
+  * mismatched headers or SMB2 as if they belonged to this request. */
+ if(p[0]!=0xff||p[1]!='S'||p[2]!='M'||p[3]!='B'){
+  c->last_reason=11;return -1;
+ }
+ if(p[4]!=command){c->last_reason=12;return -1;}
+ if(c->received_mid!=mid){c->last_reason=13;return -1;}
  c->last_status=r32(p+5);
  if(c->last_status){c->last_reason=7;return 0;}
  n=H+1u+2u*(unsigned)p[H];

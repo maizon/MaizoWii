@@ -187,6 +187,8 @@ static int mzsend(void*ctx,const void*payload,unsigned n){
  vec[1].data=&send_par;vec[1].len=sizeof(send_par);
  sync_after_write(send_buf,ALIGN_FORWARD(part,32));
  sync_after_write(&send_par,sizeof(send_par));
+ /* IOS consumes a DMA-visible ioctlv vector, not an ARM-only stale view. */
+ sync_after_write(vec,2*sizeof(ioctlv));
  start=read32(HW_TIMER);
  do{
   sent=IOS_Ioctlv(mzfd,SO_SEND,2,0,vec);
@@ -214,6 +216,11 @@ static int mzrecv(void*ctx,void*buffer,unsigned n){
  vec[1].data=recv_buf;vec[1].len=part;
  vec[2].data=NULL;vec[2].len=0;
  sync_after_write(req_in,sizeof(req_in));
+ /* The output area and its descriptor must be coherent before IOS writes.
+  * This also prevents a positive SO_RECV length with stale SMB header data. */
+ memset(recv_buf,0,ALIGN_FORWARD(part,32));
+ sync_after_write(recv_buf,ALIGN_FORWARD(part,32));
+ sync_after_write(vec,3*sizeof(ioctlv));
  start=read32(HW_TIMER);
  do{
   got=IOS_Ioctlv(mzfd,SO_RECV,1,2,vec);
@@ -459,38 +466,63 @@ fail:
 /* Keep the remote session independent from normal FAT/USB disk handling.
  * One bounded reconnect is allowed after a failed sector read; requests are
  * retried from the original offset, never from a partially filled buffer. */
+/*
+ * Wii code 2106 means TCP delivered a NetBIOS-framed packet but the SMB1
+ * signature, command or MID did not match the negotiate request. One fresh
+ * TCP session retry is safe for that framing-only case; never weaken SMB1
+ * response validation or retry authentication denials indefinitely.
+ */
 static bool mz_connect_backend(void){
  MaizoNetTransport t;
- if(!mzsocket_init(mzhost,mzport))return false;
+ unsigned attempt;
  t.receive=mzrecv;t.transmit=mzsend;t.user=0;
- mz_error=120;
- mz_record(120,0,0,0);
- if(!maizonet_smb1_connect_guest(&mzclient,t,mzhost,mzshare)){
-  /* mzsend/mzrecv preserve codes 141/142 for on-screen diagnostics. */
-  mz_ntstatus=mzclient.last_status;
-  /* The previous 120 conflated SMB protocol, authentication, transport
-   * formatting and share access errors. Encode stage + failure kind. */
-  if(mz_error==120)
-   mz_error=2000+(int)mzclient.last_phase*100+(int)mzclient.last_reason;
-  mz_record(120,mzclient.last_command,
-            ((u32)mzclient.last_phase<<16)|mzclient.last_reason,
-            (s32)mz_ntstatus);
-  dbgprintf("MZ SMB1: phase=%u reason=%u command=%02x NT=%08x\r\n",
-            mzclient.last_phase,mzclient.last_reason,
-            mzclient.last_command,mzclient.last_status);
-  maizonet_nin_close();return false;
+ for(attempt=0;attempt<2;attempt++){
+  int frame_bad=0;
+  if(!mzsocket_init(mzhost,mzport))return false;
+  mz_error=120;
+  mz_record(120,attempt,0,0);
+  if(!maizonet_smb1_connect_guest(&mzclient,t,mzhost,mzshare)){
+   mz_ntstatus=mzclient.last_status;
+   frame_bad=(mzclient.last_phase==1 &&
+              (mzclient.last_reason==11 || mzclient.last_reason==12 ||
+               mzclient.last_reason==13));
+   if(mz_error==120)
+    mz_error=2000+(int)mzclient.last_phase*100+(int)mzclient.last_reason;
+   mz_record(120,
+             ((u64)mzclient.last_received_magic<<32)|
+             ((u32)mzclient.last_command<<24)|
+             ((u32)mzclient.last_received_command<<16)|
+             mzclient.received_mid,
+             ((u32)mzclient.last_phase<<24)|
+             ((u32)mzclient.last_reason<<16)|mzclient.expected_mid,
+             (s32)mz_ntstatus);
+   dbgprintf("MZ SMB1: neg phase=%u reason=%u wantcmd=%02x gotcmd=%02x"
+             " wantmid=%04x gotmid=%04x magic=%08x NT=%08x\r\n",
+             mzclient.last_phase,mzclient.last_reason,
+             mzclient.last_command,mzclient.last_received_command,
+             mzclient.expected_mid,mzclient.received_mid,
+             mzclient.last_received_magic,mz_ntstatus);
+   maizonet_nin_close();
+   if(attempt==0 && frame_bad){
+    /* Retry only after discarding the entire bad TCP/SMB session. */
+    mdelay(120);
+    continue;
+   }
+   return false;
+  }
+  mz_error=121;
+  mz_record(121,0,0,0);
+  if(!maizonet_smb1_open(&mzclient,mzpath)){
+   mz_ntstatus=mzclient.last_status;
+   mz_record(121,0,0,(s32)mz_ntstatus);
+   dbgprintf("MZ SMB1: ISO open rejected %08x\r\n",mzclient.last_status);
+   maizonet_nin_close();return false;
+  }
+  mzopened=1;mz_record(122,0,0,1);
+  mz_error=0;
+  return true;
  }
- mz_error=121;
- mz_record(121,0,0,0);
- if(!maizonet_smb1_open(&mzclient,mzpath)){
-  mz_ntstatus=mzclient.last_status;
-  mz_record(121,0,0,(s32)mz_ntstatus);
-  dbgprintf("MZ SMB1: ISO open rejected %08x\r\n",mzclient.last_status);
-  maizonet_nin_close();return false;
- }
- mzopened=1;mz_record(122,0,0,1);
- mz_error=0;
- return true;
+ return false;
 }
 bool maizonet_nin_open(const char*marker){
  mz_failed=0;

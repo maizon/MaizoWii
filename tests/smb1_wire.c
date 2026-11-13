@@ -10,6 +10,7 @@ typedef struct {
  unsigned step, pos, size;
  uint8_t rx[40000];
  unsigned reqs, good_offsets, fail_mid;
+ unsigned corruption; /* 1=signature 2=command 3=MID on negotiate */
 } Fake;
 static void w16(uint8_t*p,unsigned n){p[0]=n;p[1]=n>>8;}
 static void w32(uint8_t*p,uint32_t n){w16(p,n);w16(p+2,n>>16);}
@@ -66,6 +67,9 @@ static int transmit(void*ctx,const void*ptr,unsigned n){
  w16(out+28,cmd>=0x73?7:0);
  w16(out+30,(unsigned)p[30]|((unsigned)p[31]<<8));
  out[32]=wn;
+ if(cmd==0x72&&f->corruption==1)out[0]=0xfe;
+ if(cmd==0x72&&f->corruption==2)out[4]=0x73;
+ if(cmd==0x72&&f->corruption==3)out[30]^=0x1;
  if(cmd==0x72){w32(out+33+7,32768);w32(out+33+15,0xabcdef12);}
  if(cmd==0x2d)w16(out+33+4,0x33);
  if(cmd==0x2e){
@@ -106,6 +110,13 @@ int main(void){
  for(unsigned i=0;i<8192u+3072u;i++)if(large[i]!='Q')return 7;
  maizonet_smb1_close(c);
  if(fake.step!=8||fake.good_offsets!=3)return 8;
+ /* Wii ARM error 2106 regression: classify mismatch instead of masking. */
+ for(unsigned kind=1;kind<=3;kind++){
+  Fake malformed={0};malformed.corruption=kind;
+  MaizoNetTransport badio={receive,transmit,&malformed};
+  if(maizonet_smb1_connect_guest(c,badio,"192.168.0.50","PS2"))return 9;
+  if(c->last_phase!=1 || c->last_reason!=kind+10u)return 10;
+ }
  free(large);free(c);
  puts("PASS: OPL-style SMB1 8KiB chunks, TCP fragmentation and 64-bit reads");
  return 0;

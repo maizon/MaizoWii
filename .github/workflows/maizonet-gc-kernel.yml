@@ -142,7 +142,9 @@ jobs:
           grep -Fq 'mz_record(148' upstream-nintendont/kernel/maizonet_nintendont_net.c
           grep -Fq 'mz_record(149' upstream-nintendont/kernel/maizonet_nintendont_net.c
           grep -Fq 'last_reason=7' upstream-nintendont/kernel/maizonet_smb1.c
-          grep -Fq 'phase=%u reason=%u' upstream-nintendont/kernel/maizonet_nintendont_net.c
+          grep -Fq 'last_received_magic' upstream-nintendont/kernel/maizonet_smb1.c
+          grep -Fq 'sync_after_write(vec,3*sizeof(ioctlv))' upstream-nintendont/kernel/maizonet_nintendont_net.c
+          grep -Fq 'frame_bad' upstream-nintendont/kernel/maizonet_nintendont_net.c
           grep -Fq 'mz_ios_connect_done(ret)' upstream-nintendont/kernel/maizonet_nintendont_net.c
           grep -Fq 'mz_ios_io_retryable' upstream-nintendont/kernel/maizonet_nintendont_net.c
           test -s upstream-nintendont/kernel/maizonet_net_ios_status.h

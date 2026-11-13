@@ -30,6 +30,10 @@ typedef struct {
  uint32_t last_status;
  /* Last handshake stage: 1=negotiate, 2=session, 3=tree. */
  uint8_t last_phase,last_reason,last_command;
+ /* Keep raw response identity for kernel telemetry on header mismatches. */
+ uint8_t last_received_command;
+ uint16_t expected_mid,received_mid;
+ uint32_t last_received_magic;
 } MaizoNetSmb1;
 int maizonet_smb1_connect_guest(MaizoNetSmb1*,MaizoNetTransport,
                                 const char *ip,const char *share);
