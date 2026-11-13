@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/socket.h>
+#include <sys/ioctl.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
@@ -33,7 +34,7 @@ static void display(const char *ip,const char *peer,const char *state,const char
  for(int i=0;i<12;i++){int n=(logpos+i)%12;if(loglines[n][0])printf("%s\n",loglines[n]);}
  printf("\nHOME: sair  |  Apenas comandos de diagnostico\n");
 }
-static void reply(int fd,const char *s){send(fd,s,strlen(s),0);}
+static void reply(int fd,const char *s){net_send(fd,s,strlen(s),0);}
 static void command(int fd,char *line,const char *ip) {
  char answer[160];
  commands++;
@@ -76,20 +77,20 @@ int main(void){
  }
  int listener=-1;
  if(init>=0){
-  listener=socket(AF_INET,SOCK_STREAM,0);
+  listener=net_socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
   if(listener>=0){
    char status[96];snprintf(status,sizeof(status),"socket OK: fd=%d",listener);logmsg(status);
-   int yes=1;setsockopt(listener,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes));
+   int yes=1;net_setsockopt(listener,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes));
    struct sockaddr_in addr;memset(&addr,0,sizeof(addr));
    addr.sin_family=AF_INET;addr.sin_port=htons(PORT);addr.sin_addr.s_addr=INADDR_ANY;
-   int br=bind(listener,(struct sockaddr*)&addr,sizeof(addr));
+   int br=net_bind(listener,(struct sockaddr*)&addr,sizeof(addr));
    int be=errno;
-   int lr=br==0?listen(listener,1):-1;
+   int lr=br==0?net_listen(listener,1):-1;
    int le=errno;
    if(br<0||lr<0){
     char error[96];snprintf(error,sizeof(error),"ERRO: bind=%d errno=%d listen=%d errno=%d",br,be,lr,le);
-    logmsg(error);close(listener);listener=-1;
-   }else{fcntl(listener,F_SETFL,O_NONBLOCK);logmsg("LISTEN OK 0.0.0.0:17446");}
+    logmsg(error);net_close(listener);listener=-1;
+   }else{u32 nonblock=1;net_ioctl(listener,FIONBIO,&nonblock);logmsg("LISTEN OK 0.0.0.0:17446");}
   }else{char error[96];snprintf(error,sizeof(error),"ERRO socket errno=%d",errno);logmsg(error);}
  }
  char pending[256];unsigned used=0;char current[80]="-";
@@ -98,15 +99,15 @@ int main(void){
   if(WPAD_ButtonsDown(0)&WPAD_BUTTON_HOME)running=0;
   if(client<0 && listener>=0){
    struct sockaddr_in remote;socklen_t len=sizeof(remote);
-   int fd=accept(listener,(struct sockaddr*)&remote,&len);
-   if(fd>=0){client=fd;fcntl(client,F_SETFL,O_NONBLOCK);
+   int fd=net_accept(listener,(struct sockaddr*)&remote,&len);
+   if(fd>=0){client=fd;u32 nonblock=1;net_ioctl(client,FIONBIO,&nonblock);
     snprintf(peer,sizeof(peer),"%s",inet_ntoa(remote.sin_addr));logmsg("Android conectado");used=0;
     reply(client,"MAIZODEV/1 READY\n");
    }
   }
   if(client>=0){
-   char buf[96];int n=recv(client,buf,sizeof(buf),0);
-   if(n==0){close(client);client=-1;logmsg("Android desconectado");}
+   char buf[96];int n=net_recv(client,buf,sizeof(buf),0);
+   if(n==0){net_close(client);client=-1;logmsg("Android desconectado");}
    else if(n>0){
     for(int i=0;i<n;i++){
      if(buf[i]=='\n'){
@@ -117,7 +118,7 @@ int main(void){
      }else if(used<sizeof(pending)-1)pending[used++]=buf[i];
      else{used=0;reply(client,"ERR line-too-long\n");}
     }
-   }else if(errno!=EAGAIN && errno!=EWOULDBLOCK){
+   }else if(errno!=EAGAIN && errno!=EWOULDBLOCK && n!=-EAGAIN && n!=-EWOULDBLOCK){
     close(client);client=-1;logmsg("Erro de conexao");
    }
   }
