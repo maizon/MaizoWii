@@ -59,44 +59,50 @@ int main(void){
  WPAD_Init();
  logmsg("Inicializando rede...");
  display("-","-","INICIANDO","-");
- int init=-1;
- for(int attempt=0;attempt<40;attempt++){
-  init=net_init();
-  if(init>=0 && net_gethostip()!=0)break;
-  char status[96];snprintf(status,sizeof(status),"Rede: tentativa %d/40 (ret=%d)",attempt+1,init);
-  logmsg(status);display("-","-","DHCP / WIFI","-");
-  sleep(1);
- }
- if(init>=0 && net_gethostip()==0)init=-1;
  char ip[32]="SEM REDE",peer[32]="-";
- if(init<0){char error[96];snprintf(error,sizeof(error),"ERRO: net_init / DHCP = %d",init);logmsg(error);}
- else{
-  struct in_addr a;a.s_addr=net_gethostip();
-  snprintf(ip,sizeof(ip),"%s",inet_ntoa(a));
-  logmsg("Rede inicializada");
- }
  int listener=-1;
- if(init>=0){
-  listener=net_socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
-  if(listener>=0){
-   char status[96];snprintf(status,sizeof(status),"socket OK: fd=%d",listener);logmsg(status);
-   int yes=1;net_setsockopt(listener,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes));
-   struct sockaddr_in addr;memset(&addr,0,sizeof(addr));
-   addr.sin_family=AF_INET;addr.sin_port=htons(PORT);addr.sin_addr.s_addr=INADDR_ANY;
-   int br=net_bind(listener,(struct sockaddr*)&addr,sizeof(addr));
-   int be=errno;
-   int lr=br==0?net_listen(listener,1):-1;
-   int le=errno;
-   if(br<0||lr<0){
-    char error[96];snprintf(error,sizeof(error),"ERRO: bind=%d errno=%d listen=%d errno=%d",br,be,lr,le);
-    logmsg(error);net_close(listener);listener=-1;
-   }else{u32 nonblock=1;net_ioctl(listener,FIONBIO,&nonblock);logmsg("LISTEN OK 0.0.0.0:17446");}
-  }else{char error[96];snprintf(error,sizeof(error),"ERRO socket errno=%d",errno);logmsg(error);}
- }
+ int init=net_init(),attempt=0;
+ unsigned long next_retry=0;
+ char state[64]="INICIANDO";
+ logmsg("Inicializacao de rede solicitada");
  char pending[256];unsigned used=0;char current[80]="-";
  while(running){
   WPAD_ScanPads();
   if(WPAD_ButtonsDown(0)&WPAD_BUTTON_HOME)running=0;
+  unsigned long now=ticks_to_millisecs(gettime());
+  if(listener<0 && now>=next_retry){
+   int status=net_get_status();
+   u32 host=net_gethostip();
+   char msg[96];
+   snprintf(msg,sizeof(msg),"NET init=%d status=%d ip=%08lx",init,status,(unsigned long)host);
+   logmsg(msg);
+   if(host!=0 && status>=0){
+    struct in_addr a;a.s_addr=host;
+    snprintf(ip,sizeof(ip),"%s",inet_ntoa(a));
+    listener=net_socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
+    if(listener>=0){
+     int yes=1;net_setsockopt(listener,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes));
+     struct sockaddr_in addr;memset(&addr,0,sizeof(addr));
+     addr.sin_family=AF_INET;addr.sin_port=htons(PORT);addr.sin_addr.s_addr=INADDR_ANY;
+     int br=net_bind(listener,(struct sockaddr*)&addr,sizeof(addr));
+     int lr=br>=0?net_listen(listener,2):-1;
+     if(br<0||lr<0){
+      snprintf(msg,sizeof(msg),"TCP bind=%d listen=%d errno=%d",br,lr,errno);logmsg(msg);
+      net_close(listener);listener=-1;
+     }else{
+      u32 nb=1;net_ioctl(listener,FIONBIO,&nb);
+      snprintf(state,sizeof(state),"SERVIDOR ONLINE");
+      logmsg("LISTEN OK 0.0.0.0:17446");
+     }
+    }else{
+     snprintf(msg,sizeof(msg),"net_socket ret=%d errno=%d",listener,errno);logmsg(msg);
+    }
+   }else{
+    if(++attempt%5==0){net_deinit();init=net_init();}
+    snprintf(state,sizeof(state),"REDE status=%d",status);
+   }
+   next_retry=now+3000;
+  }
   if(client<0 && listener>=0){
    struct sockaddr_in remote;socklen_t len=sizeof(remote);
    int fd=net_accept(listener,(struct sockaddr*)&remote,&len);
@@ -119,13 +125,13 @@ int main(void){
      else{used=0;reply(client,"ERR line-too-long\n");}
     }
    }else if(errno!=EAGAIN && errno!=EWOULDBLOCK && n!=-EAGAIN && n!=-EWOULDBLOCK){
-    close(client);client=-1;logmsg("Erro de conexao");
+    net_close(client);client=-1;logmsg("Erro de conexao");
    }
   }
-  display(ip,peer,client>=0?"CONECTADO":"AGUARDANDO",current);
+  display(ip,peer,client>=0?"CONECTADO":state,current);
   VIDEO_WaitVSync();usleep(100000);
  }
- if(client>=0)close(client);
- if(listener>=0)close(listener);
+ if(client>=0)net_close(client);
+ if(listener>=0)net_close(listener);
  net_deinit();return 0;
 }
