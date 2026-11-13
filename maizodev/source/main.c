@@ -58,9 +58,17 @@ int main(void){
  WPAD_Init();
  logmsg("Inicializando rede...");
  display("-","-","INICIANDO","-");
- int init=net_init();
+ int init=-1;
+ for(int attempt=0;attempt<40;attempt++){
+  init=net_init();
+  if(init>=0 && net_gethostip()!=0)break;
+  char status[96];snprintf(status,sizeof(status),"Rede: tentativa %d/40 (ret=%d)",attempt+1,init);
+  logmsg(status);display("-","-","DHCP / WIFI","-");
+  sleep(1);
+ }
+ if(init>=0 && net_gethostip()==0)init=-1;
  char ip[32]="SEM REDE",peer[32]="-";
- if(init<0){logmsg("ERRO: net_init");}
+ if(init<0){char error[96];snprintf(error,sizeof(error),"ERRO: net_init / DHCP = %d",init);logmsg(error);}
  else{
   struct in_addr a;a.s_addr=net_gethostip();
   snprintf(ip,sizeof(ip),"%s",inet_ntoa(a));
@@ -70,13 +78,19 @@ int main(void){
  if(init>=0){
   listener=socket(AF_INET,SOCK_STREAM,0);
   if(listener>=0){
+   char status[96];snprintf(status,sizeof(status),"socket OK: fd=%d",listener);logmsg(status);
    int yes=1;setsockopt(listener,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes));
    struct sockaddr_in addr;memset(&addr,0,sizeof(addr));
    addr.sin_family=AF_INET;addr.sin_port=htons(PORT);addr.sin_addr.s_addr=INADDR_ANY;
-   if(bind(listener,(struct sockaddr*)&addr,sizeof(addr))<0||listen(listener,1)<0){
-    logmsg("ERRO: bind/listen");close(listener);listener=-1;
-   }else{fcntl(listener,F_SETFL,O_NONBLOCK);logmsg("Aguardando Android TCP:17446");}
-  }
+   int br=bind(listener,(struct sockaddr*)&addr,sizeof(addr));
+   int be=errno;
+   int lr=br==0?listen(listener,1):-1;
+   int le=errno;
+   if(br<0||lr<0){
+    char error[96];snprintf(error,sizeof(error),"ERRO: bind=%d errno=%d listen=%d errno=%d",br,be,lr,le);
+    logmsg(error);close(listener);listener=-1;
+   }else{fcntl(listener,F_SETFL,O_NONBLOCK);logmsg("LISTEN OK 0.0.0.0:17446");}
+  }else{char error[96];snprintf(error,sizeof(error),"ERRO socket errno=%d",errno);logmsg(error);}
  }
  char pending[256];unsigned used=0;char current[80]="-";
  while(running){
