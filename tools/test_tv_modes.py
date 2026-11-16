@@ -15,6 +15,11 @@ class VideoStandardContracts(unittest.TestCase):
   for option in ("PAL-M","NTSC","PAL50","PAL60","HERDAR GLOBAL"):
    self.assertIn(option,ui)
   self.assertIn("SYSTEM_HB)return -1",ui)
+  main=read("source/main.c")
+  video=read("source/video_sw.c")
+  self.assertIn("maizo_video_frontend_tv_select(config.tv_global)",main)
+  self.assertIn("state.tv_preview_pending=0",main)
+  self.assertIn("video_mode.viTVMode",video)
 
  def test_launch_consumed_only_by_patched_engines(self):
   launch=read("source/launch.c")

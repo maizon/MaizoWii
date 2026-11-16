@@ -173,11 +173,22 @@ static void option_change(int dir){
  }
  if(state.settings_for_game && state.settings_row<2)return;
  Config*active=state.settings_for_game?&state.game_config:&config;
+ if(scope==SYSTEM_COUNT&&state.settings_row==3&&!state.settings_for_game){
+  /* Delay persist until explicit A confirms the new color standard.
+   * If TV loses sync, the previous encoder mode returns automatically. */
+  unsigned previous=config.tv_global;
+  if(!settings_change(&config,scope,state.settings_row,dir))return;
+  if(!state.tv_preview_pending)state.video_previous_tv=previous;
+  state.tv_preview_pending=1;
+  state.video_preview_frames=600; /* ~10 seconds at 60 Hz */
+  maizo_video_frontend_tv_select(config.tv_global);
+  return;
+ }
  if(settings_change(active,scope,state.settings_row,dir) &&
     !state.settings_for_game){
    if(scope==SYSTEM_COUNT && state.settings_row==2)
     maizo_video_force_vi704(config.force_vi704);
-   config_save(&config);
+   if(!state.tv_preview_pending)config_save(&config);
   }
 }
 static void adjust_calibration(int dir){
@@ -352,6 +363,17 @@ static void handle(const Input*i){
  }
  if(state.page==PAGE_SETTINGS){
   System scope=state.settings_global?SYSTEM_COUNT:state.system;
+  if(state.tv_preview_pending){
+   if(state.settings_global&&state.settings_row==3&&i->accept){
+    state.tv_preview_pending=0;state.video_preview_frames=0;
+    config_save(&config);return;
+   }
+   if(i->back||i->up||i->down||i->settings){
+    config.tv_global=state.video_previous_tv;
+    maizo_video_frontend_tv_select(config.tv_global);
+    state.tv_preview_pending=0;state.video_preview_frames=0;
+   }
+  }
   if(!state.settings_for_game &&
      state.settings_row==settings_count(scope)-3 && (i->accept||i->right)){
    if(!state.settings_global&&(state.system==SYSTEM_MEDIA||state.system==SYSTEM_HB)){
@@ -447,6 +469,7 @@ int main(int argc,char**argv){
   "ERRO USB E SD - REINSIRA, START/SELECT REVER");
  config_load(&config);
  maizo_video_force_vi704(config.force_vi704);
+ maizo_video_frontend_tv_select(config.tv_global);
  maizo_video_frontend_select(config.frontend_video_mode);
  maizo_video_set_calibration((int)config.video_x-50,(int)config.video_y-50,config.video_w,config.video_h);
  memset(&state,0,sizeof(state));
@@ -489,8 +512,14 @@ int main(int argc,char**argv){
   clamp_selection();
   ui_draw(&state,&library_state,&config,in.hid_present);
   if(state.video_preview_frames>0 && --state.video_preview_frames==0){
-   config.frontend_video_mode=state.video_previous_mode;
-   maizo_video_frontend_select(state.video_previous_mode);
+   if(state.tv_preview_pending){
+    config.tv_global=state.video_previous_tv;
+    state.tv_preview_pending=0;
+    maizo_video_frontend_tv_select(config.tv_global);
+   }else{
+    config.frontend_video_mode=state.video_previous_mode;
+    maizo_video_frontend_select(state.video_previous_mode);
+   }
   }
   if(state.page==PAGE_COVERS)maizo_cover_download_step(&library_state);
   else prefetch_covers();

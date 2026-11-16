@@ -211,8 +211,8 @@ def patch_wiimc(root: Path):
     # Honor output color encoding in the adapted WiiMC player, after FAT
     # mounts but before InitVideo2 allocates XFBs. Original WiiMC untouched.
     def wiimc_color(t):
-        t=replace_once(t,'#include "video.h"',
-           '#include "video.h"\n#include "maizo_tv_standard.inc"',
+        t=replace_once(t,'#include "settings.h"',
+           '#include "settings.h"\n#include "maizo_tv_standard.inc"',
            "WiiMC TV adapter declaration")
         t=replace_once(t,'InitVideo2 ()\n{\n\t// Allocate framebuffers',
            'InitVideo2 ()\n{\n'

@@ -19,11 +19,32 @@ static int back=0, visible=0;
 static int cal_x=0,cal_y=0;
 static unsigned cal_w=100,cal_h=100;
 static int force_vi704=0;
+static unsigned frontend_tv=0,frontend_selection=0;
 static void apply_vi_geometry(void);
 /* Frontend output only. Other DOLs reconfigure the VI on their own. */
 int maizo_video_frontend_select(unsigned selection){
  if(!mode||selection>2)return 0;
  video_mode=boot_video_mode;
+ frontend_selection=selection;
+ /* The TV standard is independent of native 240p/480i selection.
+  * Do not reallocate XFBs when switching: preserve the preferred
+  * framebuffer geometry, just change VI encoder and center active lines.
+  * Never turn component progressive output into an interlaced mode. */
+ if(frontend_tv && ((video_mode.viTVMode&3u)!=VI_PROGRESSIVE)){
+  const GXRModeObj *reference=NULL;
+  switch(frontend_tv){
+   case 1:reference=&TVNtsc480IntDf;break;
+   case 2:reference=&TVPal576IntDfScale;break;
+   case 3:reference=&TVEurgb60Hz480IntDf;break;
+   case 4:reference=&TVMpal480IntDf;break;
+  }
+  if(reference){
+   video_mode.viTVMode=(reference->viTVMode&~3u)|(video_mode.viTVMode&3u);
+   unsigned lines=frontend_tv==2?576u:480u;
+   if(video_mode.viHeight>lines)video_mode.viHeight=lines;
+   video_mode.viYOrigin=(u16)((lines-video_mode.viHeight)/2u);
+  }
+ }
  if(selection==1){
   video_mode.viTVMode=(video_mode.viTVMode&~3u)|VI_INTERLACE;
   video_mode.xfbMode=VI_XFBMODE_DF;
@@ -39,6 +60,10 @@ int maizo_video_frontend_select(unsigned selection){
  original_vi_width=video_mode.viWidth;
  original_vi_x=video_mode.viXOrigin;
  apply_vi_geometry();return 1;
+}
+void maizo_video_frontend_tv_select(unsigned standard){
+ frontend_tv=standard<=4?standard:0;
+ if(mode)maizo_video_frontend_select(frontend_selection);
 }
 /* Geometry is not just a framebuffer crop: the video interface itself
  * outputs a wider active region. This can remove overscan/black side bands
