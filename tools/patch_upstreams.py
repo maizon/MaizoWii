@@ -17,6 +17,7 @@ def install_game_video(root: Path, folder: str):
     target=root / folder
     target.mkdir(parents=True,exist_ok=True)
     shutil.copyfile(GAME_VIDEO,target / "maizo_game_video.inc")
+    shutil.copyfile(SOURCE.parent / "maizo_tv_standard.inc",target / "maizo_tv_standard.inc")
 
 def replace_once(src: str, old: str, new: str, where: str):
     count = src.count(old)
@@ -72,6 +73,7 @@ def fix_pad_update(text: str, key: str, is_wiimc: bool):
 
 def patch_wiimc(root: Path):
     install_inc(root, "source")
+    shutil.copyfile(SOURCE.parent / "maizo_tv_standard.inc",root / "source/maizo_tv_standard.inc")
     # WiiMC plays movies from USB mass storage. Do not enumerate, close or
     # initialize USB devices during playback. Copy HID input reports from
     # the existing async interrupt endpoint only; no USB IOCTL calls here.
@@ -102,7 +104,7 @@ def patch_wiimc(root: Path):
     shutil.copyfile(SOURCE.parent / "wiimc_syscalls_compat.c",
                     root / "source/utils/maizo_syscalls_compat.c")
     def input_patch(s):
-        s = replace_once(s,'#include "input.h"', '#include "input.h"\n#include "maizo_hid.inc"', "WiiMC")
+        s = replace_once(s,'#include "input.h"', '#include "input.h"\n#include "fileop.h"\n#include "maizo_hid.inc"', "WiiMC")
         s = fix_pad_update(s, "PAD_ScanPads();", True)
         # On argv autoplay, the player may start before the GUI's
         # 180-frame HID warmup expires. Discover controllers once in
@@ -112,7 +114,7 @@ def patch_wiimc(root: Path):
         s = replace_once(
             s, "WPAD_SetVRes(WPAD_CHAN_ALL, screenwidth, screenheight);",
             "WPAD_SetVRes(WPAD_CHAN_ALL, screenwidth, screenheight);\n"
-            "\t(void)maizo_hid_tick(); /* one-time discovery before autoplay */",
+            "\tif(!isInserted[DEVICE_USB]) (void)maizo_hid_tick(); /* never claim USB disk for HID */",
             "WiiMC argv-autoplay HID pre-attach")
         # Never dereference a missing WPAD_Data() with no Wiimote paired.
         # The original GuiTrigger embeds a zero-initialized WPADData.
@@ -136,7 +138,7 @@ def patch_wiimc(root: Path):
             "\tstatic unsigned maizoHidWarmup=0;\n"
             "\tif(maizoHidWarmup<180)maizoHidWarmup++;\n"
             "\tif(maizoHidWarmup>=180){\n"
-            "\t\tif(wiiIsPlaying())maizo_hid_tick_attached();\n"
+            "\t\tif(wiiIsPlaying() || isInserted[DEVICE_USB])maizo_hid_tick_attached();\n"
             "\t\telse maizo_hid_tick();\n"
             "\t}",
             "WiiMC GUI-only HID USB enumeration")
@@ -178,12 +180,14 @@ def patch_wiimc(root: Path):
             """FindAppPath(); // Initialize SD and USB devices and look for apps/wiimc
     if(loadedFile[0] &&
        (!strncmp(loadedFile,"usb",3) || !strncmp(loadedFile,"sd",2))) {
+        (void)ChangeInterface(loadedFile,true); // do not reject late mounted FAT
         FILE *maizoMedia=fopen(loadedFile,"rb");
         if(!maizoMedia && !strncmp(loadedFile,"usb1:/",6)) {
             char requested[sizeof(loadedFile)];
             snprintf(requested,sizeof(requested),"%s",loadedFile);
             for(int v=2;v<=5 && !maizoMedia;v++){
                 snprintf(loadedFile,sizeof(loadedFile),"usb%d:/%s",v,requested+6);
+                (void)ChangeInterface(loadedFile,true);
                 maizoMedia=fopen(loadedFile,"rb");
             }
         }
@@ -195,6 +199,36 @@ def patch_wiimc(root: Path):
     }""",
             "WiiMC missing argv media falls back to stock browser")
     patch_file(root,"source/wiimc.cpp",media_preflight)
+    # The original ISO loader handles *DVD-Video* ISO through dvdnav;
+    # prevent malformed .IFO paths from causing DSI exceptions.
+    def wiimc_iso_guard(t):
+        return replace_once(t,
+            'char *end = strrchr(loadedFile, \'/\');\n\t\t\t*end = 0; // strip filename',
+            'char *end = strrchr(loadedFile, \'/\');\n'
+            '\t\t\tif(end)*end = 0; // strip filename only when present',
+            "WiiMC IFO filename slash NULL guard")
+    patch_file(root,"source/wiimc.cpp",wiimc_iso_guard)
+    # Honor output color encoding in the adapted WiiMC player, after FAT
+    # mounts but before InitVideo2 allocates XFBs. Original WiiMC untouched.
+    def wiimc_color(t):
+        t=replace_once(t,'#include "video.h"',
+           '#include "video.h"\n#include "maizo_tv_standard.inc"',
+           "WiiMC TV adapter declaration")
+        t=replace_once(t,'InitVideo2 ()\n{\n\t// Allocate framebuffers',
+           'InitVideo2 ()\n{\n'
+           '\tint tv=maizo_tv_standard_from_launch();\n'
+           '\tif(tv){\n'
+           '\t\tstatic GXRModeObj maizo_wiimc_mode;\n'
+           '\t\tmaizo_wiimc_mode=*vmode;\n'
+           '\t\tmaizo_tv_apply_to_mode(&maizo_wiimc_mode,tv);\n'
+           '\t\tvmode=&maizo_wiimc_mode;\n'
+           '\t\tpal=(tv==2);pal60=(tv==3);want576i=(tv==2);\n'
+           '\t\tHOffset();\n'
+           '\t}\n'
+           '\t// Allocate framebuffers',
+           "WiiMC TV mode after mounted FAT")
+        return t
+    patch_file(root,"source/video.cpp",wiimc_color)
     # WiiMC 3.0 file browser used sprintf(dst, "%s%s/", dst, name):
     # reading and writing the same buffer is undefined behavior, and happens
     # immediately when the user selects an SD/USB volume or folder.
@@ -218,12 +252,25 @@ def patch_wiimc(root: Path):
             '\tif(!browser.first || !browser.selIndex)',
             "WiiMC browser null device entry guard")
         t=replace_once(t,
+            'int BrowserChangeFolder(bool updateDir, bool waitParse)\n{\n\tif(updateDir && !UpdateDirName())\n\t\treturn -1;',
+            'int BrowserChangeFolder(bool updateDir, bool waitParse)\n{\n'
+            '\tif(updateDir){int code=UpdateDirName();if(code<=0)return code;}',
+            "WiiMC browser invalid mount must abort")
+        t=replace_once(t,
             'char *GetParentDir()\n{\n\tint size = strlen(browser.dir);',
             'char *GetParentDir()\n{\n\tint size = strlen(browser.dir);\n'
             '\tif(size==0){ parentdir[0]=0; return parentdir; }',
             "WiiMC browser empty-parent underflow guard")
         return t
     patch_file(root, "source/filebrowser.cpp", wiimc_browser_guard)
+    # IOS USB mass-storage and HID must not be re-enumerated concurrently.
+    # Reject device listings that fail MEM2 allocation instead of dereferencing.
+    def wiimc_browser_mem2(t):
+        old="entry=AddEntryFiles();"
+        if t.count(old)<2:raise ValueError("WiiMC device list changed")
+        # Device entries are allocated before their attributes are written.
+        return t.replace(old,old+"\n\t\t\t\tif(!entry)return browser.numEntries;")
+    patch_file(root,"source/filebrowser.cpp",wiimc_browser_mem2)
     # Keep stock WiiMC playback, video, GUI, autoplay and MPlayer threads
     # byte-for-byte original. Only controller translation is changed.
     # Earlier versions altered these paths and crashed with DSI on real Wii.
@@ -686,13 +733,14 @@ static int maizo_ftp_fstat(struct _reent*r,void*fd,struct stat*st){
 
 def patch_usbloader(root: Path):
     install_inc(root, "source")
+    shutil.copyfile(SOURCE.parent / "maizo_tv_standard.inc",root / "source/maizo_tv_standard.inc")
     shutil.copyfile(SOURCE.parent / "maizo_wii_vi704.inc",
                     root / "source/patches/maizo_wii_vi704.inc")
     shutil.copyfile(SOURCE.parent / "maizo_usbloader_menu_vi704.inc",
                     root / "source/maizo_usbloader_menu_vi704.inc")
     def wii_menu_video(t):
         t=replace_once(t,'#include "gecko.h"',
-          '#include "gecko.h"\n#include "maizo_usbloader_menu_vi704.inc"',
+          '#include "gecko.h"\n#include "maizo_usbloader_menu_vi704.inc"\n#include "maizo_tv_standard.inc"',
           "USB Loader GX VI menu helper")
         mark='static void ResetVideo_Menu()'
         start=t.index(mark)
@@ -701,6 +749,12 @@ def patch_usbloader(root: Path):
         before='\tVIDEO_Configure(vmode);'
         if chunk.count(before)!=1:raise ValueError("USB GX menu VI call changed")
         chunk=chunk.replace(before,
+            '\tint standard=maizo_tv_standard_from_launch();\n'
+            '\tif(standard){\n'
+            '\t\tstatic GXRModeObj maizo_loader_mode;\n'
+            '\t\tmaizo_loader_mode=*vmode;vmode=&maizo_loader_mode;\n'
+            '\t\tmaizo_tv_apply_to_mode(vmode,standard);\n'
+            '\t}\n'
             '\tif(maizo_loader_menu_vi704_requested()){\n'
             '\t\tvmode->viWidth=704;vmode->viXOrigin=8;\n'
             '\t}\n\tVIDEO_Configure(vmode);',1)
@@ -798,6 +852,16 @@ def patch_wiisx(root: Path):
             s=replace_once(s,old,new,"WiiSXRX GX gameplay quad")
         return s
     patch_file(root,"PeopsSoftGPU/drawGX.c",video_game)
+    install_game_video(root,"Gamecube/libgui")
+    def wiisxrx_tv(t):
+        return replace_once(t,
+            '\tVIDEO_Configure(vmode);',
+            '\tstatic GXRModeObj maizo_wiisxrx_tv;\n'
+            '\tmaizo_wiisxrx_tv=*vmode;vmode=&maizo_wiisxrx_tv;\n'
+            '\tmaizo_tv_apply_to_mode(vmode,maizo_tv_standard_from_launch());\n'
+            '\tVIDEO_Configure(vmode);',
+            "WiiSXRX TV standard on own VI")
+    patch_file(root,"Gamecube/libgui/GraphicsGX.cpp",wiisxrx_tv)
     # WiiSXRX uses PAD_ButtonsHeld() DIRECTLY in its separate GUI source;
     # the controller-GC.c emulator patch alone never reached its menus.
     def gui_focus(s):
@@ -1034,7 +1098,11 @@ def patch_gx_vi704(root: Path):
         if original.count(probe)!=1:
             raise ValueError("GX findVideoMode final return not found exactly once")
         revised=original.replace(probe,
-            '\tif(maizo_game_force_vi704())maizo_video_adjust_vi(mode,0);\n'
+            '\tif(maizo_game_force_vi704()||maizo_tv_standard_from_launch()){\n'
+            '\t\tstatic GXRModeObj maizo_profile_mode;\n'
+            '\t\tmaizo_profile_mode=*mode;mode=&maizo_profile_mode;\n'
+            '\t\tmaizo_video_adjust_vi(mode,mode->xfbHeight<=288);\n'
+            '\t}\n'
             '\treturn mode;',1)
         return s[:a]+revised+s[b:]
     patch_file(root,"source/drivers/ogc/OgcVideoDriver.cpp",driver)
@@ -1069,7 +1137,7 @@ void WiiInputDriver::readChannel(int channel, InputPadData & pad) {
             'static GXRModeObj maizo_game_vi;\n'
             '\tmemcpy(&maizo_game_vi,rmode,sizeof(maizo_game_vi));\n'
             '\trmode=&maizo_game_vi;\n'
-            '\tif(maizo_game_force_vi704())\n'
+            '\tif(maizo_game_force_vi704()||maizo_tv_standard_from_launch())\n'
             '\t\tmaizo_video_adjust_vi(rmode,rmode->xfbHeight<=288);\n'
             '\tvideoDriver->setupVideoMode(rmode); // reconfigure VI',
             "NES/GBA game VI 704")
@@ -1108,7 +1176,7 @@ def patch_snes(root: Path):
           '\trmode=&maizo_game_vi;\n'
           '\tif(EmuSettings.videoMode == VIDEOMODE_ORIGINAL_240P)\n'
           '\t\tmaizo_video_adjust_vi(rmode,1);\n'
-          '\telse if(maizo_game_force_vi704())\n'
+          '\telse if(maizo_game_force_vi704()||maizo_tv_standard_from_launch())\n'
           '\t\tmaizo_video_adjust_vi(rmode,0);\n'
           '\tvideoDriver->setupVideoMode(rmode); // reconfigure VI',
           "SNES centered hardware VI for 240p")

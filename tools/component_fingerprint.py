@@ -25,7 +25,7 @@ PATCH_FUNCTIONS = {
 }
 COMMON = ("replace_once", "patch_file", "install_inc")
 USES_PAD_UPDATE = frozenset(("WiiMC", "usbloader_gx"))
-VIDEO_MODULES = frozenset(("WiiSXRX", "WiiSX", "snes9xgx"))
+VIDEO_MODULES = frozenset(("WiiSXRX", "WiiSX", "snes9xgx", "fceugx", "vbagx"))
 GX = frozenset(("fceugx", "vbagx"))
 HID_FILES = (
     "integrations/maizo_hid.inc",
@@ -98,6 +98,9 @@ def fingerprint(module: str, root: Path = ROOT) -> str:
                ast.dump(functions[name], include_attributes=False).encode())
     for name in HID_FILES:
         update(name, (root / name).read_bytes())
+    # Every adapted video engine now consumes the same PAL/NTSC/PAL-M helper.
+    update("integrations/maizo_tv_standard.inc",
+           (root / "integrations/maizo_tv_standard.inc").read_bytes())
     if module in VIDEO_MODULES:
         update("integrations/maizo_game_video.inc",
                (root / "integrations/maizo_game_video.inc").read_bytes())

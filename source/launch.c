@@ -136,6 +136,12 @@ static int maizo_write_nincfg_root(const NIN_CFG *n,const char *root){
  if(rename(tmp,dest)==0){remove(backup);return 1;}
  rename(backup,dest);remove(tmp);return 0;
 }
+/* Game profile overrides module selection; zero means use global default. */
+static unsigned maizo_effective_tv_standard(const Config *c,System sys){
+ if(!c||sys<0||sys>=SYSTEM_COUNT)return 0;
+ unsigned selected=c->tv_module[sys];
+ return selected<=5 && selected ? selected-1 : (c->tv_global<=4?c->tv_global:0);
+}
 static int save_nincfg(const Game*g,const Config*c,NIN_CFG *out) {
  NIN_CFG n;memset(&n,0,sizeof(n));n.Magicbytes=NIN_CFG_MAGIC;n.Version=NIN_CFG_VERSION;
  n.Config=NIN_CFG_AUTO_BOOT|(c->gc_memcard?NIN_CFG_MEMCARDEMU:0)|(c->gc_wide?NIN_CFG_FORCE_WIDE:0)|
@@ -146,6 +152,11 @@ static int save_nincfg(const Game*g,const Config*c,NIN_CFG *out) {
  if(c->gc_video==1)n.VideoMode=0x00010000u|8u; /* force MPAL */
  if(c->gc_video==2)n.VideoMode=0x00010000u|4u; /* force NTSC */
  if(c->gc_video==3)n.VideoMode=0x00010000u|1u; /* force PAL50 */
+ unsigned tv=maizo_effective_tv_standard(c,SYSTEM_GC);
+ if(tv==1)n.VideoMode=0x00010000u|4u;
+ else if(tv==2)n.VideoMode=0x00010000u|1u;
+ else if(tv==3)n.VideoMode=0x00010000u|2u;
+ else if(tv==4)n.VideoMode=0x00010000u|8u;
  n.Language=0xFFFFFFFFu;n.MaxPads=4;n.MemCardBlocks=2;
  /* Nintendont's kernel/Patch.c applies VideoScale as 600+value pixels:
   * native range 640..720; 0 preserves the game's automatic mode. The
@@ -201,10 +212,11 @@ static void save_launch_record(const Game*g,const Config*c) {
  "media_volume=%u\nps1_interpreter=%u\nps1_frameskip=%u\n"
  "ps1_audio=%u\nps1_engine=%u\nps1_native=%u\n"
  "game_x240=%d\ngame_x480=%d\ngame_y240=%d\ngame_y480=%d\n"
- "game_w240=%u\ngame_w480=%u\ngame_h240=%u\ngame_h480=%u\nforce_vi704=%u\n",
+ "game_w240=%u\ngame_w480=%u\ngame_h240=%u\ngame_h480=%u\nforce_vi704=%u\ntv_standard=%u\n",
  g->system,g->path,module_name(g->system),
  c->media_volume,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio,c->ps1_engine,c->ps1_native,
- x240,x480,y,y,w240,w480,h,h,(c->force_vi704&&g->system!=SYSTEM_MEDIA)?1u:0u);
+ x240,x480,y,y,w240,w480,h,h,(c->force_vi704&&g->system!=SYSTEM_MEDIA)?1u:0u,
+ maizo_effective_tv_standard(c,g->system));
  if(g->system==SYSTEM_WII)
   fprintf(f,"wii_ios=%u\nwii_usb_port=%u\n",c->wii_ios,c->wii_usb_port);
  if(g->system==SYSTEM_GC)

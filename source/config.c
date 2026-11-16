@@ -75,6 +75,11 @@ void config_load(Config*c){config_defaults(c);char p[80];snprintf(p,sizeof(p),"%
   else if(!strcmp(key,"video_x"))c->video_x=val<=100?val:50;
   else if(!strcmp(key,"frontend_video_mode"))c->frontend_video_mode=val<=2?val:0;
   else if(!strcmp(key,"force_vi704"))c->force_vi704=!!val;
+  else if(!strcmp(key,"tv_global"))c->tv_global=val<=4?val:0;
+  else if(!strncmp(key,"tv_module_",10)){
+   unsigned sys=99;
+   if(sscanf(key+10,"%u",&sys)==1&&sys<SYSTEM_COUNT&&val<=5)c->tv_module[sys]=val;
+  }
   else if(!strcmp(key,"game_x240"))c->game_x240=val<=100?val:50;
   else if(!strcmp(key,"game_x480"))c->game_x480=val<=100?val:50;
   else if(!strcmp(key,"game_w240"))c->game_w240=val>=70&&val<=130?val:100;
@@ -93,6 +98,10 @@ int config_save(const Config*c){const char*root=where();mkdir(root,0777);
  char p[80],tmp[80];snprintf(p,sizeof(p),"%s/settings.ini",root);snprintf(tmp,sizeof(tmp),"%s/settings.tmp",root);FILE*f=fopen(tmp,"wb");if(!f)return 0;
  fprintf(f,"theme=%u\nlayout=%u\nwii_ios=%u\nwii_usb_port=%u\ngc_mc_multi=%u\ngc_native_si=%u\ngc_rem_limit=%u\ngc_memcard=%u\ngc_wide=%u\ngc_cheats=%u\ngc_skip_ipl=%u\ngc_video=%u\nps1_interpreter=%u\nps1_frameskip=%u\nps1_audio=%u\nmedia_volume=%u\nps1_engine=%u\nps1_native=%u\nps1_video=%u\nps1_aspect=%u\nps1_deflicker=%u\nps1_dither=%u\nps1_fps=%u\nps1_limit=%u\ngc_scale=%u\ngc_offset=%u\nvideo_x=%u\nvideo_y=%u\nvideo_w=%u\nvideo_h=%u\nfrontend_video_mode=%u\ngame_x240=%u\ngame_x480=%u\ngame_w240=%u\ngame_w480=%u\nmedia_player=%u\nmedia_autoboot=%u\nforce_vi704=%u\n",
  c->theme,c->layout,c->wii_ios,c->wii_usb_port,c->gc_mc_multi,c->gc_native_si,c->gc_rem_limit,c->gc_memcard,c->gc_wide,c->gc_cheats,c->gc_skip_ipl,c->gc_video,c->ps1_interpreter,c->ps1_frameskip,c->ps1_audio,c->media_volume,c->ps1_engine,c->ps1_native,c->ps1_video,c->ps1_aspect,c->ps1_deflicker,c->ps1_dither,c->ps1_fps,c->ps1_limit,c->gc_scale,c->gc_offset,c->video_x,c->video_y,c->video_w,c->video_h,c->frontend_video_mode,c->game_x240,c->game_x480,c->game_w240,c->game_w480,c->media_player,c->media_autoboot,c->force_vi704);
+ if(fprintf(f,"tv_global=%u\n",c->tv_global)>0){
+  for(unsigned sys=0;sys<SYSTEM_COUNT;sys++)
+   if(fprintf(f,"tv_module_%u=%u\n",sys,c->tv_module[sys])<0){fclose(f);remove(tmp);return 0;}
+ }else{fclose(f);remove(tmp);return 0;}
  if(fprintf(f,"cover_source=%u\ncover_art=%u\ncover_region=%u\nwiimc_apply=%u\n",c->cover_source,c->cover_art,c->cover_region,c->wiimc_apply)<0){fclose(f);remove(tmp);return 0;}
  for(unsigned i=0;i<MAIZO_WIIMC_OPTION_COUNT;i++)
   if(fprintf(f,"wiimc_%s=%u\n",maizo_wiimc_options[i].key,c->wiimc_opts[i])<0){fclose(f);remove(tmp);return 0;}
@@ -137,7 +146,9 @@ void config_game_load(Config*out,const Config*defaults,const Game*g){
  unsigned value;
  while(fgets(line,sizeof(line),f)){
   if(sscanf(line," %47[^=]=%u",key,&value)!=2)continue;
-  if(!strcmp(key,"game_x240")&&value<=100)out->game_x240=value;
+  if(!strcmp(key,"tv_module")&&value<=5&&g->system<SYSTEM_COUNT)
+   out->tv_module[g->system]=value;
+  else if(!strcmp(key,"game_x240")&&value<=100)out->game_x240=value;
   else if(!strcmp(key,"game_x480")&&value<=100)out->game_x480=value;
   else if(!strcmp(key,"game_w240")&&value>=70&&value<=130)out->game_w240=value;
   else if(!strcmp(key,"game_w480")&&value>=70&&value<=130)out->game_w480=value;
@@ -198,6 +209,8 @@ int config_game_save(const Config*c,const Game*g){
  FILE*f=fopen(tmp,"wb");if(!f)return 0;
  int ok=fprintf(f,"format=2\ngame_x240=%u\ngame_x480=%u\ngame_w240=%u\ngame_w480=%u\n",
    c->game_x240,c->game_x480,c->game_w240,c->game_w480)>0;
+ if(g->system<SYSTEM_COUNT)
+  ok &= fprintf(f,"tv_module=%u\n",c->tv_module[g->system])>0;
  switch(g->system){
   case SYSTEM_WII:
    ok &= fprintf(f,"wii_ios=%u\nwii_usb_port=%u\n",c->wii_ios,c->wii_usb_port)>0;

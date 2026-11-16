@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <gccore.h>
 #include <string.h>
+#include "maizo_tv_standard.inc"
 typedef struct {int x,y,w,h;} MaizoGameVideo;
 static int maizo_launch_native_output=0;
 static int maizo_launch_force_vi704=0;
@@ -69,5 +70,6 @@ static void maizo_video_adjust_vi(GXRModeObj *mode,int lowres){
  if(x<0)x=0;
  if(x>720-width)x=720-width;
  mode->viWidth=(u16)width;mode->viXOrigin=(u16)x;
+ maizo_tv_apply_to_mode(mode,maizo_tv_standard_from_launch());
 }
 #endif

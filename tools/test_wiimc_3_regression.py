@@ -21,6 +21,8 @@ class WiiMC3RegressionTests(unittest.TestCase):
         patch=(ROOT/"tools/patch_upstreams.py").read_text()
         self.assertIn("WiiMC ORIGINAL 3.0 media engine retained",patch)
         self.assertIn("WiiMC GUI-only HID USB enumeration",patch)
+        self.assertIn("isInserted[DEVICE_USB]",patch)
+        self.assertIn("maizo_tv_standard.inc",patch)
         self.assertIn("maizo_hid_tick_attached",patch)
         self.assertIn("WiiMC no-Wiimote NULL guard",patch)
         self.assertIn("WiiMC missing argv media falls back to stock browser",patch)

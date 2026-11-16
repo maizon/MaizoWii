@@ -43,13 +43,22 @@ const MaizoWiiMCOption maizo_wiimc_options[MAIZO_WIIMC_OPTION_COUNT]={
 /* Values here correspond to NIN_CFG or WiiSX 4.2.2 OPTIONS argv.
  * The separate calibration screen modifies only the MAIZO frontend UI.
  * Do not imply that arbitrary DOLs consume frontend-only geometry. */
+/* 0 AUTO, 1 NTSC, 2 PAL50, 3 PAL60, 4 PAL-M.
+ * Individual modules: 0 HERDAR, 1 AUTO, 2 NTSC, 3 PAL50, 4 PAL60, 5 PAL-M. */
+static int maizo_standard_row(System s){
+ if(s==SYSTEM_HB)return -1;
+ if(s==SYSTEM_PS1||s==SYSTEM_SNES||s==SYSTEM_NES||s==SYSTEM_GBA||s==SYSTEM_GB)return 2;
+ return settings_count(s)-4;
+}
 int settings_count(System s){
- switch(s){case SYSTEM_COUNT:return 6;case SYSTEM_WII:return 7;case SYSTEM_GC:return 15;
- case SYSTEM_PS1:return 20;case SYSTEM_SNES:return 9;
- case SYSTEM_MEDIA:return 8+MAIZO_WIIMC_OPTION_COUNT;default:return 5;}
+ switch(s){case SYSTEM_COUNT:return 7;case SYSTEM_WII:return 8;case SYSTEM_GC:return 16;
+ case SYSTEM_PS1:return 21;case SYSTEM_SNES:return 10;
+ case SYSTEM_MEDIA:return 9+MAIZO_WIIMC_OPTION_COUNT;
+ case SYSTEM_HB:return 5;default:return 6;}
 }
 const char*settings_label(System s,int row){
  if(row==0)return "TEMA";
+ if(row==maizo_standard_row(s))return "PADRAO DE VIDEO / TV";
  if(s==SYSTEM_MEDIA&&row>=5&&row<5+MAIZO_WIIMC_OPTION_COUNT)
   return maizo_wiimc_options[row-5].label;
  if(row==1)return "MODO DA BIBLIOTECA";
@@ -64,7 +73,7 @@ const char*settings_label(System s,int row){
  static const char*wii[]={"IOS INICIAL DO LOADER","PORTA USB"};
  static const char*gc[]={"MEMORY CARD EMULADA","WIDESCREEN","CHEATS","SKIP IPL","VIDEO GAMECUBE","MEMCARD MULTI","CONTROLE GC NATIVO","REMOVE LIMIT","LARGURA GC (NINTENDONT)","POSICAO HORIZONTAL GC"};
  static const char*ps[]={"NUCLEO PS1","CPU (INTERP/DYNAREC)","FRAME SKIP","AUDIO","SAIDA NATIVA 240P","MODO DE VIDEO","PROPORCAO","DEFLICKER","DITHERING","MOSTRAR FPS","LIMITAR FPS"};
- int n=row-2;
+ int n=row-(s==SYSTEM_PS1?3:2);
  if(s==SYSTEM_WII&&n>=0&&n<2)return wii[n];
  if(s==SYSTEM_GC&&n>=0&&n<10)return gc[n];
  if(s==SYSTEM_PS1&&n>=0&&n<11)return ps[n];
@@ -76,6 +85,8 @@ const char*settings_label(System s,int row){
 static unsigned get(const Config*c,System s,int row){
  if(row==0)return c->theme;if(row==1)return c->layout;
  if(s==SYSTEM_COUNT&&row==2)return c->force_vi704;
+ if(row==maizo_standard_row(s))
+  return s==SYSTEM_COUNT?c->tv_global:c->tv_module[s];
  if(s==SYSTEM_WII)return row==2?c->wii_ios:c->wii_usb_port;
  if(s==SYSTEM_GC)switch(row){
  case 2:return c->gc_memcard;case 3:return c->gc_wide;
@@ -84,14 +95,14 @@ static unsigned get(const Config*c,System s,int row){
  case 8:return c->gc_native_si;case 9:return c->gc_rem_limit;
  case 10:return c->gc_scale;case 11:return c->gc_offset;default:return 0;
  }
- if(s==SYSTEM_PS1)switch(row){
+ if(s==SYSTEM_PS1){if(row>2)row--;switch(row){
  case 2:return c->ps1_engine;case 3:return c->ps1_interpreter;
  case 4:return c->ps1_frameskip;case 5:return c->ps1_audio;
  case 6:return c->ps1_native;case 7:return c->ps1_video;
  case 8:return c->ps1_aspect;case 9:return c->ps1_deflicker;
  case 10:return c->ps1_dither;case 11:return c->ps1_fps;
  case 12:return c->ps1_limit;default:return 0;
- }
+ }}
  if(s==SYSTEM_MEDIA&&row==2)return c->media_volume;
  if(s==SYSTEM_MEDIA&&row==3)return c->media_player;
  if(s==SYSTEM_MEDIA&&row==4)return c->media_autoboot;
@@ -99,6 +110,13 @@ static unsigned get(const Config*c,System s,int row){
  return 0;
 }
 void settings_value(const Config*c,System s,int row,char*dest,size_t cap){
+ if(row==maizo_standard_row(s)){
+  static const char *const global_names[]={"AUTO","NTSC","PAL50","PAL60","PAL-M"};
+  static const char *const module_names[]={"HERDAR GLOBAL","AUTO","NTSC","PAL50","PAL60","PAL-M"};
+  unsigned v=s==SYSTEM_COUNT?c->tv_global:c->tv_module[s];
+  snprintf(dest,cap,"%s",s==SYSTEM_COUNT?global_names[v%5]:module_names[v%6]);
+  return;
+ }
  if(row==settings_count(s)-1){snprintf(dest,cap,"A / B");return;}
  if(row==settings_count(s)-2||row==settings_count(s)-3){snprintf(dest,cap,"ABRIR");return;}
  if((s==SYSTEM_SNES||s==SYSTEM_PS1)&&row>=settings_count(s)-7&&row<settings_count(s)-3){
@@ -109,6 +127,7 @@ void settings_value(const Config*c,System s,int row,char*dest,size_t cap){
   return;
  }
  unsigned v=get(c,s,row);
+ if(s==SYSTEM_PS1&&row>2)row--;
  if(s==SYSTEM_MEDIA&&row>=5&&row<5+MAIZO_WIIMC_OPTION_COUNT){
   const MaizoWiiMCOption *o=&maizo_wiimc_options[row-5];
   unsigned value=c->wiimc_opts[row-5];
@@ -146,6 +165,11 @@ void settings_value(const Config*c,System s,int row,char*dest,size_t cap){
 }
 int settings_change(Config*c,System s,int row,int dir){
  if(row>=settings_count(s)-3||row<0)return 0;
+ if(row==maizo_standard_row(s)){
+  unsigned *v=s==SYSTEM_COUNT?&c->tv_global:&c->tv_module[s];
+  unsigned count=s==SYSTEM_COUNT?5:6;
+  *v=(*v+count+(dir<0?-1:1))%count;return 1;
+ }
  if(s==SYSTEM_COUNT&&row==2){c->force_vi704=!c->force_vi704;return 1;}
  if((s==SYSTEM_SNES||s==SYSTEM_PS1)&&row>=settings_count(s)-7&&row<settings_count(s)-3){
   unsigned *p=row==settings_count(s)-7?&c->game_x240:row==settings_count(s)-6?&c->game_x480:
@@ -163,6 +187,7 @@ int settings_change(Config*c,System s,int row,int dir){
   else *v=*v>=o->max-o->step+1?o->max:*v+o->step;
   return 1;
  }
+ if(s==SYSTEM_PS1&&row>2)row--;
  unsigned*v=NULL,lim=2;
  if(row==0){v=&c->theme;lim=6;}
  else if(row==1){v=&c->layout;lim=3;}
@@ -202,10 +227,12 @@ int settings_change(Config*c,System s,int row,int dir){
 
 /* Category headers reflect actual supported parameters, not fake sliders. */
 const char*settings_category(System s,int row){
+ if(row==maizo_standard_row(s))return "SINAL CRT / NUCLEO";
  if(s==SYSTEM_COUNT&&row==2)return "VIDEO CRT GLOBAL";
  if(row==0||row==1)return "APARENCIA";
  if(row>=settings_count(s)-3)return "GERAL";
  if((s==SYSTEM_SNES||s==SYSTEM_PS1)&&row>=settings_count(s)-7&&row<settings_count(s)-3)return "VIDEO JOGO";
+ if(s==SYSTEM_PS1&&row>2)row--;
  if(s==SYSTEM_WII)return row==2?"EMULACAO / IOS":"ARMAZENAMENTO";
  if(s==SYSTEM_GC){
   if(row==6||row>=10)return "VIDEO";

@@ -44,3 +44,31 @@ sistemas, contagem de argumentos, rejeições de ID6, CHD/M3U e nomes WiiMC
 com `%`. Isso **não** confirma consumo correto por cada DOL nem execução no Wii.
 Sem ID6 válido, Wii agora mostra erro antes da troca de DOL em vez de abrir
 o menu USB Loader GX silenciosamente.
+
+## Saída CRT por núcleo (integração experimental)
+
+MENU GERAL: AUTO/NTSC/PAL50/PAL60/PAL-M. Cada módulo (menos homebrews
+arbitrários) oferece HERDAR/AUTO/NTSC/PAL50/PAL60/PAL-M; perfis
+individuais de jogos podem sobrescrever isso. AUTO não impõe sinal.
+As preferências são persistidas em settings.ini e o padrão efetivo
+via tv_standard no registro de lançamento. Nintendont recebe NIN_CFG
+PAL50/PAL60/NTSC/MPAL. Módulos reconstruídos que aplicam o registro:
+WiiMC-SSLC, WiiSXRX/WiiSX e núcleos GX SNES/NES/GBA/GB, além do menu
+do USB Loader GX. Forçar PAL/NTSC em qualquer jogo Wii que troca VI
+internamente não é garantido; binários originais/fallback ignoram esse
+registro. Modo progressivo de componente é deliberadamente preservado.
+Apenas o menu do USB Loader é alterado de forma verificável; jogos Wii
+exigem intervenção específica do motor e validação física.
+
+WiiMC: mantém o suporte original a *DVD-Video ISO* por dvdnav. Arquivo
+ISO genérico de jogo ou dados não é vídeo reproduzível. O adaptador tenta
+montar a partição antes do autoplay e valida acesso; protege caminho IFO
+e transições da lista de dispositivos. A enumeração HID é bloqueada
+enquanto USB mass-storage estiver montado, para não competir pelo mesmo
+barramento. Nessa condição o controle HID genérico pode não funcionar
+dentro do WiiMC; Wiimote e controle nativo permanecem. Não atribuir
+um crash DSI específico a esse defeito sem stack trace e addr2line.
+
+**Atenção:** resultados dependem de compilação real de cada DOL adaptado
+(veja MODULE_MANIFEST.json). Até os testes em Wii físico com vídeo,
+USB e ISO, isto é implementação experimental, não correção confirmada.

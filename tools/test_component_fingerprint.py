@@ -15,7 +15,7 @@ class ComponentFingerprintTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         for path in ("tools/patch_upstreams.py", "integrations/wiimc_syscalls_compat.c",
-                     "integrations/maizo_game_video.inc", *HID_FILES):
+                     "integrations/maizo_game_video.inc", "integrations/maizo_tv_standard.inc", *HID_FILES):
             (self.root / path).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / path, self.root / path)
 
