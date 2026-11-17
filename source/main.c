@@ -67,18 +67,43 @@ static int mount_storage(int initial){
  storage_usb=usb;storage_sd=sd;media_ready=usb||sd;
  return media_ready;
 }
-/* Forwarder -> DOL handoff may reopen FAT after the initial mount window.
- * Retry USB without requiring a Wiimote, a press of Z, or an SD card. */
+/* Forwarder -> DOL handoff: recover FAT mounts after cold boot. */
+/* Hotplug is bidirectional. An already-mounted devoptab may keep
+ * returning an open root DIR after physical removal; query the backing
+ * DISC_INTERFACE before deciding that a filesystem is still present.
+ * On detach unmount the stale FAT volume, shut down USB IOS state, and
+ * remount on later polls. This also works after Priiloader cold autoboot
+ * because no HBC/Priiloader mount state is required. */
 static void retry_missing_storage(void){
- if((storage_usb&&storage_sd)||state.frame==0||(state.frame%300)!=0)return;
+ if(state.frame==0 || (state.frame%120)!=0)return;
  int old_usb=storage_usb,old_sd=storage_sd;
+ const int lost_usb=storage_usb&&!__io_usbstorage.isInserted();
+ const int lost_sd=storage_sd&&!__io_wiisd.isInserted();
+ if(lost_usb||lost_sd){
+  /* Close scanner handles before invalidating their underlying FAT mounts. */
+  library_end(&library_state);
+  maizo_cover_download_cancel();
+  if(lost_usb){
+   fatUnmount("usb");
+   __io_usbstorage.shutdown();
+   storage_usb=0;
+  }
+  if(lost_sd){
+   fatUnmount("sd");
+   __io_wiisd.shutdown();
+   storage_sd=0;
+  }
+ }
+ /* Reinitialize both independently. A fresh USB device needs a new
+  * startup + isInserted + fatMountSimple, not the stale root cache. */
  mount_storage(0);
  state.storage_usb=storage_usb;state.storage_sd=storage_sd;
- if(old_usb!=storage_usb||old_sd!=storage_sd){
+ if(old_usb!=storage_usb||old_sd!=storage_sd||lost_usb||lost_sd){
   input_storage_ready(media_ready);
   module_refresh_available();
   cover_reset();
-  library_begin(&library_state);
+  if(media_ready)library_begin(&library_state);
+  else library_end(&library_state);
   state.selected=state.scroll=0;
  }
 }

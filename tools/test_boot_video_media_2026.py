@@ -17,7 +17,8 @@ class BootVideoMediaRegressions(unittest.TestCase):
         self.assertNotIn("fatInitDefault()",body)
         self.assertIn('ui_boot_message(n==0?',body)
         self.assertIn("retry_missing_storage();",s)
-        self.assertIn("state.frame%300",s)
+        self.assertIn("state.frame%120",s)
+        self.assertIn("const int lost_usb=storage_usb&&!__io_usbstorage.isInserted();",s)
     def test_nintendont_auto_boot_arguments_and_independent_config(self):
         launch=read("source/launch.c")
         upstream_contract=read("source/launch_args.c")

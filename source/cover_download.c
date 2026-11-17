@@ -22,8 +22,10 @@ typedef struct {unsigned char *bytes;size_t length;} Download;
 extern const unsigned char maizo_ca_bundle[],maizo_ca_bundle_end[];
 static MaizoCoverDownloadStatus job;
 static int network_attempted=0,network_ready=0;
+static unsigned network_retry_frame=0;
 static unsigned selected_mask=0x7fu;
 static int update_existing=0,cursor=0;
+static int wait_for_index=0;
 static int chosen_provider=0,chosen_art=0,chosen_region=0,chosen_mode=0,chosen_index=-1;
 static unsigned char failed_indices[MAIZO_MAX_GAMES];
 
@@ -86,7 +88,14 @@ static int start_transfer(const char *url){
 /* The exact MZG1 RGBA8 4x4 tile format used by cover_draw and the Android
  * Pillow converter. Keep the whole CARD a perfect 8:11 rectangle; preserve
  * source artwork aspect by centering it on an opaque dark canvas. */
-static int save_png_as_gxt(const Download *download,const char *dest){
+static unsigned maizo_cover_height(System system){
+  /* Full disc cases and classic carts remain portrait. PS1 front is a
+   * square jewel case; GB/GBC cartons are less elongated than Wii cases. */
+  return system==SYSTEM_PS1?128u:system==SYSTEM_GB?160u:ART_HEIGHT;
+}
+static int save_png_as_gxt(const Download *download,const char *dest,System system){
+ const unsigned art_height=maizo_cover_height(system);
+ const size_t art_bytes=(size_t)ART_WIDTH*art_height*4u;
  png_image png;memset(&png,0,sizeof(png));png.version=PNG_IMAGE_VERSION;
  if(!png_image_begin_read_from_memory(&png,download->bytes,download->length))return 0;
  if(!png.width||!png.height||png.width>2048||png.height>2048||
@@ -100,18 +109,18 @@ static int save_png_as_gxt(const Download *download,const char *dest){
  const unsigned sw=png.width,sh=png.height;
  png_image_free(&png);
  if(!read_ok){free(rgba);return 0;}
- unsigned target_w=ART_WIDTH,target_h=ART_HEIGHT;
- if((uint64_t)sw*ART_HEIGHT>(uint64_t)sh*ART_WIDTH)
+ unsigned target_w=ART_WIDTH,target_h=art_height;
+ if((uint64_t)sw*art_height>(uint64_t)sh*ART_WIDTH)
   target_h=(unsigned)((uint64_t)sh*ART_WIDTH/sw);
- else target_w=(unsigned)((uint64_t)sw*ART_HEIGHT/sh);
+ else target_w=(unsigned)((uint64_t)sw*art_height/sh);
  if(!target_w)target_w=1;
  if(!target_h)target_h=1;
- unsigned xoff=(ART_WIDTH-target_w)/2,yoff=(ART_HEIGHT-target_h)/2;
- unsigned char *tiles=(unsigned char*)malloc(8+ART_PIXELS);
+ unsigned xoff=(ART_WIDTH-target_w)/2,yoff=(art_height-target_h)/2;
+ unsigned char *tiles=(unsigned char*)malloc(8+art_bytes);
  if(!tiles){free(rgba);return 0;}
- memcpy(tiles,"MZG1\0\x80\0\xb0",8);
+ memcpy(tiles,"MZG1",4);tiles[4]=0;tiles[5]=ART_WIDTH;tiles[6]=0;tiles[7]=art_height;
  unsigned char *out=tiles+8;
- for(unsigned y=0;y<ART_HEIGHT;y+=4)for(unsigned x=0;x<ART_WIDTH;x+=4){
+ for(unsigned y=0;y<art_height;y+=4)for(unsigned x=0;x<ART_WIDTH;x+=4){
   unsigned char pixels[16][4];
   for(unsigned dy=0;dy<4;dy++)for(unsigned dx=0;dx<4;dx++){
    const unsigned xx=x+dx,yy=y+dy,k=dy*4+dx;
@@ -129,7 +138,7 @@ static int save_png_as_gxt(const Download *download,const char *dest){
  char tmp[270];int valid=snprintf(tmp,sizeof(tmp),"%s.part",dest);
  if(valid<0||(size_t)valid>=sizeof(tmp)){free(tiles);return 0;}
  FILE *f=fopen(tmp,"wb");if(!f){free(tiles);return 0;}
- int good=fwrite(tiles,1,8+ART_PIXELS,f)==8+ART_PIXELS;
+ int good=fwrite(tiles,1,8+art_bytes,f)==8+art_bytes;
  if(fclose(f))good=0;
  free(tiles);
  if(!good){remove(tmp);return 0;}
@@ -228,9 +237,15 @@ void maizo_cover_download_custom(const Library*library,unsigned mask,int update,
  chosen_region=region<0||region>4?0:region;
  chosen_mode=mode<0||mode>2?0:mode;
  chosen_index=index;cursor=0;current_index=-1;stop_transfer();
- if(!network_ready)network_attempted=0;
- if(!library||library->scanning){
-  snprintf(job.message,sizeof(job.message),"AGUARDE A INDEXACAO TERMINAR");
+ if(!network_ready){network_attempted=0;network_retry_frame=0;}
+ wait_for_index=0;
+ if(!library){
+  snprintf(job.message,sizeof(job.message),"BIBLIOTECA INDISPONIVEL");
+  return;
+ }
+ if(library->scanning){
+  wait_for_index=1;job.active=1;
+  snprintf(job.message,sizeof(job.message),"INDEXANDO JOGOS ANTES DAS CAPAS...");
   return;
  }
  for(int i=0;i<library->count;i++){
@@ -252,6 +267,7 @@ void maizo_cover_download_begin(const Library*l){
 }
 void maizo_cover_download_cancel(void){
  stop_transfer();
+ wait_for_index=0;
  current_index=-1;
  job.active=0;
  snprintf(job.message,sizeof(job.message),"INTERROMPIDO - CAPAS JA BAIXADAS PRESERVADAS");
@@ -259,14 +275,37 @@ void maizo_cover_download_cancel(void){
 MaizoCoverDownloadStatus maizo_cover_download_status(void){return job;}
 void maizo_cover_download_step(const Library *library){
  if(!job.active||!library)return;
- if(!network_attempted){
-  network_attempted=1;
-  if(wiisocket_init()==0 && curl_global_init(CURL_GLOBAL_DEFAULT)==CURLE_OK)
-   network_ready=1;
+ if(wait_for_index){
+  if(library->scanning)return;
+  wait_for_index=0;cursor=0;job.total=0;
+  for(int i=0;i<library->count;i++){
+   unsigned sys=(unsigned)library->games[i].system;
+   if(sys>=7u||!(selected_mask&(1u<<sys)))continue;
+   if(chosen_mode==1&&i!=chosen_index)continue;
+   if(chosen_mode==2&&!failed_indices[i])continue;
+   job.total++;
+  }
+  job.active=job.total>0;
+  snprintf(job.message,sizeof(job.message),job.active?
+   "INDEXACAO FINALIZADA - CONECTANDO HTTPS":"NENHUM JOGO NA SELECAO");
+  if(!job.active)return;
  }
  if(!network_ready){
-  maizo_cover_download_cancel();
-  snprintf(job.message,sizeof(job.message),"SEM REDE OU TLS NO WII");return;
+  /* Priiloader cold boot may reach the menu before DHCP is ready.
+   * Retry three times at ~2 second frame intervals. */
+  if(network_retry_frame++%120u==0 && network_attempted<3){
+   network_attempted++;
+   if(wiisocket_init()==0 && curl_global_init(CURL_GLOBAL_DEFAULT)==CURLE_OK)
+    network_ready=1;
+  }
+  if(!network_ready){
+   if(network_attempted>=3 && network_retry_frame>=360u){
+    maizo_cover_download_cancel();
+    snprintf(job.message,sizeof(job.message),"REDE INDISPONIVEL: CONFIRA WI-FI / DNS");
+   }else snprintf(job.message,sizeof(job.message),
+                   "AGUARDANDO REDE DO WII (%d/3)",network_attempted);
+   return;
+  }
  }
  if(easy){
   int running=0;
@@ -282,11 +321,15 @@ void maizo_cover_download_step(const Library *library){
   curl_easy_getinfo(easy,CURLINFO_RESPONSE_CODE,&http);
   int valid=mc==CURLM_OK&&result==CURLE_OK&&http==200 &&
      received.length>=8&&memcmp(received.bytes,"\x89PNG\r\n\x1a\n",8)==0;
-  if(valid&&save_png_as_gxt(&received,current_dest)){
-   finish_game(1,"CAPA VERIFICADA E SALVA");return;
+  if(valid){
+   if(save_png_as_gxt(&received,current_dest,current_game.system)){
+    finish_game(1,"CAPA VERIFICADA E SALVA");return;
+   }
+   finish_game(0,"FALHA AO GRAVAR CAPA NO USB/SD");return;
   }
+  const char *why=mc!=CURLM_OK?"MULTI":curl_easy_strerror(result);
+  snprintf(job.message,sizeof(job.message),"HTTPS %ld: %.55s; PROXIMA FONTE",http,why);
   stop_transfer();attempt++;
-  snprintf(job.message,sizeof(job.message),"FONTE SEM CAPA / TENTANDO ALTERNATIVA");
   return;
  }
  if(current_index>=0){

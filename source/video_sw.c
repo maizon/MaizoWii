@@ -186,7 +186,7 @@ void maizo_video_rect(float x,float y,float w,float h,unsigned a,unsigned b){
 }
 void maizo_video_cover(const unsigned char *source,unsigned tex_w,unsigned tex_h,
                        float x,float y,float w,float h){
- if(!mode||!source||tex_w!=128||(tex_h!=160&&tex_h!=176)||w<=0||h<=0)return;
+ if(!mode||!source||tex_w!=128||(tex_h!=128&&tex_h!=160&&tex_h!=176)||w<=0||h<=0)return;
  int x0,y0,x1,y1;
  rect_coords(x,y,w,h,&x0,&y0,&x1,&y1);
  if(x0>=x1||y0>=y1)return;

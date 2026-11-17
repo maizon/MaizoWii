@@ -14,11 +14,24 @@ static unsigned surface=0xff202b31u,card=0xff27333au,accent=0xff82afb2u;
 static void quad(float x,float y,float w,float h,unsigned a,unsigned b){
  maizo_video_rect(x,y,w,h,a,b);
 }
+/* True rounded silhouette on the software VI renderer. The old 3-quad
+ * approximation cut the four corners off as visible square steps.
+ * Curved 1px bands preserve the card's size and work on interlaced CRT. */
 static void rounded(float x,float y,float w,float h,unsigned color){
- if(w<=12||h<=12)return;
- quad(x+6,y,w-12,h,color,color);
- quad(x,y+6,6,h-12,color,color);
- quad(x+w-6,y+6,6,h-12,color,color);
+ if(w<=0||h<=0)return;
+ int r=10;
+ if(r>(int)h/2-1)r=(int)h/2-1;
+ if(r>(int)w/2-1)r=(int)w/2-1;
+ if(r<2){quad(x,y,w,h,color,color);return;}
+ quad(x,y+r,w,h-2*r,color,color);
+ for(int row=0;row<r;row++){
+  int dy=r-1-row;
+  int dx=r;
+  while(dx>0&&dx*dx+dy*dy>r*r)dx--;
+  int inset=r-dx;
+  quad(x+inset,y+row,w-2*inset,1,color,color);
+  quad(x+inset,y+h-row-1,w-2*inset,1,color,color);
+ }
 }
 static unsigned char ascii(unsigned char first,unsigned char last){
  if(first!=0xc3)return '?';
@@ -319,9 +332,9 @@ static void carousel(const State*u,const Library*l,int home){
   const float x=(float)slot.x,y=(float)slot.y;
   const float w=(float)slot.w,h=(float)slot.h;
   /* Shadow and background must not move when another card is selected. */
-  quad(x+4,y+7,w,h,0xff080c12u,0xff080c12u);
-  if(delta==0)quad(x-5,y-5,w+10,h+10,focus_color,focus_color);
-  quad(x-3,y-3,w+6,h+6,0xff29343du,0xff29343du);
+  rounded(x+4,y+7,w,h,0xff080c12u);
+  if(delta==0)rounded(x-5,y-5,w+10,h+10,focus_color);
+  rounded(x-3,y-3,w+6,h+6,0xff29343du);
   art(u,l,home,pos,x,y,w,h);
  }
  const char*name=item_name(u,l,home,focused);
@@ -372,8 +385,13 @@ static void detail(const State*u,const Library*l,const Config*c){
  clipped(255,244,g->path,0.87f,muted,48);
  if(g->system==SYSTEM_HB && g->description[0])
   clipped(255,280,g->description,0.87f,muted,45);
- else if(g->system==SYSTEM_MEDIA)
-  label(255,280,u->game_config.media_player?"WIIMC ORIGINAL":"WIIMC HID",0.93f,muted);
+ else if(g->system==SYSTEM_MEDIA){
+  /* PAL-M/NTSC forced mode requires the rebuilt WiiMC adapter. */
+  unsigned requested=u->game_config.tv_module[SYSTEM_MEDIA];
+  requested=requested?requested-1:u->game_config.tv_global;
+  label(255,280,requested?"WIIMC MOD / VIDEO CRT":
+        u->game_config.media_player?"WIIMC ORIGINAL":"WIIMC HID",0.93f,muted);
+ }
  else label(255,280,"OPCOES AVANCADAS NO MODULO",0.81f,muted);
  int can=module_variant_available(g->system,&u->game_config);
  rounded(255,317,322,52,can?0xff40675bu:0xff754d4du);

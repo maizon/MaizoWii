@@ -74,6 +74,7 @@ static const char*resolve(System sys){if(sys<0||sys>=SYSTEM_COUNT||sys==SYSTEM_H
 static unsigned char modules_present[SYSTEM_COUNT];
 static int modules_scanned=0;
 static int alternate_ps1=0,alternate_media=0;
+static unsigned maizo_effective_tv_standard(const Config*,System);
 void module_refresh_available(void){
  for(int i=0;i<SYSTEM_COUNT;i++)
   modules_present[i]=i==SYSTEM_HB?1:resolve((System)i)!=NULL;
@@ -87,7 +88,13 @@ int module_variant_available(System sys,const Config*c){
  if(sys<0||sys>=SYSTEM_COUNT)return 0;
  if(!modules_scanned)module_refresh_available();
  if(sys==SYSTEM_PS1&&c&&c->ps1_engine)return alternate_ps1;
- if(sys==SYSTEM_MEDIA&&c&&c->media_player)return alternate_media;
+ if(sys==SYSTEM_MEDIA&&c&&c->media_player){
+  /* Stock WiiMC never reads MAIZO TV standards. When a TV mode is
+   * explicitly forced, use only the patched WiiMC instead of silently
+   * launching the official DOL that ignores PAL-M. */
+  if(maizo_effective_tv_standard(c,SYSTEM_MEDIA))return modules_present[sys];
+  return alternate_media;
+ }
  return modules_present[sys];
 }
 int module_available(System sys){
@@ -129,11 +136,26 @@ static int maizo_write_nincfg_root(const NIN_CFG *n,const char *root){
  int ok=fwrite(n,1,sizeof(*n),f)==sizeof(*n);
  if(fclose(f))ok=0;
  if(!ok){remove(tmp);return 0;}
- if(rename(tmp,dest)==0)return 1;
- /* FAT may reject replacing an open/existing destination. Preserve the
-  * old file until the replacement has been fully written. */
+ if(rename(tmp,dest)==0){
+  FILE *readback=fopen(dest,"rb");
+  if(!readback)return 0;
+  NIN_CFG stored;int verified=fread(&stored,1,sizeof(stored),readback)==sizeof(stored)&&
+                          !memcmp(&stored,n,sizeof(stored));
+  fclose(readback);return verified;
+ }
+ /* If a previous write was interrupted, remove only OUR stale backup,
+  * never the user's active /nincfg.bin before replacement is prepared. */
+ remove(backup);
  if(rename(dest,backup)!=0){remove(tmp);return 0;}
- if(rename(tmp,dest)==0){remove(backup);return 1;}
+ if(rename(tmp,dest)==0){
+  FILE *readback=fopen(dest,"rb");
+  NIN_CFG stored;int verified=readback&&
+    fread(&stored,1,sizeof(stored),readback)==sizeof(stored)&&
+    !memcmp(&stored,n,sizeof(stored));
+  if(readback)fclose(readback);
+  if(verified){remove(backup);return 1;}
+  remove(dest);rename(backup,dest);return 0;
+ }
  rename(backup,dest);remove(tmp);return 0;
 }
 /* Game profile overrides module selection; zero means use global default. */
@@ -241,6 +263,15 @@ static int overlap(u32 a,u32 n,u32 b,u32 len){
  return (uint64_t)a<(uint64_t)b+len && (uint64_t)b<(uint64_t)a+n;
 }
 
+/* Nintendont embeds the literal 'argsboot' marker in its loader and
+ * USB Loader GX uses the same check to avoid sending NIN_CFG to an
+ * incompatible/outdated DOL. Do not launch into a game browser silently. */
+static int maizo_nin_supports_args(const unsigned char *image,size_t length){
+ static const unsigned char marker[]="argsboot";
+ for(size_t i=0;i+sizeof(marker)-1<=length;i++)
+  if(!memcmp(image+i,marker,sizeof(marker)-1))return 1;
+ return 0;
+}
 static int valid_dol(const unsigned char*image,size_t len){
  if(len<sizeof(DolHeader))return 0;const DolHeader*h=(const DolHeader*)image;
  /* Modern devkitPro DOLs (including our frontend and adapted SNES9x GX)
@@ -272,7 +303,9 @@ int module_launch(const Game*g,const Config*c,char*error,size_t cap){
  error[0]=0;
  const char*exe=g->system==SYSTEM_HB?g->path:
                 (g->system==SYSTEM_PS1&&c->ps1_engine)?resolve_ps1_wiisx():
-                (g->system==SYSTEM_MEDIA&&c->media_player)?resolve_media_official():resolve(g->system);if(!exe){snprintf(error,cap,"DOL do %s nao encontrado",module_name(g->system));return 0;}
+                (g->system==SYSTEM_MEDIA&&c->media_player&&
+                 !maizo_effective_tv_standard(c,SYSTEM_MEDIA))?
+                resolve_media_official():resolve(g->system);if(!exe){snprintf(error,cap,"DOL do %s nao encontrado",module_name(g->system));return 0;}
  if(g->system==SYSTEM_PS1){
   const char*e=strrchr(g->path,'.');
   if(e&&(!strcasecmp(e,".chd")||!strcasecmp(e,".m3u"))){
@@ -302,12 +335,24 @@ int module_launch(const Game*g,const Config*c,char*error,size_t cap){
  unsigned char*image=(unsigned char*)0x92000000;
  if(fread(image,1,(size_t)size,f)!=(size_t)size){fclose(f);snprintf(error,cap,"Falha ao ler DOL");return 0;}fclose(f);
  if(!valid_dol(image,(size_t)size)){snprintf(error,cap,"DOL invalido: cabecalho/secoes");return 0;}
+ if(g->system==SYSTEM_GC&&!maizo_nin_supports_args(image,(size_t)size)){
+  snprintf(error,cap,"Nintendont antigo/forwarder sem argsboot: use loader.dol atual");
+  return 0;
+ }
  if(g->system==SYSTEM_GC){
   NIN_CFG nin;
   /* argv[1] carries the complete NIN_CFG directly (Nintendont main.c).
    * The root nincfg.bin is a compatibility cache, not a prerequisite:
    * previous code aborted direct boot on USB write/rename failures. */
+  memset(&nin,0,sizeof(nin));
   (void)save_nincfg(g,c,&nin);
+  /* A failed FAT write may be harmless because the binary argv is
+   * authoritative; an invalid GamePath/Magic can NEVER be ignored. */
+  if(nin.Magicbytes!=NIN_CFG_MAGIC||nin.Version!=NIN_CFG_VERSION||
+     !(nin.Config&NIN_CFG_AUTO_BOOT)||!nin.GamePath[0]){
+   snprintf(error,cap,"Nintendont: configuracao de autoboot invalida");
+   return 0;
+  }
   /* Nintendont loader/source/main.c reads argv[1] as the NIN_CFG
    * binary. nincfg.bin alone does not provide reliable direct boot. */
   const size_t count=sizeof(nin)+1;

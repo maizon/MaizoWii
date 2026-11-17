@@ -68,7 +68,7 @@ static Cache*lookup(const Game*g,int allow_io){
  }
  if(!f)return NULL;
  unsigned char hdr[8];
- if(fread(hdr,1,8,f)!=8||memcmp(hdr,"MZG1",4)||hdr[4]!=0||hdr[5]!=COV_W||hdr[6]!=0||(hdr[7]!=160&&hdr[7]!=176)){fclose(f);return NULL;}
+ if(fread(hdr,1,8,f)!=8||memcmp(hdr,"MZG1",4)||hdr[4]!=0||hdr[5]!=COV_W||hdr[6]!=0||(hdr[7]!=128&&hdr[7]!=160&&hdr[7]!=176)){fclose(f);return NULL;}
  c->height=hdr[7];
  size_t bytes=(size_t)COV_W*c->height*4u;
  c->pixels=malloc(bytes);if(!c->pixels){fclose(f);return NULL;}
@@ -148,10 +148,10 @@ int cover_destination(const Game*g,char*out,size_t cap){
 }
 static int good_gxt(const char*path){
  struct stat st;if(stat(path,&st)!=0||!S_ISREG(st.st_mode))return 0;
- if(st.st_size!=8+128*176*4 && st.st_size!=8+128*160*4)return 0;
+ if(st.st_size!=8+128*176*4 && st.st_size!=8+128*160*4 && st.st_size!=8+128*128*4)return 0;
  FILE*f=fopen(path,"rb");if(!f)return 0;
  unsigned char h[8]={0};int ok=fread(h,1,8,f)==8;fclose(f);
- return ok&&!memcmp(h,"MZG1",4)&&h[4]==0&&h[5]==128&&h[6]==0&&(h[7]==176||h[7]==160);
+ return ok&&!memcmp(h,"MZG1",4)&&h[4]==0&&h[5]==128&&h[6]==0&&(h[7]==176||h[7]==160||h[7]==128);
 }
 int cover_on_disk(const Game*g){
  if(!g||g->system<0||g->system>=SYSTEM_COUNT)return 0;

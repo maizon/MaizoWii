@@ -8,21 +8,25 @@ from PIL import ImageOps
 try: from PIL import Image
 except ImportError: raise SystemExit("Pillow required: python -m pip install pillow")
 W,H=128,176
-def pack_rgba(im):
+def height_for_system(folder):
+    return 128 if folder=="ps1" else 160 if folder=="gb" else H
+
+def pack_rgba(im, height=H):
+    if height not in (128,160,176):raise ValueError("Invalid cover height")
     # Portrait cover slot: standard Wii/GC cases are approximately 0.72 W/H.
     # Square jewel cases are letterboxed, NEVER stretched.
-    im=ImageOps.contain(im.convert("RGBA"),(W,H),Image.Resampling.LANCZOS)
-    canvas=Image.new("RGBA",(W,H),(19,24,33,255))
-    canvas.alpha_composite(im,((W-im.width)//2,(H-im.height)//2))
+    im=ImageOps.contain(im.convert("RGBA"),(W,height),Image.Resampling.LANCZOS)
+    canvas=Image.new("RGBA",(W,height),(19,24,33,255))
+    canvas.alpha_composite(im,((W-im.width)//2,(height-im.height)//2))
     im=canvas
     pix=im.load()
-    out=bytearray(b"MZG1"+struct.pack(">HH",W,H))
-    for ty in range(0,H,4):
+    out=bytearray(b"MZG1"+struct.pack(">HH",W,height))
+    for ty in range(0,height,4):
         for tx in range(0,W,4):
             pixels=[pix[tx+x,ty+y] for y in range(4) for x in range(4)]
             for r,g,b,a in pixels:out.extend((a,r))
             for r,g,b,a in pixels:out.extend((g,b))
-    assert len(out)==8+W*H*4
+    assert len(out)==8+W*height*4
     return bytes(out)
 def main():
     p=argparse.ArgumentParser()
@@ -32,7 +36,7 @@ def main():
     for src in args.covers.rglob("*.png"):
         dest=src.with_suffix(".gxt")
         try:
-            with Image.open(src) as im: data=pack_rgba(im)
+            with Image.open(src) as im: data=pack_rgba(im,height_for_system(src.parent.name.lower()))
             dest.write_bytes(data);print(f"OK {dest.name} ({len(data)} bytes)")
             count+=1
         except Exception as e:print(f"WARN {src}: {e}")

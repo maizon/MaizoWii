@@ -204,7 +204,7 @@ def main():
             time.sleep(0.1)
     if a.convert:
         from PIL import Image
-        from build_cover_cache import pack_rgba
+        from build_cover_cache import pack_rgba, height_for_system
         converted = 0
         errors = 0
         for src in sorted(out.rglob("*.png")):
@@ -213,7 +213,7 @@ def main():
                 continue
             try:
                 with Image.open(src) as img:
-                    binary = pack_rgba(img)
+                    binary = pack_rgba(img, height_for_system(src.parent.name.lower()))
                 # Atomic file replacement on FAT32: partial cached art is
                 # never mistaken for a valid MZG1 image by the frontend.
                 tmp = dest.with_suffix(".gxt.part")

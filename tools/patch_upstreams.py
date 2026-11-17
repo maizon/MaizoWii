@@ -229,6 +229,53 @@ def patch_wiimc(root: Path):
            "WiiMC TV mode after mounted FAT")
         return t
     patch_file(root,"source/video.cpp",wiimc_color)
+    # WiiMC frequently rebuilds its VIDEO mode while entering/exiting media
+    # playback. The first InitVideo2() standard would otherwise be lost when
+    # SetInterlace/SetDoubleStrike(Off)/Set576pOff chose the console default.
+    # Preserve the requested PAL-M/NTSC/PAL50/PAL60 throughout those changes.
+    def wiimc_keep_tv(t):
+        t=replace_once(t,
+            'void SetDoubleStrikeOff()\n{\n\tCONF_GetVideo();\n\tvmode = VIDEO_GetPreferredMode(NULL);',
+            'void SetDoubleStrikeOff()\n{\n\tCONF_GetVideo();\n'
+            '\tvmode = VIDEO_GetPreferredMode(NULL);\n'
+            '\tif(maizo_tv_standard_from_launch()){\n'
+            '\t\tstatic GXRModeObj maizo_restored;maizo_restored=*vmode;\n'
+            '\t\tmaizo_tv_apply_to_mode(&maizo_restored,maizo_tv_standard_from_launch());\n'
+            '\t\tvmode=&maizo_restored;\n\t}',
+            "WiiMC preserve PAL-M leaving double strike")
+        t=replace_once(t,
+            'void Set576pOff()\n{\n\t//Need to check for NTSC\n\tpal = false;\n\tCONF_GetVideo();\n\tvmode = VIDEO_GetPreferredMode(NULL);',
+            'void Set576pOff()\n{\n\t//Need to check for NTSC\n\tpal = false;\n'
+            '\tCONF_GetVideo();\n\tvmode = VIDEO_GetPreferredMode(NULL);\n'
+            '\tif(maizo_tv_standard_from_launch()){\n'
+            '\t\tstatic GXRModeObj maizo_restored;maizo_restored=*vmode;\n'
+            '\t\tmaizo_tv_apply_to_mode(&maizo_restored,maizo_tv_standard_from_launch());\n'
+            '\t\tvmode=&maizo_restored;\n\t}',
+            "WiiMC preserve PAL-M leaving 576p")
+        t=replace_once(t,
+            'if(pal60 || pal)\n\t\tvmode = &TVEurgb60Hz240Ds;\n\telse\n\t\tvmode = &TVNtsc240Ds;',
+            'if(maizo_tv_standard_from_launch()==4)\n'
+            '\t\tvmode=&TVMpal240Ds;\n'
+            '\telse if(maizo_tv_standard_from_launch()==1)\n'
+            '\t\tvmode=&TVNtsc240Ds;\n'
+            '\telse if(maizo_tv_standard_from_launch()==2)\n'
+            '\t\tvmode=&TVPal264Ds;\n'
+            '\telse if(pal60 || pal)\n\t\tvmode = &TVEurgb60Hz240Ds;\n'
+            '\telse\n\t\tvmode = &TVNtsc240Ds;',
+            "WiiMC 240p standard selection")
+        t=replace_once(t,
+            'if (want576i)\n\t\tvmode = &TVPal576IntDfScale;\n\telse if(pal60)\n\t\tvmode = &TVEurgb60Hz480IntDf;\n\telse\n\t\tvmode = &TVNtsc480IntDf;',
+            'if(maizo_tv_standard_from_launch()==4)\n'
+            '\t\tvmode=&TVMpal480IntDf;\n'
+            '\telse if(maizo_tv_standard_from_launch()==1)\n'
+            '\t\tvmode=&TVNtsc480IntDf;\n'
+            '\telse if(want576i)\n\t\tvmode = &TVPal576IntDfScale;\n'
+            '\telse if(pal60)\n\t\tvmode = &TVEurgb60Hz480IntDf;\n'
+            '\telse\n\t\tvmode = &TVNtsc480IntDf;',
+            "WiiMC interlaced video selection")
+        return t
+    patch_file(root,"source/video.cpp",wiimc_keep_tv)
+
     # WiiMC 3.0 file browser used sprintf(dst, "%s%s/", dst, name):
     # reading and writing the same buffer is undefined behavior, and happens
     # immediately when the user selects an SD/USB volume or folder.

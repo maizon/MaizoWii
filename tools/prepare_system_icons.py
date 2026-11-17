@@ -19,7 +19,7 @@ BASE = ("https://raw.githubusercontent.com/KyleBing/retro-game-console-icons/"
         + REV + "/series_trimui/300w@1x/")
 # Current KyleBing collection has no Nintendo Wii portrait.
 ICONS = {
-    "IGC": "NGC", "IPS1": "PS", "ISNES": "SFC",
+    "IPS1": "PS", "ISNES": "SFC",
     "INES": "FC", "IGBA": "GBA", "IGB": "GB", "IMEDIA": "VIDEOS",
 }
 
@@ -33,6 +33,29 @@ def background():
     return canvas
 
 def portrait(name):
+    if name == "IGC":
+        # A native vector drawing of the GAMECUBE home console.
+        # The upstream "NGC" image in series_trimui showed a handheld:
+        # never download that ambiguous image for the GameCube carousel.
+        im = Image.new("RGBA", (200, 200), (0, 0, 0, 0))
+        d = ImageDraw.Draw(im)
+        outline = (35, 29, 65, 255)
+        d.polygon([(32, 65), (80, 33), (171, 50), (123, 87)],
+                  fill=(153, 144, 214, 255))
+        d.polygon([(32, 65), (123, 87), (123, 167), (32, 146)],
+                  fill=(101, 94, 174, 255))
+        d.polygon([(123, 87), (171, 50), (171, 130), (123, 167)],
+                  fill=(70, 63, 138, 255))
+        d.line([(32,65),(80,33),(171,50),(171,130),(123,167),
+                (32,146),(32,65),(123,87),(171,50)], fill=outline, width=4)
+        # Four controller ports on the cube's front face.
+        for x,y in [(51,93),(85,102),(51,126),(85,135)]:
+            d.ellipse((x-11,y-11,x+11,y+11), fill=(30,31,53,255),
+                      outline=(195,194,229,255), width=3)
+            d.ellipse((x-3,y-3,x+3,y+3),fill=(121,126,166,255))
+        d.line([(137,110),(158,96)],fill=(21,23,45,255),width=6)
+        d.line([(54,60),(88,50),(141,58)],fill=(212,207,245,255),width=5)
+        return im
     if name in ("IWII", "IHB"):
         im = Image.new("RGBA", (200, 200), (0, 0, 0, 0))
         draw = ImageDraw.Draw(im)
@@ -96,7 +119,7 @@ def main():
     p.add_argument("--out", type=Path, required=True, help="Output maizo/covers folder")
     args = p.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
-    for code in ("IWII", "IHB", *ICONS):
+    for code in ("IWII", "IGC", "IHB", *ICONS):
         for transparent in (False,True):
             asset=("T" if transparent else "I")+code[1:]
             dest = args.out / (asset + ".gxt")
@@ -113,7 +136,7 @@ def main():
         "Source images (all except Wii): CC BY 4.0; attribution required.\n"
         "https://creativecommons.org/licenses/by/4.0/\n"
         "Modified by Maizo: resized, padded, composited and packed to native MZG1.\n"
-        "Wii and HB images: locally drawn fallback icons (not in the source icon set).\n",
+        "Wii, GameCube and HB images: locally drawn icons (avoiding the wrong NGC handheld asset).\n",
         encoding="utf-8",
     )
 

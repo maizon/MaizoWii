@@ -38,10 +38,10 @@ class PremiumUpdateContracts(unittest.TestCase):
         self.assertIn("{116,169,112,154}", geometry)
         self.assertNotIn("x+=shift",ui)
         covers = source("source/covers.c")
-        self.assertIn("(hdr[7]!=160&&hdr[7]!=176)", covers)
+        self.assertIn("(hdr[7]!=128&&hdr[7]!=160&&hdr[7]!=176)", covers)
         self.assertIn("w/wanted", covers)
         video = source("source/video_sw.c")
-        self.assertIn("tex_h!=160&&tex_h!=176", video)
+        self.assertIn("tex_h!=128&&tex_h!=160&&tex_h!=176", video)
         self.assertIn("int ty=(py-y0)*(int)tex_h/", video)
 
     def test_system_scoped_covers_and_both_devices(self):
