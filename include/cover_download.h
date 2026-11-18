@@ -2,10 +2,11 @@
 #define MAIZO_COVER_DOWNLOAD_H
 #include "app.h"
 typedef struct {
- int active,processed,total,downloaded,existing,failed,unavailable;
+ int active,processed,total,downloaded,existing,failed,unavailable;int tls_errors,legacy_downloads,transport;
  char current[112],message[128];
 } MaizoCoverDownloadStatus;
 void maizo_cover_download_begin(const Library *library);
+void maizo_cover_download_set_transport(unsigned mode);
 void maizo_cover_download_begin_filtered(const Library *library,unsigned mask,int update_existing);
 /* provider: 0 auto, 1 GameTDB, 2 Libretro.
  * artwork: 0 frontal, 1 completa/snapshot, 2 3D/title.

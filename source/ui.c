@@ -454,7 +454,7 @@ static void cover_pick_ui(const State*u,const Config*c){
   "WII","GAMECUBE","PLAYSTATION 1","SNES","NES","GBA","GB / GBC",
   "SELECIONAR TODOS","LIMPAR SELECAO","ATUALIZAR EXISTENTES",
   "FONTE PREFERIDA","TIPO DE IMAGEM","REGIAO PRIORITARIA",
-  "MODO DOWNLOAD","RECONSTRUIR CACHE RAM","INICIAR DOWNLOAD"
+  "MODO DOWNLOAD","REDE / CERTIFICADO SSL","RECONSTRUIR CACHE RAM","INICIAR DOWNLOAD"
  };
  int sys=u->covers_row<7?u->covers_row:(int)u->system;
  char stats[104];
@@ -465,7 +465,7 @@ static void cover_pick_ui(const State*u,const Config*c){
  else snprintf(stats,sizeof(stats),"WII / GC / PS1 / SNES / NES / GBA / GB");
  clipped(38,109,stats,0.93f,muted,78);
  int top=u->covers_row>9?u->covers_row-9:0;
- for(int row=top;row<16&&row<top+10;row++){
+ for(int row=top;row<17&&row<top+10;row++){
   int y=137+(row-top)*27;
   rounded(39,y,552,25,u->covers_row==row?0xff425d61u:surface);
   char mark[52]="";
@@ -483,6 +483,9 @@ static void cover_pick_ui(const State*u,const Config*c){
   }else if(row==13){
    const char*v[]={"TODOS/FEITOS","JOGO SELECIONADO","REPETIR FALHAS"};
    snprintf(mark,sizeof(mark),"%s",v[u->covers_mode%3]);
+  }else if(row==14){
+   const char*v[]={"AUTO (HTTPS + GX)","HTTPS CERTIFICADO","USB LOADER GX HTTP"};
+   snprintf(mark,sizeof(mark),"%s",v[c->cover_transport%3]);
   }
   clipped(52,y+8,names[row],0.91f,ink,30);
   clipped(389,y+8,mark,0.81f,accent,25);
@@ -491,13 +494,15 @@ static void cover_pick_ui(const State*u,const Config*c){
 static void downloads_ui(void){
  MaizoCoverDownloadStatus d=maizo_cover_download_status();
  label(38,84,"DOWNLOAD DE CAPAS",1.55f,ink);
- clipped(38,124,"WII GC PS1 SNES NES GBA GB/GBC  -  HTTPS",0.94f,muted,72);
+ clipped(38,124,d.transport==1?"HTTPS VERIFICADO - CA MOZILLA":
+                  d.transport==2?"MODO GX: HTTP GAME TDB (SO CAPAS)":
+                  "HTTPS COM FALLBACK GX PARA IMAGENS",0.94f,muted,72);
  char line[120];
  snprintf(line,sizeof(line),"VERIFICADOS %d / %d",d.processed,d.total);
  label(38,163,line,1.25f,ink);
  snprintf(line,sizeof(line),"NOVAS: %d   JA EXISTIAM: %d",d.downloaded,d.existing);
  label(38,202,line,1.05f,accent);
- snprintf(line,sizeof(line),"NAO ENCONTRADAS: %d   SEM PROVEDOR: %d",d.failed,d.unavailable);
+ snprintf(line,sizeof(line),"FALHAS %d   SSL %d   HTTP GX %d",d.failed,d.tls_errors,d.legacy_downloads);
  label(38,239,line,0.98f,ink);
  rounded(38,286,562,24,surface);
  if(d.total>0){

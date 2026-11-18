@@ -42,6 +42,7 @@ void config_load(Config*c){config_defaults(c);char p[80];snprintf(p,sizeof(p),"%
  while(fscanf(f," %63[^=]=%u",key,&val)==2) {
   if(!strcmp(key,"theme"))c->theme=val%6;
   else if(!strcmp(key,"cover_source"))c->cover_source=val%3;
+  else if(!strcmp(key,"cover_transport"))c->cover_transport=val<=2?val:0;
   else if(!strcmp(key,"cover_art"))c->cover_art=val%3;
   else if(!strcmp(key,"cover_region"))c->cover_region=val%5;
   else if(!strcmp(key,"wii_ios"))c->wii_ios=(val==58|| (val>=200&&val<=255))?val:249;
@@ -102,7 +103,7 @@ int config_save(const Config*c){const char*root=where();mkdir(root,0777);
   for(unsigned sys=0;sys<SYSTEM_COUNT;sys++)
    if(fprintf(f,"tv_module_%u=%u\n",sys,c->tv_module[sys])<0){fclose(f);remove(tmp);return 0;}
  }else{fclose(f);remove(tmp);return 0;}
- if(fprintf(f,"cover_source=%u\ncover_art=%u\ncover_region=%u\nwiimc_apply=%u\n",c->cover_source,c->cover_art,c->cover_region,c->wiimc_apply)<0){fclose(f);remove(tmp);return 0;}
+ if(fprintf(f,"cover_source=%u\ncover_art=%u\ncover_region=%u\ncover_transport=%u\nwiimc_apply=%u\n",c->cover_source,c->cover_art,c->cover_region,c->cover_transport,c->wiimc_apply)<0){fclose(f);remove(tmp);return 0;}
  for(unsigned i=0;i<MAIZO_WIIMC_OPTION_COUNT;i++)
   if(fprintf(f,"wiimc_%s=%u\n",maizo_wiimc_options[i].key,c->wiimc_opts[i])<0){fclose(f);remove(tmp);return 0;}
  if(fclose(f)){remove(tmp);return 0;}

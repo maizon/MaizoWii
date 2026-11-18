@@ -2,6 +2,7 @@
  * synchronous I/O from the drawing path. libcurl handles TLS verification.
  * Only user-selected game artwork is downloaded; never ROM/BIOS data. */
 #include "cover_download.h"
+#include "cover_transport.h"
 #include <curl/curl.h>
 #include <png.h>
 #include <wiisocket.h>
@@ -11,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <time.h>
 
 #define ART_WIDTH 128
 #define ART_HEIGHT 176
@@ -22,6 +24,8 @@ typedef struct {unsigned char *bytes;size_t length;} Download;
 extern const unsigned char maizo_ca_bundle[],maizo_ca_bundle_end[];
 static MaizoCoverDownloadStatus job;
 static int network_attempted=0,network_ready=0;
+static unsigned transport_setting=0;
+static int gametdb_tls_broken=0;
 static unsigned network_retry_frame=0;
 static unsigned selected_mask=0x7fu;
 static int update_existing=0,cursor=0;
@@ -50,6 +54,24 @@ static Download received={0};
 static Game current_game;
 static char current_dest[256];
 static int current_index=-1,attempt=0;
+static int http_legacy=0;
+static char requested_url[1024];
+static char curl_error[CURL_ERROR_SIZE];
+static struct curl_blob ca_bundle_blob={NULL,0,CURL_BLOB_NOCOPY};
+void maizo_cover_download_set_transport(unsigned mode){transport_setting=mode<=2?mode:0;}
+/* Optional user-managed updated Mozilla roots, without changing the TLS trust rules. */
+static const char*maizo_ca_override(void){
+ static const char *const paths[]={"usb:/maizo/cacert.pem","sd:/maizo/cacert.pem"};
+ for(unsigned i=0;i<2;i++){
+  FILE*f=fopen(paths[i],"rb");if(!f)continue;
+  char probe[768]={0};
+  size_t n=fread(probe,1,sizeof(probe)-1,f);
+  fclose(f);
+  if(n>128&&strstr(probe,"-----BEGIN CERTIFICATE-----"))return paths[i];
+ }
+ return NULL;
+}
+
 static void stop_transfer(void){
  if(easy){
   if(multi)curl_multi_remove_handle(multi,easy);
@@ -57,26 +79,48 @@ static void stop_transfer(void){
  }
  free(received.bytes);memset(&received,0,sizeof(received));
 }
-static int start_transfer(const char *url){
+static int start_transfer(const char*url){
  stop_transfer();
+ if(!url)return 0;
+ http_legacy=!strncmp(url,"http://",7);
+ if(http_legacy){
+  /* Reject arbitrary HTTP redirects, hosts or file names. */
+  char secure[1024],whitelisted[1024];
+  int n=snprintf(secure,sizeof(secure),"https://%s",url+7);
+  if(n<1||(size_t)n>=sizeof(secure)||
+     !maizo_cover_gametdb_http(secure,whitelisted,sizeof(whitelisted))||
+     strcmp(url,whitelisted))return 0;
+ }
  easy=curl_easy_init();
  if(!easy)return 0;
- struct curl_blob ca_info={
-  .data=(void*)maizo_ca_bundle,
-  .len=(size_t)(maizo_ca_bundle_end-maizo_ca_bundle)-1,
-  .flags=CURL_BLOB_NOCOPY
- };
+ snprintf(requested_url,sizeof(requested_url),"%s",url);
+ memset(curl_error,0,sizeof(curl_error));
+ ca_bundle_blob.data=(void*)maizo_ca_bundle;
+ ca_bundle_blob.len=(size_t)(maizo_ca_bundle_end-maizo_ca_bundle)-1;
+ ca_bundle_blob.flags=CURL_BLOB_NOCOPY;
+ curl_easy_setopt(easy,CURLOPT_ERRORBUFFER,curl_error);
  curl_easy_setopt(easy,CURLOPT_URL,url);
- curl_easy_setopt(easy,CURLOPT_USERAGENT,"MaizoWii/1.0 (Wii; cover-only)");
- curl_easy_setopt(easy,CURLOPT_FOLLOWLOCATION,1L);
+ curl_easy_setopt(easy,CURLOPT_USERAGENT,"MaizoWii/1.1 (Wii cover art)");
+ curl_easy_setopt(easy,CURLOPT_FOLLOWLOCATION,http_legacy?0L:1L);
  curl_easy_setopt(easy,CURLOPT_MAXREDIRS,3L);
- curl_easy_setopt(easy,CURLOPT_CONNECTTIMEOUT,5L);
- curl_easy_setopt(easy,CURLOPT_TIMEOUT,12L);
+ curl_easy_setopt(easy,CURLOPT_CONNECTTIMEOUT,8L);
+ curl_easy_setopt(easy,CURLOPT_TIMEOUT,18L);
  curl_easy_setopt(easy,CURLOPT_NOSIGNAL,1L);
- curl_easy_setopt(easy,CURLOPT_CAINFO_BLOB,&ca_info);
- curl_easy_setopt(easy,CURLOPT_PROTOCOLS_STR,"HTTPS");
+ curl_easy_setopt(easy,CURLOPT_LOW_SPEED_LIMIT,64L);
+ curl_easy_setopt(easy,CURLOPT_LOW_SPEED_TIME,10L);
+ curl_easy_setopt(easy,CURLOPT_PROTOCOLS_STR,http_legacy?"HTTP":"HTTPS");
+ curl_easy_setopt(easy,CURLOPT_REDIR_PROTOCOLS_STR,"HTTPS");
  curl_easy_setopt(easy,CURLOPT_SSL_VERIFYPEER,1L);
  curl_easy_setopt(easy,CURLOPT_SSL_VERIFYHOST,2L);
+ if(!http_legacy){
+  const char*pem=maizo_ca_override();
+  CURLcode ca=pem?curl_easy_setopt(easy,CURLOPT_CAINFO,pem):
+                  curl_easy_setopt(easy,CURLOPT_CAINFO_BLOB,&ca_bundle_blob);
+  if(ca!=CURLE_OK){
+   snprintf(job.message,sizeof(job.message),"CERTIFICADOS: CURL %d",(int)ca);
+   stop_transfer();return 0;
+  }
+ }
  curl_easy_setopt(easy,CURLOPT_WRITEFUNCTION,receive_image);
  curl_easy_setopt(easy,CURLOPT_WRITEDATA,&received);
  if(!multi)multi=curl_multi_init();
@@ -156,6 +200,20 @@ static int save_png_as_gxt(const Download *download,const char *dest,System syst
 /* GameTDB indexes verified Wii/GC artwork by six-character disc ID.
  * Libretro distributes Boxarts, Snaps and Titles under a separate public
  * thumbnail namespace. Both providers use exact paths, never fuzzy IDs. */
+static const char *retro_repo_raw(const Game*g){
+ static const char*const repos[SYSTEM_COUNT]={
+  "Nintendo_-_Wii","Nintendo_-_GameCube","Sony_-_PlayStation",
+  "Nintendo_-_Super_Nintendo_Entertainment_System",
+  "Nintendo_-_Nintendo_Entertainment_System",
+  "Nintendo_-_Game_Boy_Advance","Nintendo_-_Game_Boy",NULL,NULL
+ };
+ if(!g||g->system<0||g->system>=SYSTEM_COUNT)return NULL;
+ if(g->system==SYSTEM_GB){
+  const char*ext=strrchr(g->path,'.');
+  if(ext&&!strcasecmp(ext,".gbc"))return "Nintendo_-_Game_Boy_Color";
+ }
+ return repos[g->system];
+}
 static const char *retro_repo(const Game *g){
  static const char*name[SYSTEM_COUNT]={
   "Nintendo - Wii","Nintendo - GameCube","Sony - PlayStation",
@@ -172,22 +230,28 @@ static const char *retro_repo(const Game *g){
  * Each attempt is advanced by the UI event loop, which keeps B responsive. */
 static int provider_url(const Game *g,int requested,char *url,size_t cap){
  int is_disc=(g->system==SYSTEM_WII||g->system==SYSTEM_GC)&&strlen(g->id)==6;
- int tdb_count=is_disc&&chosen_provider!=2?(chosen_region?3:7):0;
+ int regions_per_art=chosen_region?3:7;
+ int tdb_count=is_disc&&chosen_provider!=2?regions_per_art*(chosen_art?2:1):0;
  if(requested<tdb_count){
   static const char *regions[]={"US","EN","PT","FR","DE","ES","JA"};
   int order[7]={0,1,2,3,4,5,6};
   if(chosen_region==1){order[0]=2;order[1]=1;order[2]=0;}
   if(chosen_region==3){order[0]=1;order[1]=3;order[2]=4;}
   if(chosen_region==4){order[0]=6;order[1]=0;}
-  const char *kind=chosen_art==1?"coverfullHQ":chosen_art==2?"cover3D":"cover";
+  const int variant=requested/regions_per_art;
+  const int ix=requested%regions_per_art;
+  const char *kind=chosen_art==1?(variant?"coverfull":"coverfullHQ"):
+                   chosen_art==2?(variant?"cover":"cover3D"):"cover";
   int written=snprintf(url,cap,"https://art.gametdb.com/%s/%s/%s/%s.png",
-    g->system==SYSTEM_WII?"wii":"gc",kind,regions[order[requested]],g->id);
+    g->system==SYSTEM_WII?"wii":"gc",kind,regions[order[ix]],g->id);
   return written>0&&(size_t)written<cap;
  }
  if(chosen_provider==1)return 0;
  requested-=tdb_count;
- if(requested>=4)return 0;
- const char *repo=retro_repo(g);if(!repo)return 0;
+ if(requested>=8)return 0;
+ const int raw=requested>=4;
+ requested%=4;
+ const char *repo=raw?retro_repo_raw(g):retro_repo(g);if(!repo)return 0;
  const char *kind=chosen_art==1?"Named_Snaps":chosen_art==2?"Named_Titles":"Named_Boxarts";
  char candidate[180];snprintf(candidate,sizeof(candidate),"%s",g->name);
  if(requested){
@@ -204,19 +268,23 @@ static int provider_url(const Game *g,int requested,char *url,size_t cap){
  CURL *escape=curl_easy_init();if(!escape)return 0;
  char filename[210];snprintf(filename,sizeof(filename),"%s.png",candidate);
  for(char*ch=filename;*ch;ch++)if(strchr("&*/:\\\"<>?|",*ch))*ch='_';
- char *encoded_repo=curl_easy_escape(escape,repo,0);
+ char *encoded_repo=raw?NULL:curl_easy_escape(escape,repo,0);
  char *encoded_file=curl_easy_escape(escape,filename,0);
  int written=-1;
- if(encoded_repo&&encoded_file)
-  written=snprintf(url,cap,"https://thumbnails.libretro.com/%s/%s/%s",
-                   encoded_repo,kind,encoded_file);
+ if(encoded_file&&(raw||encoded_repo)){
+  if(raw)written=snprintf(url,cap,
+        "https://raw.githubusercontent.com/libretro-thumbnails/%s/master/%s/%s",
+        repo,kind,encoded_file);
+  else written=snprintf(url,cap,"https://thumbnails.libretro.com/%s/%s/%s",
+                        encoded_repo,kind,encoded_file);
+ }
  if(encoded_repo)curl_free(encoded_repo);
  if(encoded_file)curl_free(encoded_file);
  curl_easy_cleanup(escape);
  return written>0&&(size_t)written<cap;
 }
 static void finish_game(int success,const char *message){
- if(success){job.downloaded++;cover_forget(&current_game);}
+ if(success){job.downloaded++;if(http_legacy)job.legacy_downloads++;cover_forget(&current_game);}
  else {job.failed++;if(current_index>=0&&current_index<MAIZO_MAX_GAMES)
     failed_indices[current_index]=1;}
  job.processed++;
@@ -224,19 +292,23 @@ static void finish_game(int success,const char *message){
  snprintf(job.message,sizeof(job.message),"%s",message);
  if(job.processed>=job.total){
   job.active=0;
-  if(!success)snprintf(job.message,sizeof(job.message),"CONCLUIDO COM FALHAS");
+  if(!success)snprintf(job.message,sizeof(job.message),
+            job.tls_errors?"FALHAS SSL/CA: CONFIRA RELOGIO DO WII":
+                           "CONCLUIDO COM CAPAS AUSENTES");
   else snprintf(job.message,sizeof(job.message),"DOWNLOAD CONCLUIDO");
  }
 }
 void maizo_cover_download_custom(const Library*library,unsigned mask,int update,
                                 int provider,int art,int region,int mode,int index){
  memset(&job,0,sizeof(job));
+ job.transport=transport_setting;
  selected_mask=mask&0x7fu;update_existing=!!update;
  chosen_provider=provider<0||provider>2?0:provider;
  chosen_art=art<0||art>2?0:art;
  chosen_region=region<0||region>4?0:region;
  chosen_mode=mode<0||mode>2?0:mode;
  chosen_index=index;cursor=0;current_index=-1;stop_transfer();
+ gametdb_tls_broken=0;
  if(!network_ready){network_attempted=0;network_retry_frame=0;}
  wait_for_index=0;
  if(!library){
@@ -257,7 +329,7 @@ void maizo_cover_download_custom(const Library*library,unsigned mask,int update,
  }
  job.active=job.total>0;
  snprintf(job.message,sizeof(job.message),job.active?
-   "PREPARANDO DOWNLOAD HTTPS...":"NENHUM JOGO CORRESPONDE A SELECAO");
+   "PREPARANDO FONTES DE CAPAS...":"NENHUM JOGO CORRESPONDE A SELECAO");
 }
 void maizo_cover_download_begin_filtered(const Library*l,unsigned mask,int update){
  maizo_cover_download_custom(l,mask,update,0,0,0,0,-1);
@@ -327,15 +399,56 @@ void maizo_cover_download_step(const Library *library){
    }
    finish_game(0,"FALHA AO GRAVAR CAPA NO USB/SD");return;
   }
-  const char *why=mc!=CURLM_OK?"MULTI":curl_easy_strerror(result);
-  snprintf(job.message,sizeof(job.message),"HTTPS %ld: %.55s; PROXIMA FONTE",http,why);
-  stop_transfer();attempt++;
+  /* libcurl error 60 is a peer CA/hostname/time failure, NOT an SSH
+   * issue. Secure transfers stay verified. USB Loader GX-like HTTP retry
+   * is restricted to immutable GameTDB image endpoints and clearly marked. */
+  if(result==CURLE_PEER_FAILED_VERIFICATION){
+   job.tls_errors++;
+   if(!http_legacy&&transport_setting!=1&&
+      maizo_cover_allow_legacy_retry(transport_setting,(int)result,requested_url)){
+    gametdb_tls_broken=1;
+    char legacy_url[1024];
+    if(maizo_cover_gametdb_http(requested_url,legacy_url,sizeof(legacy_url)) &&
+       start_transfer(legacy_url)){
+     snprintf(job.message,sizeof(job.message),
+              "SSL 60: TENTANDO HTTP SOMENTE CAPAS GAMETDB");
+     return;
+    }
+   }
+   if(transport_setting==1){
+    stop_transfer();
+    job.active=0;
+    snprintf(job.message,sizeof(job.message),"%s",
+             time(NULL)<1704067200?
+             "SSL 60: RELOGIO DO WII INCORRETO - ACERTE DATA/HORA":
+             "SSL 60: CERTIFICADO/CA - ATUALIZE MAIZO/CACERT.PEM");
+    return;
+   }
+  }
+  if(http_legacy&&http>=300&&http<400){
+   stop_transfer();job.active=0;
+   snprintf(job.message,sizeof(job.message),
+            "GAME TDB EXIGE HTTPS: AJUSTE DATA/HORA OU CA PEM");
+   return;
+  }
+  const char *why=mc!=CURLM_OK?"FALHA CURL MULTI":
+                   curl_error[0]?curl_error:curl_easy_strerror(result);
+  snprintf(job.message,sizeof(job.message),"%s %ld / CURL %d: %.42s",
+           http_legacy?"HTTP GX":"HTTPS",http,(int)result,why);
+  const int broken_retro_cdn=
+       result==CURLE_PEER_FAILED_VERIFICATION &&
+       !strncmp(requested_url,"https://thumbnails.libretro.com/",32);
+  stop_transfer();attempt+=broken_retro_cdn?4:1;
   return;
  }
  if(current_index>=0){
   char url[1024];
   if(provider_url(&current_game,attempt,url,sizeof(url))){
-   if(start_transfer(url))return;
+   char plain[1024];
+   if((transport_setting==2||gametdb_tls_broken) &&
+      maizo_cover_gametdb_http(url,plain,sizeof(plain))){
+    if(start_transfer(plain))return;
+   }else if(start_transfer(url))return;
    attempt++;return;
   }
   finish_game(0,"CAPA NAO ENCONTRADA NAS FONTES");return;
@@ -373,5 +486,5 @@ void maizo_cover_download_step(const Library *library){
  snprintf(folder,sizeof(folder),"%s/maizo/covers/%s",dev,directories[current_game.system]);
  mkdir(folder,0777);
  attempt=0;
- snprintf(job.message,sizeof(job.message),"BUSCANDO CAPA NAS FONTES HTTPS");
+ snprintf(job.message,sizeof(job.message),"BUSCANDO GAMETDB / LIBRETRO");
 }

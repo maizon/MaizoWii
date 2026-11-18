@@ -309,7 +309,7 @@ static void handle(const Input*i){
  if(state.page==PAGE_COVER_PICK){
   if(i->back||i->settings){state.page=PAGE_SETTINGS;return;}
   if(i->up&&state.covers_row>0)state.covers_row--;
-  if(i->down&&state.covers_row<15)state.covers_row++;
+  if(i->down&&state.covers_row<16)state.covers_row++;
   if(i->accept||i->left||i->right){
    int row=state.covers_row,dir=i->left?-1:1;
    if(row<7)state.covers_mask^=(1u<<row);
@@ -320,23 +320,25 @@ static void handle(const Input*i){
    else if(row==11)config.cover_art=(config.cover_art+3+dir)%3;
    else if(row==12)config.cover_region=(config.cover_region+5+dir)%5;
    else if(row==13)state.covers_mode=(state.covers_mode+3+dir)%3;
-   else if(row==14){
+   else if(row==14)config.cover_transport=(config.cover_transport+3+dir)%3;
+   else if(row==15){
     cover_reset();
     snprintf(state.info,sizeof(state.info),
          "CACHE DE MEMORIA LIMPO. CAPAS NO SD/USB PRESERVADAS.");
     state.info_return=PAGE_COVER_PICK;state.page=PAGE_INFO;
-   }else if(row==15){
+   }else if(row==16){
     if(!state.covers_mask){
      snprintf(state.info,sizeof(state.info),"SELECIONE PELO MENOS UM SISTEMA");
      state.info_return=PAGE_COVER_PICK;state.page=PAGE_INFO;
     }else{
+     maizo_cover_download_set_transport(config.cover_transport);
      maizo_cover_download_custom(&library_state,state.covers_mask,state.covers_update,
        (int)config.cover_source,(int)config.cover_art,(int)config.cover_region,
        state.covers_mode,state.covers_single);
      state.page=PAGE_COVERS;
     }
    }
-   if(row>=10&&row<=12)config_save(&config);
+   if((row>=10&&row<=12)||row==14)config_save(&config);
   }
   return;
  }
