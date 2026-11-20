@@ -414,9 +414,12 @@ static void handle(const Input*i){
     return;
    }
    if(i->back||i->up||i->down||i->settings){
+    /* Cancel preview without accidentally activating the next option
+     * on the same controller event. Never save an unconfirmed TV mode. */
     config.tv_global=state.video_previous_tv;
     maizo_video_frontend_tv_select(config.tv_global);
     state.tv_preview_pending=0;state.video_preview_frames=0;
+    return;
    }
   }
   if(!state.settings_for_game &&
@@ -445,7 +448,25 @@ static void handle(const Input*i){
   if(!state.settings_global&&!state.settings_for_game && state.settings_row==settings_count(scope)-2)
    state.settings_row+=(i->up?-1:1);
   if(i->left)option_change(-1);
-  if(i->right||i->accept)option_change(1);
+  if(i->right)option_change(1);
+  if(i->accept && !settings_is_tv_standard(scope,state.settings_row))
+   option_change(1);
+  /* The old A=RIGHT shortcut advanced NTSC -> PAL50, PAL60 -> PAL-M,
+   * etc., exactly when the player pressed A to confirm the displayed
+   * standard. A now CONFIRMS the currently displayed selection only;
+   * LEFT/RIGHT alone move between TV options. */
+  if(i->accept && settings_is_tv_standard(scope,state.settings_row)){
+   if(state.settings_for_game){
+    int idx=state.detail;
+    if(idx>=0&&idx<library_state.count&&
+       config_game_save(&state.game_config,&library_state.games[idx])&&
+       library_state.games[idx].system==SYSTEM_GC)
+     module_sync_nintendont(&state.game_config,&library_state.games[idx]);
+   }else if(config_save(&config) && (state.settings_global||scope==SYSTEM_GC) &&
+            module_available(SYSTEM_GC))
+    module_sync_nintendont(&config,NULL);
+   return;
+  }
   if(i->back)close_settings();
   return;
  }

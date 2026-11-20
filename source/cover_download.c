@@ -26,7 +26,9 @@ extern const unsigned char maizo_ca_bundle[],maizo_ca_bundle_end[];
 static MaizoCoverDownloadStatus job;
 static int network_attempted=0,network_ready=0;
 static unsigned transport_setting=0;
-static int gametdb_tls_broken=0;
+/* Provider circuit breaker: 1 GameTDB, 2 Libretro CDN, 4 GitHub CDN.
+ * Repeated TLS/connection failures should not stall all games. */
+static unsigned unreachable_hosts=0;
 static unsigned network_retry_frame=0;
 static unsigned selected_mask=0x7fu;
 static int update_existing=0,cursor=0;
@@ -105,8 +107,12 @@ static int start_transfer(const char*url){
  curl_easy_setopt(easy,CURLOPT_USERAGENT,"MaizoWii/1.1 (Wii cover art)");
  curl_easy_setopt(easy,CURLOPT_FOLLOWLOCATION,http_legacy?0L:1L);
  curl_easy_setopt(easy,CURLOPT_MAXREDIRS,3L);
- curl_easy_setopt(easy,CURLOPT_CONNECTTIMEOUT,8L);
- curl_easy_setopt(easy,CURLOPT_TIMEOUT,18L);
+ /* Real Wii networking took >8 seconds to connect. Use a finite 15s
+  * connection budget, 32s total, and skip a failed host afterwards. */
+ curl_easy_setopt(easy,CURLOPT_CONNECTTIMEOUT,15L);
+ curl_easy_setopt(easy,CURLOPT_TIMEOUT,32L);
+ curl_easy_setopt(easy,CURLOPT_IPRESOLVE,CURL_IPRESOLVE_V4);
+ curl_easy_setopt(easy,CURLOPT_DNS_CACHE_TIMEOUT,600L);
  curl_easy_setopt(easy,CURLOPT_NOSIGNAL,1L);
  curl_easy_setopt(easy,CURLOPT_LOW_SPEED_LIMIT,64L);
  curl_easy_setopt(easy,CURLOPT_LOW_SPEED_TIME,10L);
@@ -336,7 +342,7 @@ void maizo_cover_download_custom(const Library*library,unsigned mask,int update,
  chosen_region=region<0||region>4?0:region;
  chosen_mode=mode<0||mode>2?0:mode;
  chosen_index=index;cursor=0;current_index=-1;stop_transfer();
- gametdb_tls_broken=0;
+ unreachable_hosts=0;
  if(!network_ready){network_attempted=0;network_retry_frame=0;}
  wait_for_index=0;
  if(!library){
@@ -430,28 +436,26 @@ void maizo_cover_download_step(const Library *library){
   /* libcurl error 60 is a peer CA/hostname/time failure, NOT an SSH
    * issue. Secure transfers stay verified. USB Loader GX-like HTTP retry
    * is restricted to immutable GameTDB image endpoints and clearly marked. */
+  unsigned host=strstr(requested_url,"://art.gametdb.com/")?1u:
+                strstr(requested_url,"://thumbnails.libretro.com/")?2u:
+                strstr(requested_url,"://raw.githubusercontent.com/")?4u:0u;
   if(result==CURLE_PEER_FAILED_VERIFICATION){
    job.tls_errors++;
-   if(!http_legacy&&transport_setting!=1&&
-      maizo_cover_allow_legacy_retry(transport_setting,(int)result,requested_url)){
-    gametdb_tls_broken=1;
-    char legacy_url[1024];
-    if(maizo_cover_gametdb_http(requested_url,legacy_url,sizeof(legacy_url)) &&
-       start_transfer(legacy_url)){
-     snprintf(job.message,sizeof(job.message),
-              "SSL 60: TENTANDO HTTP SOMENTE CAPAS GAMETDB");
-     return;
-    }
-   }
-   if(transport_setting==1){
-    stop_transfer();
-    job.active=0;
-    snprintf(job.message,sizeof(job.message),"%s",
-             time(NULL)<1704067200?
-             "SSL 60: RELOGIO DO WII INCORRETO - ACERTE DATA/HORA":
-             "SSL 60: CERTIFICADO/CA - ATUALIZE MAIZO/CACERT.PEM");
-    return;
-   }
+   /* An expired leaf cert or invalid Wii system clock cannot be repaired
+    * by switching trusted CA roots. Never skip certificate verification.
+    * AUTO tries a DIFFERENT HTTPS provider, not slow HTTP redirects. */
+   if(host)unreachable_hosts|=host;
+   const time_t now=time(NULL);
+   snprintf(last_transfer_error,sizeof(last_transfer_error),
+      now<1704067200 || now>2051222400?
+       "CURL 60: HORA/DATA DO WII INCORRETA":
+       "CURL 60: CERTIFICADO EXPIRADO - HORA/CA/SERVIDOR");
+  }else if(result==CURLE_OPERATION_TIMEDOUT && http==0){
+   /* HTTP 0 = no HTTP headers arrived, not a 404. Fail over once per host
+    * instead of retrying that unreachable server for every cover. */
+   if(host)unreachable_hosts|=host;
+   snprintf(last_transfer_error,sizeof(last_transfer_error),
+            "CURL 28: TIMEOUT DE CONEXAO - FONTE ALTERNATIVA");
   }
   if(http_legacy&&http>=300&&http<400){
    /* GameTDB may redirect HTTP to HTTPS. Do not abort the entire batch;
@@ -464,26 +468,45 @@ void maizo_cover_download_step(const Library *library){
                    curl_error[0]?curl_error:curl_easy_strerror(result);
   snprintf(job.message,sizeof(job.message),"%s %ld / CURL %d: %.42s",
            http_legacy?"HTTP GX":"HTTPS",http,(int)result,why);
-  const int broken_retro_cdn=
-       result==CURLE_PEER_FAILED_VERIFICATION &&
-       !strncmp(requested_url,"https://thumbnails.libretro.com/",32);
-  snprintf(last_transfer_error,sizeof(last_transfer_error),
-           "HTTP %ld / CURL %d: %.66s",http,(int)result,why);
-  stop_transfer();attempt+=broken_retro_cdn?4:1;
+  if(result!=CURLE_PEER_FAILED_VERIFICATION &&
+     !(result==CURLE_OPERATION_TIMEDOUT&&http==0))
+   snprintf(last_transfer_error,sizeof(last_transfer_error),
+            "HTTP %ld / CURL %d: %.66s",http,(int)result,why);
+  stop_transfer();
+  attempt++;
   return;
  }
  if(current_index>=0){
-  char url[1024];
-  if(provider_url(&current_game,attempt,url,sizeof(url))){
+  /* Skip providers that already failed TLS/connection in this batch:
+   * no repeated 15s timeout for each region of each title. */
+  for(unsigned skips=0;skips<40;skips++){
+   char url[1024];
+   if(!provider_url(&current_game,attempt,url,sizeof(url))){
+    finish_game(0,last_transfer_error[0]?last_transfer_error:
+                "SEM CAPA EM GAMETDB OU LIBRETRO");return;
+   }
+   unsigned host=strstr(url,"://art.gametdb.com/")?1u:
+                 strstr(url,"://thumbnails.libretro.com/")?2u:4u;
+   if(unreachable_hosts&host){attempt++;continue;}
    char plain[1024];
-   if((transport_setting==2||gametdb_tls_broken) &&
+   /* Explicit GX HTTP mode only; AUTO stays on authenticated HTTPS.
+    * An HTTP redirect or timeout cannot fix an expired TLS cert. */
+   if(transport_setting==2 &&
       maizo_cover_gametdb_http(url,plain,sizeof(plain))){
     if(start_transfer(plain))return;
    }else if(start_transfer(url))return;
    attempt++;return;
   }
-  finish_game(0,last_transfer_error[0]?last_transfer_error:
-              "CAPA NAO ENCONTRADA EM GAMETDB/LIBRETRO");return;
+  finish_game(0,"SEM SERVIDOR DISPONIVEL - CONFIRA DATA/REDE");
+  return;
+ }
+ if((unreachable_hosts&6u)==6u && !easy){
+  /* All HTTPS mirrors unavailable. Do not mark hundreds of ROMs as
+   * 'missing cover' when the Wii clock/TLS or its internet is broken. */
+  job.active=0;
+  snprintf(job.message,sizeof(job.message),
+           "FONTE HTTPS INACESSIVEL: WII DATA/HORA, INTERNET OU CA");
+  return;
  }
  if(job.processed>=job.total){
   job.active=0;snprintf(job.message,sizeof(job.message),"DOWNLOAD CONCLUIDO");return;

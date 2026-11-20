@@ -35,8 +35,8 @@ int maizo_cover_gametdb_http(const char *secure,char *out,size_t cap){
 }
 int maizo_cover_allow_legacy_retry(unsigned mode,int curl_error,const char *url){
  char result[280];
- /* 60 = CURLE_PEER_FAILED_VERIFICATION. Never disable TLS verification.
-  * Compatibility retries are only for well-formed GameTDB cover PNGs. */
- return (mode==0 || mode==2)&&curl_error==60&&
+ /* 60 = CURLE_PEER_FAILED_VERIFICATION. Automatic mode never downgrades
+  * to insecure HTTP. Compatibility is opt-in and cover-only. */
+ return mode==2&&curl_error==60&&
         maizo_cover_gametdb_http(url,result,sizeof(result));
 }

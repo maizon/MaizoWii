@@ -54,7 +54,7 @@ class CoverTransportTests(unittest.TestCase):
    with self.subTest(url=src):self.assertEqual(self.convert(src)[0],0)
  def test_http_only_on_certificate_failure_and_allowed_modes(self):
   src=b"https://art.gametdb.com/wii/cover/US/RMCE01.png"
-  self.assertTrue(self.lib.maizo_cover_allow_legacy_retry(0,60,src))
+  self.assertFalse(self.lib.maizo_cover_allow_legacy_retry(0,60,src))
   self.assertTrue(self.lib.maizo_cover_allow_legacy_retry(2,60,src))
   self.assertFalse(self.lib.maizo_cover_allow_legacy_retry(1,60,src))
   for code in (0,1,7,22,35,77):
@@ -75,6 +75,9 @@ class DownloadPipelineContracts(unittest.TestCase):
   self.assertIn("CURLOPT_ERRORBUFFER,curl_error",s)
   self.assertIn("CURLOPT_CAINFO_BLOB,&ca_bundle_blob",s)
   self.assertIn("https://raw.githubusercontent.com/libretro-thumbnails/",s)
+  self.assertIn("CURLOPT_CONNECTTIMEOUT,15L",s)
+  self.assertIn("unreachable_hosts",s)
+  self.assertNotIn("gametdb_tls_broken",s)
  def test_one_persisted_user_network_mode(self):
   self.assertIn('cover_transport=%u',self.get("source/config.c"))
   self.assertIn('cover_transport=val<=2?val:0',self.get("source/config.c"))

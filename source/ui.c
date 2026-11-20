@@ -484,7 +484,7 @@ static void cover_pick_ui(const State*u,const Config*c){
    const char*v[]={"TODOS/FEITOS","JOGO SELECIONADO","REPETIR FALHAS"};
    snprintf(mark,sizeof(mark),"%s",v[u->covers_mode%3]);
   }else if(row==14){
-   const char*v[]={"AUTO (HTTPS + GX)","HTTPS CERTIFICADO","USB LOADER GX HTTP"};
+   const char*v[]={"AUTO HTTPS/LIBRETRO","HTTPS CERTIFICADO","USB LOADER GX HTTP"};
    snprintf(mark,sizeof(mark),"%s",v[c->cover_transport%3]);
   }
   clipped(52,y+8,names[row],0.91f,ink,30);
@@ -496,7 +496,7 @@ static void downloads_ui(void){
  label(38,84,"DOWNLOAD DE CAPAS",1.55f,ink);
  clipped(38,124,d.transport==1?"HTTPS VERIFICADO - CA MOZILLA":
                   d.transport==2?"MODO GX: HTTP GAME TDB (SO CAPAS)":
-                  "HTTPS COM FALLBACK GX PARA IMAGENS",0.94f,muted,72);
+                  "HTTPS: GAMETDB + LIBRETRO + GITHUB",0.94f,muted,72);
  char line[120];
  snprintf(line,sizeof(line),"VERIFICADOS %d / %d",d.processed,d.total);
  label(38,163,line,1.25f,ink);

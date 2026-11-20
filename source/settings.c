@@ -50,6 +50,11 @@ static int maizo_standard_row(System s){
  if(s==SYSTEM_PS1||s==SYSTEM_SNES||s==SYSTEM_NES||s==SYSTEM_GBA||s==SYSTEM_GB)return 2;
  return settings_count(s)-4;
 }
+/* True for a TV standard row, including systems where its index
+ * is not count-4 (PS1, SNES, NES, GB and GBA). */
+int settings_is_tv_standard(System s,int row){
+ return row==maizo_standard_row(s);
+}
 int settings_count(System s){
  switch(s){case SYSTEM_COUNT:return 7;case SYSTEM_WII:return 8;case SYSTEM_GC:return 16;
  case SYSTEM_PS1:return 21;case SYSTEM_SNES:return 10;

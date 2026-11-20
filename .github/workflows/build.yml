@@ -77,26 +77,34 @@ jobs:
         if: steps.cached-frontend.outputs.cache-hit != 'true'
         run: make -j2
       - name: Restore forwarder DOL (only forwarder dependencies)
+        if: ${{ !contains(github.event.head_commit.message, '[frontend-only]') }}
         id: cached-forwarder
         uses: actions/cache@v4
         with:
           path: forwarder/boot.dol
           key: maizo-forwarder-v4-osc-${{ hashFiles('forwarder/main.c', 'forwarder/Makefile', 'forwarder/data/**', 'tools/embed_osc_booter.py') }}-devkitppc-20261102-${{ inputs.full_rebuild && github.run_id || 'regular' }}
       - name: Compile forwarder on cache miss only
-        if: steps.cached-forwarder.outputs.cache-hit != 'true'
+        if: steps.cached-forwarder.outputs.cache-hit != 'true' && !contains(github.event.head_commit.message, '[frontend-only]')
         run: make -C forwarder -j2
       - name: Verify OSC/FIX94 forwarder selected (not old MEM2 bootstub)
+        if: ${{ !contains(github.event.head_commit.message, '[frontend-only]') }}
         run: |
           strings forwarder/boot.dol | grep -F 'MAIZO FIX94-COMPAT FORWARDER v6'
           python3 tools/test_osc_forwarder.py
       - name: Stage frontend
+        env:
+          FRONTEND_ONLY: ${{ contains(github.event.head_commit.message, '[frontend-only]') }}
         run: |
           test -s boot.dol
           mkdir -p stage/apps/maizo
           cp boot.dol apps/maizo/meta.xml stage/apps/maizo/
-          test -s forwarder/boot.dol
-          mkdir -p stage/apps/maizo-forwarder
-          cp forwarder/boot.dol forwarder/meta.xml stage/apps/maizo-forwarder/
+          # [frontend-only] commits intentionally stage just the corrected
+          # MAIZO frontend. Do not compile or package any emulator/WiiMC.
+          if [ "$FRONTEND_ONLY" != "true" ]; then
+            test -s forwarder/boot.dol
+            mkdir -p stage/apps/maizo-forwarder
+            cp forwarder/boot.dol forwarder/meta.xml stage/apps/maizo-forwarder/
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: MAIZOWII-FRONTEND
@@ -104,6 +112,7 @@ jobs:
           retention-days: 14
 
   installer-hid:
+    if: ${{ !contains(github.event.head_commit.message, '[frontend-only]') }}
     runs-on: ubuntu-latest
     container:
       image: devkitpro/devkitppc:20261102
@@ -180,6 +189,7 @@ jobs:
           retention-days: 14
 
   launch-contracts:
+    if: ${{ !contains(github.event.head_commit.message, '[frontend-only]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -187,11 +197,13 @@ jobs:
         run: python3 -m unittest discover -s tools -p 'test_launch_args.py' -v
 
   adapted:
+    if: ${{ !contains(github.event.head_commit.message, '[frontend-only]') }}
     uses: ./.github/workflows/build-adapted-modules.yml
     with:
       full_rebuild: ${{ inputs.full_rebuild || false }}
 
   wiimc-dolphin-smoke:
+    if: ${{ !contains(github.event.head_commit.message, '[frontend-only]') }}
     # Compare the adapted DOL with a PREBUILT upstream original. Do not waste
     # time recompiling a control. A black root screenshot proves nothing
     # unless the baseline renders in the identical emulator environment.
@@ -268,7 +280,7 @@ jobs:
   all-in-one:
     runs-on: ubuntu-latest
     needs: [frontend, adapted, launch-contracts, installer-hid]
-    if: always() && needs.frontend.result == 'success' && needs.launch-contracts.result == 'success'
+    if: always() && needs.frontend.result == 'success' && needs.launch-contracts.result == 'success' && !contains(github.event.head_commit.message, '[frontend-only]')
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4

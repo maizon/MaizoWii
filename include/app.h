@@ -28,6 +28,7 @@ int settings_count(System);const char*settings_label(System,int);
 const char*settings_category(System,int);
 void settings_value(const Config*,System,int,char*,size_t);
 int settings_change(Config*,System,int,int);
+int settings_is_tv_standard(System,int);
 void config_defaults(Config*);void config_load(Config*);int config_save(const Config*);int config_has_settings(void);
 void config_game_load(Config*,const Config*,const Game*);int config_game_save(const Config*,const Game*);
 void favorites_load(Library*);int favorites_save(const Library*);
