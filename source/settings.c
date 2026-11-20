@@ -158,7 +158,7 @@ void settings_value(const Config*c,System s,int row,char*dest,size_t cap){
   if(row==10){const char*names[]={"NENHUM","AUTOMATICO","SEMPRE"};snprintf(dest,cap,"%s",names[v%3]);return;}
  }
  if(s==SYSTEM_MEDIA&&row==2){snprintf(dest,cap,"%u%%",v);return;}
- if(s==SYSTEM_MEDIA&&row==3){snprintf(dest,cap,"%s",v?"OFICIAL ESTAVEL":"HID EXPERIMENTAL");return;}
+ if(s==SYSTEM_MEDIA&&row==3){snprintf(dest,cap,"%s",v?"OFICIAL SEM HID":"WIIMC-SSLC COM HID");return;}
  if(s==SYSTEM_MEDIA&&row==4){snprintf(dest,cap,"%s",v?"DIRETO":"NAVEGADOR");return;}
  if(s!=SYSTEM_GC&&s!=SYSTEM_PS1){snprintf(dest,cap,"EXTERNO");return;}
  snprintf(dest,cap,"%s",v?"LIGADO":"DESLIGADO");

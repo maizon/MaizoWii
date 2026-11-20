@@ -177,6 +177,13 @@ static void close_settings(void){
   int ok=idx>=0 && idx<library_state.count &&
          config_game_save(&state.game_config,&library_state.games[idx]);
   state.settings_for_game=0;
+  if(ok&&idx>=0&&idx<library_state.count &&
+     library_state.games[idx].system==SYSTEM_GC &&
+     !module_sync_nintendont(&state.game_config,&library_state.games[idx])){
+   snprintf(state.info,sizeof(state.info),
+            "PERFIL SALVO, MAS NINTENDONT /NINCFG.BIN NAO FOI GRAVADO");
+   state.info_return=state.settings_return;state.page=PAGE_INFO;return;
+  }
   if(ok)state.page=state.settings_return;
   else {
    snprintf(state.info,sizeof(state.info),
@@ -184,8 +191,16 @@ static void close_settings(void){
    state.info_return=state.settings_return==PAGE_DETAIL?PAGE_DETAIL:PAGE_LIBRARY;state.page=PAGE_INFO;
   }
  }else{
-  if(config_save(&config))state.page=state.settings_return;
-  else{
+  if(config_save(&config)){
+   if((state.settings_global||state.system==SYSTEM_GC)&&
+      module_available(SYSTEM_GC)&&
+      !module_sync_nintendont(&config,NULL)){
+    snprintf(state.info,sizeof(state.info),
+             "MAIZO SALVO; NINTENDONT NAO GRAVOU NINCFG.BIN NO SD/USB");
+    state.info_return=state.settings_return;state.page=PAGE_INFO;return;
+   }
+   state.page=state.settings_return;
+  }else{
    snprintf(state.info,sizeof(state.info),"NAO FOI POSSIVEL GRAVAR AJUSTES NO USB/SD");
    state.info_return=PAGE_SETTINGS;state.page=PAGE_INFO;
   }
@@ -213,7 +228,8 @@ static void option_change(int dir){
     !state.settings_for_game){
    if(scope==SYSTEM_COUNT && state.settings_row==2)
     maizo_video_force_vi704(config.force_vi704);
-   if(!state.tv_preview_pending)config_save(&config);
+   if(!state.tv_preview_pending && config_save(&config) &&
+      scope==SYSTEM_GC)module_sync_nintendont(&config,NULL);
   }
 }
 static void adjust_calibration(int dir){
@@ -393,7 +409,9 @@ static void handle(const Input*i){
   if(state.tv_preview_pending){
    if(state.settings_global&&state.settings_row==3&&i->accept){
     state.tv_preview_pending=0;state.video_preview_frames=0;
-    config_save(&config);return;
+    if(config_save(&config)&&module_available(SYSTEM_GC))
+     module_sync_nintendont(&config,NULL);
+    return;
    }
    if(i->back||i->up||i->down||i->settings){
     config.tv_global=state.video_previous_tv;

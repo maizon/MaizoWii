@@ -1,5 +1,6 @@
 #include "app.h"
 #include "wii_id.h"
+#include "game_identity.h"
 #include <stdio.h>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -202,7 +203,23 @@ static void insert(Library*l,System sys,const char*path,const char*filename,cons
    * Do not confuse a friendly title with a valid USB Loader GX ID. */
   if(!g->id[0])maizo_wii_id_from_file(path,g->id);
  }
- if(sys==SYSTEM_GC){FILE*f=fopen(path,"rb");if(f){char id[6];if(fread(id,1,6,f)==6){int ok=1;for(int j=0;j<6;j++)if(!isalnum((unsigned char)id[j]))ok=0;if(ok){memcpy(g->id,id,6);g->id[6]=0;}}fclose(f);}}
+ /* Verify Wii/GC disc identifiers against the actual native header,
+  * not merely an editable USB folder name. For classic cartridges, retain
+  * native header title/product code as an additional No-Intro lookup hint. */
+ char product[16]={0},internal[112]={0};
+ int verified=maizo_game_probe_identity(path,(int)sys,product,sizeof(product),
+                                         internal,sizeof(internal));
+ if(sys==SYSTEM_WII||sys==SYSTEM_GC){
+  /* CISO headers and invalid ISO data must never be used as GameTDB IDs.
+   * On a verifiable ISO, the physical header always outranks filename ID. */
+  g->id[0]=0;
+  if(verified&&strlen(product)==6)
+   snprintf(g->id,sizeof(g->id),"%s",product);
+ }else if(verified){
+  snprintf(g->product_code,sizeof(g->product_code),"%s",product);
+ }
+ if(verified&&internal[0])
+  snprintf(g->lookup_title,sizeof(g->lookup_title),"%s",internal);
  metadata_apply(g);
 }
 static int sort_games(const void*a,const void*b){const Game*x=a,*y=b;return x->system!=y->system?(int)x->system-(int)y->system:strcasecmp(x->name,y->name);}

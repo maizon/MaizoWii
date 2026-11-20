@@ -74,9 +74,10 @@ def fix_pad_update(text: str, key: str, is_wiimc: bool):
 def patch_wiimc(root: Path):
     install_inc(root, "source")
     shutil.copyfile(SOURCE.parent / "maizo_tv_standard.inc",root / "source/maizo_tv_standard.inc")
-    # WiiMC plays movies from USB mass storage. Do not enumerate, close or
-    # initialize USB devices during playback. Copy HID input reports from
-    # the existing async interrupt endpoint only; no USB IOCTL calls here.
+    # Mounting a USB storage device must never disable HID gamepad attach.
+    # HID discovery is class-filtered to avoid opening mass-storage devices.
+    # Still avoid new USB descriptors during active MPlayer playback: an
+    # already-attached asynchronous interrupt endpoint keeps reporting.
     wiimc_hid = root / "source/maizo_hid.inc"
     wiimc_hid.write_text(wiimc_hid.read_text(encoding="utf-8") +
         "\nstatic void maizo_hid_tick_attached(void){\n"
@@ -114,7 +115,7 @@ def patch_wiimc(root: Path):
         s = replace_once(
             s, "WPAD_SetVRes(WPAD_CHAN_ALL, screenwidth, screenheight);",
             "WPAD_SetVRes(WPAD_CHAN_ALL, screenwidth, screenheight);\n"
-            "\tif(!isInserted[DEVICE_USB]) (void)maizo_hid_tick(); /* never claim USB disk for HID */",
+            "\t(void)maizo_hid_tick(); /* HID class scan even with USB disk mounted */",
             "WiiMC argv-autoplay HID pre-attach")
         # Never dereference a missing WPAD_Data() with no Wiimote paired.
         # The original GuiTrigger embeds a zero-initialized WPADData.
@@ -135,12 +136,8 @@ def patch_wiimc(root: Path):
         # An attached controller is asynchronously updated by the HID driver;
         # playback only snapshots its already-open input report.
         s = replace_once(s, "\tmaizo_hid_tick();",
-            "\tstatic unsigned maizoHidWarmup=0;\n"
-            "\tif(maizoHidWarmup<180)maizoHidWarmup++;\n"
-            "\tif(maizoHidWarmup>=180){\n"
-            "\t\tif(wiiIsPlaying() || isInserted[DEVICE_USB])maizo_hid_tick_attached();\n"
-            "\t\telse maizo_hid_tick();\n"
-            "\t}",
+            "\tif(wiiIsPlaying())maizo_hid_tick_attached();\n"
+            "\telse maizo_hid_tick(); /* USB disk and HID are independent */",
             "WiiMC GUI-only HID USB enumeration")
         # DrawMPlayerGui calls UpdatePads immediately before MPlayerInput.
         # Read the same snapshot: calling PAD_ButtonsDown a second time can

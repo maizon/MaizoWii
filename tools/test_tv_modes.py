@@ -39,7 +39,7 @@ class VideoStandardContracts(unittest.TestCase):
   self.assertIn("WiiMC IFO filename slash NULL guard",patch)
   self.assertIn("WiiMC browser invalid mount must abort",patch)
   self.assertIn("if(!entry)return browser.numEntries",patch)
-  self.assertIn("isInserted[DEVICE_USB]",patch)
+  self.assertIn("HID class scan even with USB disk mounted",patch)
   self.assertIn("ChangeInterface(loadedFile,true)",patch)
   self.assertNotIn("WiiMC cap dead startup/unsupported codec",patch)
 

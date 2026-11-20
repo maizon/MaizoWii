@@ -164,51 +164,92 @@ static unsigned maizo_effective_tv_standard(const Config *c,System sys){
  unsigned selected=c->tv_module[sys];
  return selected<=5 && selected ? selected-1 : (c->tv_global<=4?c->tv_global:0);
 }
-static int save_nincfg(const Game*g,const Config*c,NIN_CFG *out) {
- NIN_CFG n;memset(&n,0,sizeof(n));n.Magicbytes=NIN_CFG_MAGIC;n.Version=NIN_CFG_VERSION;
- n.Config=NIN_CFG_AUTO_BOOT|(c->gc_memcard?NIN_CFG_MEMCARDEMU:0)|(c->gc_wide?NIN_CFG_FORCE_WIDE:0)|
- (c->gc_cheats?NIN_CFG_CHEATS:0)|(c->gc_skip_ipl?NIN_CFG_SKIP_IPL:0)|
- (c->gc_mc_multi?NIN_CFG_MC_MULTI:0)|(c->gc_native_si?NIN_CFG_NATIVE_SI:0)|
- (c->gc_rem_limit?NIN_CFG_REMLIMIT:0);
- if(!strncmp(g->path,"usb:",4))n.Config|=NIN_CFG_USB;
- if(c->gc_video==1)n.VideoMode=0x00010000u|8u; /* force MPAL */
- if(c->gc_video==2)n.VideoMode=0x00010000u|4u; /* force NTSC */
- if(c->gc_video==3)n.VideoMode=0x00010000u|1u; /* force PAL50 */
+/* Nintendont /nincfg.bin is a single active configuration, NOT a
+ * database of per-game settings. Preserve its unexposed options, sync
+ * frontend GC settings immediately, and use game profiles for overrides.
+ * NO autoboot in a menu-settings save: only launching a title sets it. */
+static int maizo_read_nincfg_root(const char *root,NIN_CFG*out){
+ char path[32];snprintf(path,sizeof(path),"%s:/nincfg.bin",root);
+ FILE*f=fopen(path,"rb");if(!f)return 0;
+ NIN_CFG n;int ok=fread(&n,1,sizeof(n),f)==sizeof(n);
+ fclose(f);
+ if(!ok||n.Magicbytes!=NIN_CFG_MAGIC||n.Version!=NIN_CFG_VERSION||
+    n.MaxPads>4)return 0;
+ *out=n;return 1;
+}
+static int maizo_build_nincfg(const Game*g,const Config*c,NIN_CFG*out,int autoboot){
+ if(!c||!out)return 0;
+ NIN_CFG n;
+ if(!maizo_read_nincfg_root(g&&!strncmp(g->path,"sd:",3)?"sd":"usb",&n)&&
+    !maizo_read_nincfg_root("sd",&n)&&
+    !maizo_read_nincfg_root("usb",&n)){
+  memset(&n,0,sizeof(n));
+  n.Magicbytes=NIN_CFG_MAGIC;n.Version=NIN_CFG_VERSION;
+  n.Language=0xFFFFFFFFu;n.MaxPads=4;n.MemCardBlocks=2;
+ }
+ const u32 owned=NIN_CFG_AUTO_BOOT|NIN_CFG_MEMCARDEMU|NIN_CFG_FORCE_WIDE|
+       NIN_CFG_CHEATS|NIN_CFG_SKIP_IPL|NIN_CFG_MC_MULTI|
+       NIN_CFG_NATIVE_SI|NIN_CFG_REMLIMIT;
+ n.Config &= ~owned;
+ n.Config|=(c->gc_memcard?NIN_CFG_MEMCARDEMU:0)|
+          (c->gc_wide?NIN_CFG_FORCE_WIDE:0)|
+          (c->gc_cheats?NIN_CFG_CHEATS:0)|
+          (c->gc_skip_ipl?NIN_CFG_SKIP_IPL:0)|
+          (c->gc_mc_multi?NIN_CFG_MC_MULTI:0)|
+          (c->gc_native_si?NIN_CFG_NATIVE_SI:0)|
+          (c->gc_rem_limit?NIN_CFG_REMLIMIT:0);
+ if(autoboot)n.Config|=NIN_CFG_AUTO_BOOT;
+ n.VideoMode=0; /* AUTO resets a previously forced standard. */
+ if(c->gc_video==1)n.VideoMode=0x00010000u|8u; /* MPAL */
+ if(c->gc_video==2)n.VideoMode=0x00010000u|4u; /* NTSC */
+ if(c->gc_video==3)n.VideoMode=0x00010000u|1u; /* PAL50 */
  unsigned tv=maizo_effective_tv_standard(c,SYSTEM_GC);
  if(tv==1)n.VideoMode=0x00010000u|4u;
  else if(tv==2)n.VideoMode=0x00010000u|1u;
  else if(tv==3)n.VideoMode=0x00010000u|2u;
  else if(tv==4)n.VideoMode=0x00010000u|8u;
- n.Language=0xFFFFFFFFu;n.MaxPads=4;n.MemCardBlocks=2;
- /* Nintendont's kernel/Patch.c applies VideoScale as 600+value pixels:
-  * native range 640..720; 0 preserves the game's automatic mode. The
-  * calibrated frontend width is inherited when the user enlarges it.
-  * Shrinking below 640 is NOT supported by this Nintendont mechanism. */
  unsigned width_pct=c->video_w*c->game_w480/100u;
- int scale=c->force_vi704?104:((c->gc_scale>=40&&c->gc_scale<=120)?(int)c->gc_scale:0);
+ int scale=c->force_vi704?104:
+   ((c->gc_scale>=40&&c->gc_scale<=120)?(int)c->gc_scale:0);
  if(!scale&&width_pct>100u){
   scale=40+(int)(width_pct-100u)*4;
   if(scale>120)scale=120;
   if(scale&1)scale--;
  }
  n.VideoScale=(s8)scale;
- /* VideoOffset is HORIZONTAL in Nintendont, not vertical. Combine
-  * frontend, individual game and Nintendont offsets without overflow. */
  int x=(int)c->video_x-50+(int)c->game_x480-50+
        (int)(c->gc_offset<=40?c->gc_offset:20)-20;
  if(x< -20)x=-20;if(x>20)x=20;
  n.VideoOffset=(s8)x;
- /* Nintendont expects a path relative to the selected root device. */
- if(!maizo_gc_relative_path(g->path,n.GamePath,sizeof(n.GamePath)))return 0;
- if(g->id[0])memcpy(&n.GameID,g->id,4);
+ if(g){
+  if(g->system!=SYSTEM_GC||
+     !maizo_gc_relative_path(g->path,n.GamePath,sizeof(n.GamePath)))return 0;
+  n.Config=(n.Config&~NIN_CFG_USB)|
+           (!strncmp(g->path,"usb:",4)?NIN_CFG_USB:0);
+  n.GameID=0;
+  if(strlen(g->id)>=4)memcpy(&n.GameID,g->id,4);
+ }
+ *out=n;return 1;
+}
+static int save_nincfg(const Game*g,const Config*c,NIN_CFG*out){
+ NIN_CFG n;
+ if(!maizo_build_nincfg(g,c,&n,1))return 0;
  if(out)*out=n;
- /* Nintendont mounts SD first and may use it as primary even when
-  * the selected ISO is on USB. This cache is a compatibility fallback.
-  * The caller intentionally continues if neither filesystem accepts it. */
  int a=maizo_write_nincfg_root(&n,(n.Config&NIN_CFG_USB)?"usb":"sd");
  int b=maizo_write_nincfg_root(&n,(n.Config&NIN_CFG_USB)?"sd":"usb");
  return a||b;
 }
+/* Called when settings are changed or committed, even if no GC title is
+ * launched. Users can then open Nintendont's own settings and see the same
+ * persisted flags/video/geometry values. Never autostart an old game. */
+int module_sync_nintendont(const Config*c,const Game*g){
+ NIN_CFG n;
+ if(!maizo_build_nincfg(g,c,&n,0))return 0;
+ int a=maizo_write_nincfg_root(&n,(n.Config&NIN_CFG_USB)?"usb":"sd");
+ int b=maizo_write_nincfg_root(&n,(n.Config&NIN_CFG_USB)?"sd":"usb");
+ return a||b;
+}
+
 static void save_launch_record(const Game*g,const Config*c) {
  char dest[96];snprintf(dest,sizeof(dest),"%s/maizo",(g->path[0]=='s')?"sd:":"usb:");
  mkdir(dest,0777);strncat(dest,"/maizo-launch.txt",sizeof(dest)-strlen(dest)-1);

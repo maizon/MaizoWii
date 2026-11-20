@@ -101,7 +101,7 @@ class UiIntegration(unittest.TestCase):
         self.assertNotIn("storage_ready&&!config_has_settings()",main)
         self.assertIn("config_load(&config)",main)
         self.assertIn("c->layout=2;",config)
-        self.assertIn("c->theme=4",config)
+        self.assertIn("c->theme=5",config)
 
     def test_info_returns_to_relevant_context(self):
         main=self.read("source/main.c")

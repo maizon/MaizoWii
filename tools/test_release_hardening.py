@@ -44,8 +44,8 @@ class FirstReleaseRegression(unittest.TestCase):
         self.assertIn("game_metadata(g,393)",ui)
         self.assertIn("state.settings_return=PAGE_DETAIL",main)
         self.assertIn("state.page=state.settings_return",main)
-    def test_oled_first_run_does_not_overwrite_user_settings(self):
+    def test_classic_first_run_does_not_overwrite_user_settings(self):
         c=src("source/config.c")
-        self.assertIn("c->theme=4;c->layout=2;",c)
+        self.assertIn("c->theme=5;c->layout=2;",c)
         self.assertIn('if(!strcmp(key,"theme"))c->theme=val%6;',c)
 if __name__=="__main__":unittest.main()

@@ -8,7 +8,7 @@
 #define MAIZO_DEPTH 8
 typedef enum { SYSTEM_WII=0, SYSTEM_GC, SYSTEM_PS1, SYSTEM_SNES, SYSTEM_NES, SYSTEM_GBA, SYSTEM_GB, SYSTEM_MEDIA, SYSTEM_HB, SYSTEM_COUNT } System;
 typedef enum { PAGE_HOME=0, PAGE_LIBRARY, PAGE_DETAIL, PAGE_SEARCH, PAGE_SETTINGS, PAGE_INFO, PAGE_HID, PAGE_CALIBRATION, PAGE_COVERS, PAGE_COVER_PICK, PAGE_WELCOME } Page;
-typedef struct { System system; char path[MAIZO_PATH],name[112],id[8],description[96],region[12];unsigned short year;unsigned favorite; } Game;
+typedef struct { System system; char path[MAIZO_PATH],name[112],id[8],description[96],region[12],product_code[16],lookup_title[112];unsigned short year;unsigned favorite; } Game;
 typedef struct { Game games[MAIZO_MAX_GAMES];int count,scanning,root,depth,entries;char status[128];void *work; } Library;
 typedef struct { unsigned theme,layout,cover_source,cover_art,cover_region,wii_ios,wii_usb_port,gc_memcard,gc_wide,gc_cheats,gc_skip_ipl,gc_video,gc_mc_multi,gc_native_si,gc_rem_limit,ps1_interpreter,ps1_frameskip,ps1_audio,media_volume,ps1_engine,ps1_native,ps1_video,ps1_aspect,ps1_deflicker,ps1_dither,ps1_fps,ps1_limit,gc_scale,gc_offset,video_x,video_y,video_w,video_h,media_player,media_autoboot,frontend_video_mode,game_x240,game_x480,game_w240,game_w480;unsigned wiimc_opts[MAIZO_WIIMC_OPTION_COUNT],wiimc_apply,force_vi704;unsigned tv_global,tv_module[SYSTEM_COUNT];unsigned cover_transport; } Config;
 typedef struct { Page page;System system;int selected,scroll,settings_row,calibration_row,detail,search_index,favorites,frame,settings_for_game;Page info_return,settings_return;int storage_usb,storage_sd,video_preview_frames,settings_global,in_system;unsigned covers_mask;int covers_row,covers_update,covers_mode,covers_single;
@@ -48,6 +48,7 @@ void ui_draw(const State*,const Library*,const Config*,int);void ui_shutdown(voi
 void maizo_video_set_calibration(int,int,unsigned,unsigned);
 void maizo_video_force_vi704(int enabled);
 void maizo_video_frontend_tv_select(unsigned standard);
-int module_launch(const Game*,const Config*,char*,size_t);int module_available(System);int module_variant_available(System,const Config*);
+int module_launch(const Game*,const Config*,char*,size_t);
+int module_sync_nintendont(const Config*,const Game*);int module_available(System);int module_variant_available(System,const Config*);
 const char* module_name(System);
 #endif

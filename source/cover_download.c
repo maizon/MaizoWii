@@ -3,6 +3,7 @@
  * Only user-selected game artwork is downloaded; never ROM/BIOS data. */
 #include "cover_download.h"
 #include "cover_transport.h"
+#include "wii_id.h"
 #include <curl/curl.h>
 #include <png.h>
 #include <wiisocket.h>
@@ -54,6 +55,7 @@ static Download received={0};
 static Game current_game;
 static char current_dest[256];
 static int current_index=-1,attempt=0;
+static char last_transfer_error[100];
 static int http_legacy=0;
 static char requested_url[1024];
 static char curl_error[CURL_ERROR_SIZE];
@@ -229,7 +231,7 @@ static const char *retro_repo(const Game *g){
 /* Build one verifiable provider URL per call, without initiating I/O.
  * Each attempt is advanced by the UI event loop, which keeps B responsive. */
 static int provider_url(const Game *g,int requested,char *url,size_t cap){
- int is_disc=(g->system==SYSTEM_WII||g->system==SYSTEM_GC)&&strlen(g->id)==6;
+ int is_disc=(g->system==SYSTEM_WII||g->system==SYSTEM_GC)&&maizo_wii_id_valid(g->id);
  int regions_per_art=chosen_region?3:7;
  int tdb_count=is_disc&&chosen_provider!=2?regions_per_art*(chosen_art?2:1):0;
  if(requested<tdb_count){
@@ -248,12 +250,38 @@ static int provider_url(const Game *g,int requested,char *url,size_t cap){
  }
  if(chosen_provider==1)return 0;
  requested-=tdb_count;
- if(requested>=8)return 0;
- const int raw=requested>=4;
+ /* Three non-fuzzy title sources: original ROM basename (No-Intro),
+  * localized/display database title, then internal cartridge header title.
+  * Each gets CDN first, then the official Libretro GitHub mirror.
+  * No claim of hash-exact identification without a No-Intro DAT database. */
+ if(requested>=24)return 0;
+ const int source=requested/8;
+ const int raw=((requested%8)/4)!=0;
  requested%=4;
- const char *repo=raw?retro_repo_raw(g):retro_repo(g);if(!repo)return 0;
- const char *kind=chosen_art==1?"Named_Snaps":chosen_art==2?"Named_Titles":"Named_Boxarts";
- char candidate[180];snprintf(candidate,sizeof(candidate),"%s",g->name);
+ const char *repo=raw?retro_repo_raw(g):retro_repo(g);
+ if(!repo)return 0;
+ const char *kind=chosen_art==1?"Named_Snaps":
+                   chosen_art==2?"Named_Titles":"Named_Boxarts";
+ char candidate[180]={0};
+ if(source==0){
+  const char *name=strrchr(g->path,'/');
+  name=name?name+1:g->path;
+  if(!strcasecmp(name,"game.iso")||!strcasecmp(name,"disc2.iso")||
+     !strcasecmp(name,"game.ciso")||!strcasecmp(name,"game.gcm")){
+   /* Nintendont's filename is generic: use the game folder title. */
+   const char *parent=g->path;
+   const char *cut=name>parent?name-1:name;
+   size_t size=(size_t)(cut-parent);
+   const char *begin=parent;
+   for(const char *p=parent;p<cut;p++)if(*p=='/')begin=p+1;
+   size=(size_t)(cut-begin);
+   if(size>=sizeof(candidate))size=sizeof(candidate)-1;
+   memcpy(candidate,begin,size);candidate[size]=0;
+  }else snprintf(candidate,sizeof(candidate),"%s",name);
+  char *ext=strrchr(candidate,'.');if(ext)*ext=0;
+ }else if(source==1)snprintf(candidate,sizeof(candidate),"%s",g->name);
+ else snprintf(candidate,sizeof(candidate),"%s",g->lookup_title);
+ if(!candidate[0])return 0;
  if(requested){
   char *tag=strchr(candidate,'['),*region=strstr(candidate," (");
   if(region&&(!tag||region<tag))tag=region;
@@ -426,10 +454,11 @@ void maizo_cover_download_step(const Library *library){
    }
   }
   if(http_legacy&&http>=300&&http<400){
-   stop_transfer();job.active=0;
-   snprintf(job.message,sizeof(job.message),
-            "GAME TDB EXIGE HTTPS: AJUSTE DATA/HORA OU CA PEM");
-   return;
+   /* GameTDB may redirect HTTP to HTTPS. Do not abort the entire batch;
+    * continue to the next region/art and ultimately Libretro HTTPS. */
+   snprintf(last_transfer_error,sizeof(last_transfer_error),
+            "GAMETDB HTTP %ld REDIRECIONOU - TENTANDO LIBRETRO",http);
+   stop_transfer();attempt++;return;
   }
   const char *why=mc!=CURLM_OK?"FALHA CURL MULTI":
                    curl_error[0]?curl_error:curl_easy_strerror(result);
@@ -438,6 +467,8 @@ void maizo_cover_download_step(const Library *library){
   const int broken_retro_cdn=
        result==CURLE_PEER_FAILED_VERIFICATION &&
        !strncmp(requested_url,"https://thumbnails.libretro.com/",32);
+  snprintf(last_transfer_error,sizeof(last_transfer_error),
+           "HTTP %ld / CURL %d: %.66s",http,(int)result,why);
   stop_transfer();attempt+=broken_retro_cdn?4:1;
   return;
  }
@@ -451,7 +482,8 @@ void maizo_cover_download_step(const Library *library){
    }else if(start_transfer(url))return;
    attempt++;return;
   }
-  finish_game(0,"CAPA NAO ENCONTRADA NAS FONTES");return;
+  finish_game(0,last_transfer_error[0]?last_transfer_error:
+              "CAPA NAO ENCONTRADA EM GAMETDB/LIBRETRO");return;
  }
  if(job.processed>=job.total){
   job.active=0;snprintf(job.message,sizeof(job.message),"DOWNLOAD CONCLUIDO");return;
@@ -469,8 +501,11 @@ void maizo_cover_download_step(const Library *library){
  }
  current_index=cursor++;
  current_game=library->games[current_index];
+ last_transfer_error[0]=0;
  failed_indices[current_index]=0;
- snprintf(job.current,sizeof(job.current),"%s",current_game.name);
+ snprintf(job.current,sizeof(job.current),"%.76s [%s]",current_game.name,
+          current_game.id[0]?current_game.id:
+          current_game.product_code[0]?current_game.product_code:"SEM ID");
  if(cover_on_disk(&current_game)&&!update_existing){
   job.existing++;job.processed++;current_index=-1;
   snprintf(job.message,sizeof(job.message),"CAPA EXISTENTE - IGNORADA");return;
